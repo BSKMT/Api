@@ -25,7 +25,7 @@ export class AuthService {
     password: string,
   ): Promise<{ userId: string; email: string } | null> {
     const user = await this.usersService.findByEmail(email);
-    if (!user) return null;
+    if (!user || !user.password) return null;
 
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) return null;
