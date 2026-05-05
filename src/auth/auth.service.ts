@@ -25,12 +25,15 @@ export class AuthService {
     password: string,
   ): Promise<{ userId: string; email: string } | null> {
     const user = await this.usersService.findByEmail(email);
+    console.log('[DEBUG validateUser] email:', email, 'userFound:', !!user, 'hasPw:', !!user?.password, 'pwType:', typeof user?.password, 'pwLen:', user?.password?.length, 'pwPrefix:', user?.password?.substring(0, 15));
     if (!user || !user.password) return null;
 
     let isValid: boolean;
     try {
       isValid = await bcrypt.compare(password, user.password);
-    } catch {
+      console.log('[DEBUG validateUser] bcrypt result:', isValid, 'inputPw:', password?.substring(0, 3) + '***');
+    } catch (e) {
+      console.log('[DEBUG validateUser] bcrypt error:', e.message);
       return null;
     }
     if (!isValid) return null;
