@@ -10,10 +10,13 @@ export class LocalStrategy extends PassportStrategy(Strategy, 'local') {
   }
 
   async validate(email: string, password: string) {
+    console.log('[DEBUG LocalStrategy] email:', email, 'password:', password ? 'present' : 'MISSING');
     const user = await this.authService.validateUser(email, password);
     if (!user) {
+      console.log('[DEBUG LocalStrategy] validateUser returned null, throwing 401');
       throw new UnauthorizedException('Credenciales invalidas');
     }
+    console.log('[DEBUG LocalStrategy] user validated OK:', user.userId);
     return user;
   }
 }
