@@ -25,15 +25,12 @@ export class AuthService {
     password: string,
   ): Promise<{ userId: string; email: string } | null> {
     const user = await this.usersService.findByEmail(email);
-    console.log('[DEBUG validateUser] email:', email, 'inputPw:', JSON.stringify(password));
     if (!user || !user.password || !password) return null;
 
     let isValid: boolean;
     try {
       isValid = await bcrypt.compare(password, user.password);
-      console.log('[DEBUG validateUser] bcrypt result:', isValid);
-    } catch (e) {
-      console.log('[DEBUG validateUser] bcrypt error:', e.message);
+    } catch {
       return null;
     }
     if (!isValid) return null;
@@ -43,32 +40,24 @@ export class AuthService {
     return { userId: String(user._id), email: user.email };
   }
 
-  async login(dto: LoginDto) {
-    const validated = await this.validateUser(dto.email, dto.password);
-    if (!validated) {
-      throw new UnauthorizedException('Credenciales invalidas');
-    }
-
+  async generateTokensAndSave(userId: string, email: string) {
     const { accessToken, refreshToken } = await this.generateTokens(
-      validated.userId,
-      validated.email,
+      userId,
+      email,
     );
 
     const saltRounds = this.configService.get<number>('BCRYPT_SALT_ROUNDS', 12)!;
     const refreshTokenHash = await bcrypt.hash(refreshToken, saltRounds);
-    await this.usersService.updateRefreshTokenHash(
-      validated.userId,
-      refreshTokenHash,
-    );
+    await this.usersService.updateRefreshTokenHash(userId, refreshTokenHash);
 
-    const fullUser = await this.usersService.findById(validated.userId);
+    const fullUser = await this.usersService.findById(userId);
 
     return {
       accessToken,
       refreshToken,
       user: {
-        email: validated.email,
-        userId: validated.userId,
+        email,
+        userId,
         profileCompleted: fullUser?.profileCompleted ?? false,
         membershipLevel: fullUser?.membershipLevel ?? 'Friend',
         role: fullUser?.role ?? 'user',

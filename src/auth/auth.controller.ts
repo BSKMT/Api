@@ -30,10 +30,8 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    console.log('[DEBUG login controller] reached! req.user:', JSON.stringify(req.user));
-    const user = req.user as { email: string; password: string };
-    const tokens = await this.authService.login(user);
-    console.log('[DEBUG login controller] tokens generated OK');
+    const { userId, email } = req.user as { userId: string; email: string };
+    const tokens = await this.authService.generateTokensAndSave(userId, email);
     this.setTokenCookies(res, tokens.accessToken, tokens.refreshToken);
     return { user: tokens.user };
   }
