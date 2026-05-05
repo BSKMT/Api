@@ -16,7 +16,7 @@ async function bootstrap() {
 
   app.use(helmet.default());
 
-  const corsOrigin = configService.get('corsOrigin', { infer: true })!;
+  const corsOrigin = configService.get('CORS_ORIGIN', { infer: true })!;
   app.enableCors({
     origin: [corsOrigin, 'https://bskmt.com'],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -27,7 +27,7 @@ async function bootstrap() {
   });
 
   app.use(
-    cookieParser.default(configService.get('csrfSecret', { infer: true })),
+    cookieParser.default(configService.get('CSRF_SECRET', { infer: true })),
   );
 
   app.useGlobalPipes(
@@ -45,7 +45,7 @@ async function bootstrap() {
     exclude: ['/'],
   });
 
-  const port: number = configService.get('port', { infer: true })!;
+  const port: number = configService.get<number>('PORT', 3000)!;
   await app.listen(port);
 
   console.log(`BSKMT API running on port ${port}`);

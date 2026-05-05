@@ -96,8 +96,8 @@ export class AuthController {
     accessToken: string,
     refreshToken: string,
   ) {
-    const domain = this.configService.get('cookieDomain', { infer: true })!;
-    const secure = this.configService.get('cookieSecure', { infer: true })!;
+    const domain = this.configService.get('COOKIE_DOMAIN', { infer: true })!;
+    const secure = this.configService.get<boolean>('COOKIE_SECURE', true)!;
 
     res.cookie('access_token', accessToken, {
       httpOnly: true,
@@ -119,8 +119,8 @@ export class AuthController {
   }
 
   private clearTokenCookies(res: Response) {
-    const domain = this.configService.get('cookieDomain', { infer: true })!;
-    const secure = this.configService.get('cookieSecure', { infer: true })!;
+    const domain = this.configService.get('COOKIE_DOMAIN', { infer: true })!;
+    const secure = this.configService.get<boolean>('COOKIE_SECURE', true)!;
 
     res.cookie('access_token', '', {
       httpOnly: true,
