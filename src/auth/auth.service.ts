@@ -25,8 +25,8 @@ export class AuthService {
     password: string,
   ): Promise<{ userId: string; email: string } | null> {
     const user = await this.usersService.findByEmail(email);
-    console.log('[DEBUG validateUser] email:', email, 'userFound:', !!user, 'hasPw:', !!user?.password, 'pwType:', typeof user?.password, 'pwLen:', user?.password?.length, 'pwPrefix:', user?.password?.substring(0, 15), 'inputPwLen:', password?.length, 'inputPw:', JSON.stringify(password));
-    if (!user || !user.password) return null;
+    console.log('[DEBUG validateUser] email:', email, 'inputPw:', JSON.stringify(password));
+    if (!user || !user.password || !password) return null;
 
     let isValid: boolean;
     try {
