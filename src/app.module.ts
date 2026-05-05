@@ -43,11 +43,6 @@ import { configValidationSchema } from './config/config.validation';
     ProfileModule,
     PanelModule,
   ],
-  providers: [
-    {
-      provide: APP_GUARD,
-      useClass: ThrottlerGuard,
-    },
-  ],
+  providers: [],
 })
 export class AppModule {}
