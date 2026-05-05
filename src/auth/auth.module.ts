@@ -12,7 +12,7 @@ import type { EnvironmentConfig } from '../config/config.interface';
 @Module({
   imports: [
     UsersModule,
-    PassportModule.register({ defaultStrategy: 'jwt' }),
+    PassportModule.register({ defaultStrategy: 'jwt', session: false }),
     JwtModule.registerAsync({
       useFactory: (configService: ConfigService<EnvironmentConfig>) => ({
         secret: configService.get('JWT_SECRET', { infer: true }),
