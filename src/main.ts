@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ValidationPipe } from '@nestjs/common';
 import * as cookieParser from 'cookie-parser';
@@ -48,6 +49,6 @@ async function bootstrap() {
   const port: number = configService.get<number>('PORT', 3000)!;
   await app.listen(port);
 
-  console.log(`BSKMT API running on port ${port}`);
+  new Logger('Bootstrap').log(`BSKMT API running on port ${port}`);
 }
 void bootstrap();
