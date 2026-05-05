@@ -27,7 +27,12 @@ export class AuthService {
     const user = await this.usersService.findByEmail(email);
     if (!user || !user.password) return null;
 
-    const isValid = await bcrypt.compare(password, user.password);
+    let isValid: boolean;
+    try {
+      isValid = await bcrypt.compare(password, user.password);
+    } catch {
+      return null;
+    }
     if (!isValid) return null;
 
     if (!user.isActive) return null;
