@@ -36,9 +36,7 @@ export class UsersService {
       throw new ConflictException('El correo electronico ya esta registrado');
     }
 
-    const saltRounds = this.configService.get('bcryptSaltRounds', {
-      infer: true,
-    })!;
+    const saltRounds = this.configService.get<number>('BCRYPT_SALT_ROUNDS', 12)!;
     const passwordHash = await bcrypt.hash(dto.password, saltRounds);
 
     const created = new this.userModel({

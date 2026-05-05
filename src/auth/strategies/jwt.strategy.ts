@@ -26,7 +26,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
         },
       ]),
       ignoreExpiration: false,
-      secretOrKey: configService.get('jwtSecret', { infer: true })!,
+      secretOrKey: configService.get('JWT_SECRET', { infer: true })!,
       issuer: 'api.bskmt.com',
       audience: 'bskmt.com',
     });

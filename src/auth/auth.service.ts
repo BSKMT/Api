@@ -46,9 +46,7 @@ export class AuthService {
       validated.email,
     );
 
-    const saltRounds = this.configService.get('bcryptSaltRounds', {
-      infer: true,
-    })!;
+    const saltRounds = this.configService.get<number>('BCRYPT_SALT_ROUNDS', 12)!;
     const refreshTokenHash = await bcrypt.hash(refreshToken, saltRounds);
     await this.usersService.updateRefreshTokenHash(
       validated.userId,
@@ -84,9 +82,7 @@ export class AuthService {
       user.email,
     );
 
-    const saltRounds = this.configService.get('bcryptSaltRounds', {
-      infer: true,
-    })!;
+    const saltRounds = this.configService.get<number>('BCRYPT_SALT_ROUNDS', 12)!;
     const refreshTokenHash = await bcrypt.hash(refreshToken, saltRounds);
     await this.usersService.updateRefreshTokenHash(
       String(user._id),
@@ -126,9 +122,7 @@ export class AuthService {
       user.email,
     );
 
-    const saltRounds = this.configService.get('bcryptSaltRounds', {
-      infer: true,
-    })!;
+    const saltRounds = this.configService.get<number>('BCRYPT_SALT_ROUNDS', 12)!;
     const newHash = await bcrypt.hash(refreshToken, saltRounds);
     await this.usersService.updateRefreshTokenHash(userId, newHash);
 
@@ -152,15 +146,15 @@ export class AuthService {
   }
 
   private async generateTokens(userId: string, email: string) {
-    const jwtSecret = this.configService.get('jwtSecret', { infer: true })!;
-    const jwtExpiration = this.configService.get('jwtExpiration', {
+    const jwtSecret = this.configService.get('JWT_SECRET', { infer: true })!;
+    const jwtExpiration = this.configService.get('JWT_EXPIRATION', {
       infer: true,
     })!;
-    const jwtRefreshSecret = this.configService.get('jwtRefreshSecret', {
+    const jwtRefreshSecret = this.configService.get('JWT_REFRESH_SECRET', {
       infer: true,
     })!;
     const jwtRefreshExpiration = this.configService.get(
-      'jwtRefreshExpiration',
+      'JWT_REFRESH_EXPIRATION',
       { infer: true },
     )!;
 

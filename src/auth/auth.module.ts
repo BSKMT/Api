@@ -15,9 +15,9 @@ import type { EnvironmentConfig } from '../config/config.interface';
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       useFactory: (configService: ConfigService<EnvironmentConfig>) => ({
-        secret: configService.get('jwtSecret', { infer: true }),
+        secret: configService.get('JWT_SECRET', { infer: true }),
         signOptions: {
-          expiresIn: configService.get('jwtExpiration', { infer: true }),
+          expiresIn: configService.get('JWT_EXPIRATION', { infer: true }),
           issuer: 'api.bskmt.com',
           audience: 'bskmt.com',
         },
