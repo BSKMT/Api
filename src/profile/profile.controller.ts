@@ -12,6 +12,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { UsersService } from '../users/users.service';
 import { UpdateProfileSectionDto } from './dto/update-profile-section.dto';
 import { DeleteProfileSectionDto } from './dto/delete-profile-section.dto';
+import { REQUIRED_PROFILE_SECTIONS } from '../users/schemas/user.schema';
 
 @Controller('profile')
 @UseGuards(JwtAuthGuard)
@@ -23,12 +24,18 @@ export class ProfileController {
     const user = req.user as { userId: string };
     const fullUser = await this.usersService.findById(user.userId);
     if (!fullUser)
-      return { profile: {}, completedSections: [], profileCompleted: false };
+      return {
+        profile: {},
+        completedSections: [],
+        profileCompleted: false,
+        totalSections: REQUIRED_PROFILE_SECTIONS.length,
+      };
 
     return {
       profile: fullUser.profile ?? {},
       completedSections: fullUser.completedSections ?? [],
       profileCompleted: fullUser.profileCompleted,
+      totalSections: REQUIRED_PROFILE_SECTIONS.length,
       membershipLevel: fullUser.membershipLevel,
       role: fullUser.role,
       email: fullUser.email,

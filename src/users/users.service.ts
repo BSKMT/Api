@@ -15,6 +15,26 @@ import {
 } from './schemas/user.schema';
 import { RegisterDto } from '../auth/dto/register.dto';
 
+async function generateMemberNumber(userModel: Model<UserDocument>): Promise<string> {
+  const lastUser = await userModel
+    .find({ membershipLevel: { $ne: null } })
+    .sort({ createdAt: -1 })
+    .limit(1)
+    .lean();
+
+  let nextNum = 1;
+  if (lastUser && lastUser.length > 0) {
+    const lastProfile = lastUser[0].profile?.['membresia-ecosistema'];
+    const lastNum = lastProfile?.numeroMiembro;
+    if (lastNum) {
+      const match = String(lastNum).match(/BSK-(\d+)/);
+      if (match) nextNum = parseInt(match[1], 10) + 1;
+    }
+  }
+
+  return `BSK-${String(nextNum).padStart(4, '0')}`;
+}
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -42,7 +62,7 @@ export class UsersService {
     const created = new this.userModel({
       email: dto.email.toLowerCase(),
       password: passwordHash,
-      membershipLevel: 'Friend',
+      membershipLevel: null,
       role: 'user',
       profileCompleted: false,
       completedSections: [],
@@ -80,6 +100,22 @@ export class UsersService {
     const profileCompleted = REQUIRED_PROFILE_SECTIONS.every((s) =>
       completedSections.includes(s),
     );
+
+    if (profileCompleted && !user.profileCompleted) {
+      user.membershipLevel = 'Friend';
+
+      const memSection = profile['membresia-ecosistema'] ?? {};
+      if (!memSection.fechaIngreso) {
+        memSection.fechaIngreso = new Date().toISOString().split('T')[0];
+      }
+      if (!memSection.numeroMiembro) {
+        memSection.numeroMiembro = await generateMemberNumber(this.userModel);
+      }
+      if (!memSection.nivelMembresia) {
+        memSection.nivelMembresia = 'Friend';
+      }
+      profile['membresia-ecosistema'] = memSection;
+    }
 
     user.profile = profile;
     user.completedSections = completedSections;

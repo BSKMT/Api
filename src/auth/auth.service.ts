@@ -58,7 +58,7 @@ export class AuthService {
         email,
         userId,
         profileCompleted: fullUser?.profileCompleted ?? false,
-        membershipLevel: fullUser?.membershipLevel ?? 'Friend',
+        membershipLevel: fullUser?.membershipLevel ?? null,
         role: fullUser?.role ?? 'user',
       },
     };
@@ -92,7 +92,7 @@ export class AuthService {
         email: user.email,
         userId: String(user._id),
         profileCompleted: false,
-        membershipLevel: 'Friend',
+        membershipLevel: user.membershipLevel,
         role: 'user',
       },
     };
@@ -131,7 +131,7 @@ export class AuthService {
         email: user.email,
         userId,
         profileCompleted: fullUser?.profileCompleted ?? false,
-        membershipLevel: fullUser?.membershipLevel ?? 'Friend',
+        membershipLevel: fullUser?.membershipLevel ?? null,
         role: fullUser?.role ?? 'user',
       },
     };

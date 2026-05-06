@@ -25,8 +25,8 @@ export class User {
   @Prop({ required: true })
   password: string;
 
-  @Prop({ default: 'Friend' })
-  membershipLevel: string;
+  @Prop({ default: null })
+  membershipLevel: string | null;
 
   @Prop({ default: 'user' })
   role: string;
