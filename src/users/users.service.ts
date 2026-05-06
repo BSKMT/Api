@@ -84,6 +84,7 @@ export class UsersService {
     user.profile = profile;
     user.completedSections = completedSections;
     user.profileCompleted = profileCompleted;
+    user.markModified('profile');
 
     return user.save();
   }
@@ -111,6 +112,7 @@ export class UsersService {
     user.profile = profile;
     user.completedSections = completedSections;
     user.profileCompleted = profileCompleted;
+    user.markModified('profile');
 
     return user.save();
   }
