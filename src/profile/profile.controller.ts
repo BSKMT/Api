@@ -3,6 +3,7 @@ import {
   Get,
   Put,
   Delete,
+  Post,
   Body,
   Req,
   UseGuards,
@@ -39,7 +40,15 @@ export class ProfileController {
       membershipLevel: fullUser.membershipLevel,
       role: fullUser.role,
       email: fullUser.email,
+      legalConsentAccepted: fullUser.legalConsentAccepted ?? false,
     };
+  }
+
+  @Post('legal-consent')
+  async acceptLegalConsent(@Req() req: Request) {
+    const user = req.user as { userId: string };
+    const updated = await this.usersService.acceptLegalConsent(user.userId);
+    return { legalConsentAccepted: updated.legalConsentAccepted };
   }
 
   @Put()

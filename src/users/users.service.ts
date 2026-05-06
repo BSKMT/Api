@@ -15,6 +15,13 @@ import {
 } from './schemas/user.schema';
 import { RegisterDto } from '../auth/dto/register.dto';
 
+function getColombiaDate(): string {
+  const now = new Date();
+  const offset = now.getTimezoneOffset();
+  const colombiaMs = now.getTime() + (offset + 300) * 60000;
+  return new Date(colombiaMs).toISOString().split('T')[0];
+}
+
 async function generateMemberNumber(userModel: Model<UserDocument>): Promise<string> {
   const lastUser = await userModel
     .find({ membershipLevel: { $ne: null } })
@@ -106,7 +113,7 @@ export class UsersService {
 
       const memSection = profile['membresia-ecosistema'] ?? {};
       if (!memSection.fechaIngreso) {
-        memSection.fechaIngreso = new Date().toISOString().split('T')[0];
+        memSection.fechaIngreso = getColombiaDate();
       }
       if (!memSection.numeroMiembro) {
         memSection.numeroMiembro = await generateMemberNumber(this.userModel);
@@ -122,6 +129,15 @@ export class UsersService {
     user.profileCompleted = profileCompleted;
     user.markModified('profile');
 
+    return user.save();
+  }
+
+  async acceptLegalConsent(userId: string): Promise<UserDocument> {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+    user.legalConsentAccepted = true;
     return user.save();
   }
 

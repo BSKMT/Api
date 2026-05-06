@@ -10,7 +10,6 @@ const REQUIRED_PROFILE_SECTIONS = [
   'salud-seguridad',
   'documentacion-legal',
   'membresia-ecosistema',
-  'equipamiento',
   'experiencia-motera',
 ];
 
@@ -36,6 +35,9 @@ export class User {
 
   @Prop({ default: false })
   emailVerified: boolean;
+
+  @Prop({ default: false })
+  legalConsentAccepted: boolean;
 
   @Prop({ default: true })
   isActive: boolean;
