@@ -1,12 +1,12 @@
 import {
-  ExceptionFilter,
-  Catch,
   ArgumentsHost,
+  Catch,
+  ExceptionFilter,
   HttpException,
   HttpStatus,
   Logger,
-} from '@nestjs/common';
-import type { Response } from 'express';
+} from "@nestjs/common";
+import type { Response } from "express";
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -19,16 +19,19 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const exceptionResponse = exception.getResponse();
-
-      const message: string[] =
-        typeof exceptionResponse === 'string'
-          ? [exceptionResponse]
-          : Array.isArray(
-                (exceptionResponse as Record<string, unknown>).message,
-              )
-            ? ((exceptionResponse as Record<string, unknown>)
-                .message as string[])
-            : [JSON.stringify(exceptionResponse)];
+      const message: string[] = [];
+      if (typeof exceptionResponse === "string") {
+        message.push(exceptionResponse);
+      } else if (
+        Array.isArray((exceptionResponse as Record<string, unknown>).message)
+      ) {
+        message.push(
+          ...((exceptionResponse as Record<string, unknown>)
+            .message as string[]),
+        );
+      } else {
+        message.push(JSON.stringify(exceptionResponse));
+      }
 
       if (status >= 500) {
         this.logger.error(
@@ -45,13 +48,13 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     }
 
     this.logger.error(
-      'Unhandled exception',
+      "Unhandled exception",
       exception instanceof Error ? exception.stack : String(exception),
     );
 
     return response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-      message: ['Error interno del servidor'],
+      message: ["Error interno del servidor"],
       timestamp: new Date().toISOString(),
     });
   }

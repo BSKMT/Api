@@ -1,7 +1,7 @@
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsNotEmpty, IsString } from "class-validator";
 
 export class DeleteProfileSectionDto {
   @IsString()
   @IsNotEmpty()
-  sectionId: string;
+  sectionId!: string;
 }

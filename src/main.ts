@@ -1,12 +1,11 @@
-import { NestFactory } from '@nestjs/core';
-import { Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { ValidationPipe } from '@nestjs/common';
-import * as cookieParser from 'cookie-parser';
-import * as helmet from 'helmet';
-import { AppModule } from './app.module';
-import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
-import type { EnvironmentConfig } from './config/config.interface';
+import { Logger, ValidationPipe } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { NestFactory } from "@nestjs/core";
+import * as cookieParser from "cookie-parser";
+import * as helmet from "helmet";
+import { AppModule } from "./app.module";
+import { GlobalExceptionFilter } from "./common/filters/global-exception.filter";
+import type { EnvironmentConfig } from "./config/config.interface";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -17,18 +16,19 @@ async function bootstrap() {
 
   app.use(helmet.default());
 
-  const corsOrigin = configService.get('CORS_ORIGIN', { infer: true })!;
+  const corsOrigin =
+    configService.get("CORS_ORIGIN", { infer: true }) ?? "https://bskmt.com";
   app.enableCors({
-    origin: [corsOrigin, 'https://bskmt.com'],
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    origin: [corsOrigin, "https://bskmt.com"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-TOKEN'],
-    exposedHeaders: ['X-CSRF-TOKEN'],
+    allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-TOKEN"],
+    exposedHeaders: ["X-CSRF-TOKEN"],
     maxAge: 86400,
   });
 
   app.use(
-    cookieParser.default(configService.get('CSRF_SECRET', { infer: true })),
+    cookieParser.default(configService.get("CSRF_SECRET", { infer: true })),
   );
 
   app.useGlobalPipes(
@@ -42,13 +42,13 @@ async function bootstrap() {
 
   app.useGlobalFilters(new GlobalExceptionFilter());
 
-  app.setGlobalPrefix('api', {
-    exclude: ['/'],
+  app.setGlobalPrefix("api", {
+    exclude: ["/"],
   });
 
-  const port: number = configService.get<number>('PORT', 3000)!;
+  const port = Number(configService.get<number>("PORT", 3000) ?? 3000);
   await app.listen(port);
 
-  new Logger('Bootstrap').log(`BSKMT API running on port ${port}`);
+  new Logger("Bootstrap").log(`BSKMT API running on port ${port}`);
 }
 void bootstrap();

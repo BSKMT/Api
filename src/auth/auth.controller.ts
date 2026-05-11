@@ -8,26 +8,26 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
-} from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import type { Request, Response } from 'express';
-import { AuthService } from './auth.service';
-import { LocalAuthGuard } from './guards/local-auth.guard';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { RegisterDto } from './dto/register.dto';
-import { UsersService } from '../users/users.service';
-import type { EnvironmentConfig } from '../config/config.interface';
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import type { Request, Response } from "express";
+import { AuthService } from "./auth.service";
+import { LocalAuthGuard } from "./guards/local-auth.guard";
+import { JwtAuthGuard } from "./guards/jwt-auth.guard";
+import { RegisterDto } from "./dto/register.dto";
+import { UsersService } from "../users/users.service";
+import type { EnvironmentConfig } from "../config/config.interface";
 
-@Controller('auth')
+@Controller("auth")
 export class AuthController {
   constructor(
-    private authService: AuthService,
-    private configService: ConfigService<EnvironmentConfig>,
-    private usersService: UsersService,
+    private readonly authService: AuthService,
+    private readonly configService: ConfigService<EnvironmentConfig>,
+    private readonly usersService: UsersService,
   ) {}
 
   @UseGuards(LocalAuthGuard)
-  @Post('login')
+  @Post("login")
   @HttpCode(HttpStatus.OK)
   async login(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const { userId, email } = req.user as { userId: string; email: string };
@@ -36,7 +36,7 @@ export class AuthController {
     return { user: tokens.user };
   }
 
-  @Post('register')
+  @Post("register")
   async register(
     @Body() dto: RegisterDto,
     @Res({ passthrough: true }) res: Response,
@@ -47,17 +47,18 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Post('refresh')
+  @Post("refresh")
   @HttpCode(HttpStatus.OK)
   async refresh(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     const user = req.user as { userId: string; email: string } | undefined;
-    if (!user) throw new Error('Not authenticated');
-    const refreshToken = req.cookies?.['refresh_token'] as string | undefined;
-    if (!refreshToken) {
-      throw new Error('No refresh token');
+    if (!user) throw new TypeError("Not authenticated");
+    const refreshToken = (req.cookies as Record<string, unknown>)
+      ?.refresh_token;
+    if (typeof refreshToken !== "string") {
+      throw new TypeError("No refresh token");
     }
     const tokens = await this.authService.refreshTokens(
       user.userId,
@@ -68,7 +69,7 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Post('logout')
+  @Post("logout")
   @HttpCode(HttpStatus.NO_CONTENT)
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const user = req.user as { userId: string };
@@ -77,16 +78,24 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Get('me')
+  @Get("me")
   async me(@Req() req: Request) {
     const user = req.user as { userId: string; email: string };
     const fullUser = await this.usersService.findById(user.userId);
+    const membershipLevel = fullUser?.membershipLevel;
+    const normalizedMembership =
+      membershipLevel &&
+      ["Friend", "Rider", "Expert", "Master", "Legend"].includes(
+        membershipLevel,
+      )
+        ? "Membresia BSK Legacy"
+        : (membershipLevel ?? "Membresia BSK Legacy");
     return {
       userId: user.userId,
       email: user.email,
       profileCompleted: fullUser?.profileCompleted ?? false,
-      membershipLevel: fullUser?.membershipLevel ?? 'Friend',
-      role: fullUser?.role ?? 'user',
+      membershipLevel: normalizedMembership,
+      role: fullUser?.role ?? "user",
       completedSections: fullUser?.completedSections ?? [],
     };
   }
@@ -96,47 +105,53 @@ export class AuthController {
     accessToken: string,
     refreshToken: string,
   ) {
-    const domain = this.configService.get('COOKIE_DOMAIN', { infer: true })!;
-    const secure = this.configService.get<boolean>('COOKIE_SECURE', true)!;
+    const domain =
+      this.configService.get<string>("COOKIE_DOMAIN", { infer: true }) ?? "";
+    const secure = Boolean(
+      this.configService.get<boolean>("COOKIE_SECURE") ?? true,
+    );
 
-    res.cookie('access_token', accessToken, {
+    res.cookie("access_token", accessToken, {
       httpOnly: true,
       secure,
-      sameSite: 'lax',
+      sameSite: "lax",
       domain,
-      path: '/',
+      path: "/",
       maxAge: 15 * 60 * 1000,
     });
 
-    res.cookie('refresh_token', refreshToken, {
+    res.cookie("refresh_token", refreshToken, {
       httpOnly: true,
       secure,
-      sameSite: 'lax',
+      sameSite: "lax",
       domain,
-      path: '/api/auth/refresh',
+      path: "/api/auth/refresh",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
   }
 
   private clearTokenCookies(res: Response) {
-    const domain = this.configService.get('COOKIE_DOMAIN', { infer: true })!;
-    const secure = this.configService.get<boolean>('COOKIE_SECURE', true)!;
+    const domain =
+      this.configService.get<string>("COOKIE_DOMAIN", { infer: true }) ?? "";
+    const secure = Boolean(
+      this.configService.get<boolean>("COOKIE_SECURE") ?? true,
+    );
 
-    res.cookie('access_token', '', {
+    res.cookie("access_token", "", {
       httpOnly: true,
       secure,
-      sameSite: 'lax',
+      sameSite: "lax",
       domain,
-      path: '/',
+      path: "/",
       maxAge: 0,
     });
 
-    res.cookie('refresh_token', '', {
+    res.cookie("refresh_token", "", {
       httpOnly: true,
       secure,
-      sameSite: 'lax',
+      sameSite: "lax",
       domain,
-      path: '/api/auth/refresh',
+      path: "/api/auth/refresh",
       maxAge: 0,
     });
   }

@@ -2,21 +2,36 @@ import {
   Injectable,
   UnauthorizedException,
   BadRequestException,
-} from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
-import * as bcrypt from 'bcrypt';
-import type { StringValue } from 'ms';
-import { UsersService } from '../users/users.service';
-import { RegisterDto } from './dto/register.dto';
-import type { EnvironmentConfig } from '../config/config.interface';
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { JwtService } from "@nestjs/jwt";
+import * as bcrypt from "bcrypt";
+import { UsersService } from "../users/users.service";
+import { RegisterDto } from "./dto/register.dto";
+import type { EnvironmentConfig } from "../config/config.interface";
 
 @Injectable()
 export class AuthService {
+  private readonly defaultMembership = "Membresia BSK Legacy";
+  private readonly legacyMemberships = new Set([
+    "Friend",
+    "Rider",
+    "Expert",
+    "Master",
+    "Legend",
+  ]);
+
+  private normalizeMembership(value?: string | null) {
+    if (!value || this.legacyMemberships.has(value)) {
+      return this.defaultMembership;
+    }
+    return value;
+  }
+
   constructor(
-    private usersService: UsersService,
-    private jwtService: JwtService,
-    private configService: ConfigService<EnvironmentConfig>,
+    private readonly usersService: UsersService,
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService<EnvironmentConfig>,
   ) {}
 
   async validateUser(
@@ -24,7 +39,7 @@ export class AuthService {
     password: string,
   ): Promise<{ userId: string; email: string } | null> {
     const user = await this.usersService.findByEmail(email);
-    if (!user || !user.password || !password) return null;
+    if (!user?.password || !password) return null;
 
     let isValid: boolean;
     try {
@@ -45,8 +60,12 @@ export class AuthService {
       email,
     );
 
-    const saltRounds = this.configService.get<number>('BCRYPT_SALT_ROUNDS', 12)!;
-    const refreshTokenHash = await bcrypt.hash(refreshToken, saltRounds);
+    const saltRounds =
+      this.configService.get<number>("BCRYPT_SALT_ROUNDS", 12) ?? 12;
+    const refreshTokenHash = await bcrypt.hash(
+      refreshToken,
+      Number(saltRounds),
+    );
     await this.usersService.updateRefreshTokenHash(userId, refreshTokenHash);
 
     const fullUser = await this.usersService.findById(userId);
@@ -58,8 +77,10 @@ export class AuthService {
         email,
         userId,
         profileCompleted: fullUser?.profileCompleted ?? false,
-        membershipLevel: fullUser?.membershipLevel ?? null,
-        role: fullUser?.role ?? 'user',
+        membershipLevel: this.normalizeMembership(
+          fullUser?.membershipLevel ?? null,
+        ),
+        role: fullUser?.role ?? "user",
       },
     };
   }
@@ -67,7 +88,7 @@ export class AuthService {
   async register(dto: RegisterDto) {
     if (dto.password !== dto.confirmPassword) {
       throw new BadRequestException(
-        'La contrasena y la confirmacion no coinciden',
+        "La contrasena y la confirmacion no coinciden",
       );
     }
 
@@ -78,8 +99,12 @@ export class AuthService {
       user.email,
     );
 
-    const saltRounds = this.configService.get<number>('BCRYPT_SALT_ROUNDS', 12)!;
-    const refreshTokenHash = await bcrypt.hash(refreshToken, saltRounds);
+    const saltRounds =
+      this.configService.get<number>("BCRYPT_SALT_ROUNDS", 12) ?? 12;
+    const refreshTokenHash = await bcrypt.hash(
+      refreshToken,
+      Number(saltRounds),
+    );
     await this.usersService.updateRefreshTokenHash(
       String(user._id),
       refreshTokenHash,
@@ -92,16 +117,16 @@ export class AuthService {
         email: user.email,
         userId: String(user._id),
         profileCompleted: false,
-        membershipLevel: user.membershipLevel,
-        role: 'user',
+        membershipLevel: this.normalizeMembership(user.membershipLevel),
+        role: "user",
       },
     };
   }
 
   async refreshTokens(userId: string, incomingRefreshToken: string) {
     const user = await this.usersService.findById(userId);
-    if (!user || !user.refreshTokenHash) {
-      throw new UnauthorizedException('Sesion invalida');
+    if (!user?.refreshTokenHash) {
+      throw new UnauthorizedException("Sesion invalida");
     }
 
     const matches = await bcrypt.compare(
@@ -110,7 +135,7 @@ export class AuthService {
     );
     if (!matches) {
       await this.usersService.updateRefreshTokenHash(userId, null);
-      throw new UnauthorizedException('Token de refresco invalido');
+      throw new UnauthorizedException("Token de refresco invalido");
     }
 
     const { accessToken, refreshToken } = await this.generateTokens(
@@ -118,8 +143,9 @@ export class AuthService {
       user.email,
     );
 
-    const saltRounds = this.configService.get<number>('BCRYPT_SALT_ROUNDS', 12)!;
-    const newHash = await bcrypt.hash(refreshToken, saltRounds);
+    const saltRounds =
+      this.configService.get<number>("BCRYPT_SALT_ROUNDS", 12) ?? 12;
+    const newHash = await bcrypt.hash(refreshToken, Number(saltRounds));
     await this.usersService.updateRefreshTokenHash(userId, newHash);
 
     const fullUser = await this.usersService.findById(userId);
@@ -131,8 +157,10 @@ export class AuthService {
         email: user.email,
         userId,
         profileCompleted: fullUser?.profileCompleted ?? false,
-        membershipLevel: fullUser?.membershipLevel ?? null,
-        role: fullUser?.role ?? 'user',
+        membershipLevel: this.normalizeMembership(
+          fullUser?.membershipLevel ?? null,
+        ),
+        role: fullUser?.role ?? "user",
       },
     };
   }
@@ -142,35 +170,36 @@ export class AuthService {
   }
 
   private async generateTokens(userId: string, email: string) {
-    const jwtSecret = this.configService.get('JWT_SECRET', { infer: true })!;
-    const jwtExpiration = this.configService.get('JWT_EXPIRATION', {
-      infer: true,
-    })!;
-    const jwtRefreshSecret = this.configService.get('JWT_REFRESH_SECRET', {
-      infer: true,
-    })!;
-    const jwtRefreshExpiration = this.configService.get(
-      'JWT_REFRESH_EXPIRATION',
-      { infer: true },
-    )!;
+    const jwtSecret =
+      this.configService.get<string>("JWT_SECRET", { infer: true }) ?? "";
+    const jwtExpiration =
+      this.configService.get<string>("JWT_EXPIRATION", { infer: true }) ??
+      "15m";
+    const jwtRefreshSecret =
+      this.configService.get<string>("JWT_REFRESH_SECRET", { infer: true }) ??
+      "";
+    const jwtRefreshExpiration =
+      this.configService.get<string>("JWT_REFRESH_EXPIRATION", {
+        infer: true,
+      }) ?? "7d";
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(
         { sub: userId, email },
         {
           secret: jwtSecret,
-          expiresIn: jwtExpiration as StringValue,
-          issuer: 'api.bskmt.com',
-          audience: 'bskmt.com',
+          expiresIn: jwtExpiration as unknown as number,
+          issuer: "api.bskmt.com",
+          audience: "bskmt.com",
         },
       ),
       this.jwtService.signAsync(
         { sub: userId, email },
         {
           secret: jwtRefreshSecret,
-          expiresIn: jwtRefreshExpiration as StringValue,
-          issuer: 'api.bskmt.com',
-          audience: 'bskmt.com',
+          expiresIn: jwtRefreshExpiration as unknown as number,
+          issuer: "api.bskmt.com",
+          audience: "bskmt.com",
         },
       ),
     ]);
