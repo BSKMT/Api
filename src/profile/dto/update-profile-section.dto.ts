@@ -1,10 +1,10 @@
-import { IsString, IsObject, IsNotEmpty } from 'class-validator';
+import { IsNotEmpty, IsObject, IsString } from "class-validator";
 
 export class UpdateProfileSectionDto {
   @IsString()
   @IsNotEmpty()
-  sectionId: string;
+  sectionId!: string;
 
   @IsObject()
-  data: Record<string, unknown>;
+  data!: Record<string, unknown>;
 }

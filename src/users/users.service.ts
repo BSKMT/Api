@@ -2,27 +2,29 @@ import {
   Injectable,
   ConflictException,
   NotFoundException,
-} from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import * as bcrypt from 'bcrypt';
-import { ConfigService } from '@nestjs/config';
-import type { EnvironmentConfig } from '../config/config.interface';
+} from "@nestjs/common";
+import { InjectModel } from "@nestjs/mongoose";
+import { Model } from "mongoose";
+import * as bcrypt from "bcrypt";
+import { ConfigService } from "@nestjs/config";
+import type { EnvironmentConfig } from "../config/config.interface";
 import {
   User,
   UserDocument,
   REQUIRED_PROFILE_SECTIONS,
-} from './schemas/user.schema';
-import { RegisterDto } from '../auth/dto/register.dto';
+} from "./schemas/user.schema";
+import { RegisterDto } from "../auth/dto/register.dto";
 
 function getColombiaDate(): string {
   const now = new Date();
   const offset = now.getTimezoneOffset();
   const colombiaMs = now.getTime() + (offset + 300) * 60000;
-  return new Date(colombiaMs).toISOString().split('T')[0];
+  return new Date(colombiaMs).toISOString().split("T")[0];
 }
 
-async function generateMemberNumber(userModel: Model<UserDocument>): Promise<string> {
+async function generateMemberNumber(
+  userModel: Model<UserDocument>,
+): Promise<string> {
   const lastUser = await userModel
     .find({ membershipLevel: { $ne: null } })
     .sort({ createdAt: -1 })
@@ -31,22 +33,22 @@ async function generateMemberNumber(userModel: Model<UserDocument>): Promise<str
 
   let nextNum = 1;
   if (lastUser && lastUser.length > 0) {
-    const lastProfile = lastUser[0].profile?.['membresia-ecosistema'];
+    const lastProfile = lastUser[0].profile?.["membresia-ecosistema"];
     const lastNum = lastProfile?.numeroMiembro;
-    if (lastNum) {
-      const match = String(lastNum).match(/BSK-(\d+)/);
-      if (match) nextNum = parseInt(match[1], 10) + 1;
+    if (typeof lastNum === "string") {
+      const match = /BSK-(\d+)/.exec(lastNum);
+      if (match) nextNum = Number.parseInt(match[1], 10) + 1;
     }
   }
 
-  return `BSK-${String(nextNum).padStart(4, '0')}`;
+  return `BSK-${String(nextNum).padStart(4, "0")}`;
 }
 
 @Injectable()
 export class UsersService {
   constructor(
-    @InjectModel(User.name) private userModel: Model<UserDocument>,
-    private configService: ConfigService<EnvironmentConfig>,
+    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+    private readonly configService: ConfigService<EnvironmentConfig>,
   ) {}
 
   async findByEmail(email: string): Promise<UserDocument | null> {
@@ -60,17 +62,18 @@ export class UsersService {
   async create(dto: RegisterDto): Promise<UserDocument> {
     const existing = await this.findByEmail(dto.email);
     if (existing) {
-      throw new ConflictException('El correo electronico ya esta registrado');
+      throw new ConflictException("El correo electronico ya esta registrado");
     }
 
-    const saltRounds = this.configService.get<number>('BCRYPT_SALT_ROUNDS', 12)!;
-    const passwordHash = await bcrypt.hash(dto.password, saltRounds);
+    const saltRounds =
+      this.configService.get<number>("BCRYPT_SALT_ROUNDS", 12) ?? 12;
+    const passwordHash = await bcrypt.hash(dto.password, Number(saltRounds));
 
     const created = new this.userModel({
       email: dto.email.toLowerCase(),
       password: passwordHash,
       membershipLevel: null,
-      role: 'user',
+      role: "user",
       profileCompleted: false,
       completedSections: [],
       profile: {},
@@ -93,7 +96,7 @@ export class UsersService {
   ): Promise<UserDocument> {
     const user = await this.userModel.findById(userId);
     if (!user) {
-      throw new NotFoundException('Usuario no encontrado');
+      throw new NotFoundException("Usuario no encontrado");
     }
 
     const profile = user.profile ?? {};
@@ -109,9 +112,9 @@ export class UsersService {
     );
 
     if (profileCompleted && !user.profileCompleted) {
-      user.membershipLevel = 'Friend';
+      user.membershipLevel = "Membresia BSK Legacy";
 
-      const memSection = profile['membresia-ecosistema'] ?? {};
+      const memSection = profile["membresia-ecosistema"] ?? {};
       if (!memSection.fechaIngreso) {
         memSection.fechaIngreso = getColombiaDate();
       }
@@ -119,15 +122,15 @@ export class UsersService {
         memSection.numeroMiembro = await generateMemberNumber(this.userModel);
       }
       if (!memSection.nivelMembresia) {
-        memSection.nivelMembresia = 'Friend';
+        memSection.nivelMembresia = "Membresia BSK Legacy";
       }
-      profile['membresia-ecosistema'] = memSection;
+      profile["membresia-ecosistema"] = memSection;
     }
 
     user.profile = profile;
     user.completedSections = completedSections;
     user.profileCompleted = profileCompleted;
-    user.markModified('profile');
+    user.markModified("profile");
 
     return user.save();
   }
@@ -135,7 +138,7 @@ export class UsersService {
   async acceptLegalConsent(userId: string): Promise<UserDocument> {
     const user = await this.userModel.findById(userId);
     if (!user) {
-      throw new NotFoundException('Usuario no encontrado');
+      throw new NotFoundException("Usuario no encontrado");
     }
     user.legalConsentAccepted = true;
     return user.save();
@@ -147,7 +150,7 @@ export class UsersService {
   ): Promise<UserDocument> {
     const user = await this.userModel.findById(userId);
     if (!user) {
-      throw new NotFoundException('Usuario no encontrado');
+      throw new NotFoundException("Usuario no encontrado");
     }
 
     const profile = user.profile ?? {};
@@ -164,7 +167,7 @@ export class UsersService {
     user.profile = profile;
     user.completedSections = completedSections;
     user.profileCompleted = profileCompleted;
-    user.markModified('profile');
+    user.markModified("profile");
 
     return user.save();
   }
