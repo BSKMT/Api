@@ -42,6 +42,14 @@ export class MembershipService {
     if (!user) throw new NotFoundException("Usuario no encontrado");
 
     const isRenewal = dto.isRenewal === true;
+    const now = new Date();
+    const membershipExpired =
+      user.membershipExpiryDate !== null &&
+      new Date(user.membershipExpiryDate) < now;
+    const isInGracePeriod =
+      membershipExpired &&
+      user.membershipGracePeriodEnd !== null &&
+      new Date(user.membershipGracePeriodEnd) > now;
 
     if (isRenewal) {
       if ((user.role as UserRole) !== UserRole.MEMBER) {
@@ -49,21 +57,17 @@ export class MembershipService {
           "Solo los miembros activos pueden renovar anticipadamente",
         );
       }
-      if (
-        user.membershipExpiryDate &&
-        new Date(user.membershipExpiryDate) < new Date()
-      ) {
+      if (membershipExpired) {
         throw new BadRequestException(
-          "Tu membresía ya expiró. Debe comprar una nueva membresía, no una renovación.",
+          isInGracePeriod
+            ? "Tu membresía expiró pero estás en periodo de gracia. Compra una nueva membresía, no una renovación."
+            : "Tu membresía ya expiró. Debe comprar una nueva membresía, no una renovación.",
         );
       }
     }
 
     if (!isRenewal && (user.role as UserRole) === UserRole.MEMBER) {
-      if (
-        user.membershipExpiryDate &&
-        new Date(user.membershipExpiryDate) > new Date()
-      ) {
+      if (!membershipExpired) {
         throw new BadRequestException(
           "Ya tienes una membresía activa. Usa la opción de renovación anticipada.",
         );
@@ -355,6 +359,11 @@ export class MembershipService {
       user.membershipExpiryDate !== null &&
       new Date(user.membershipExpiryDate) < now;
 
+    const isInGracePeriod =
+      isExpired &&
+      user.membershipGracePeriodEnd !== null &&
+      new Date(user.membershipGracePeriodEnd) > now;
+
     const transactions = await this.transactionModel
       .find({ userId })
       .sort({ createdAt: -1 })
@@ -365,7 +374,10 @@ export class MembershipService {
       membershipLevel: user.membershipLevel,
       membershipStartDate: user.membershipStartDate,
       membershipExpiryDate: user.membershipExpiryDate,
+      membershipGracePeriodEnd: user.membershipGracePeriodEnd,
       isExpired,
+      isInGracePeriod,
+      membershipExpired: user.membershipExpired,
       membershipPaymentPlan: user.membershipPaymentPlan,
       installmentsPaid: user.installmentsPaid,
       installmentsTotal: user.installmentsTotal,

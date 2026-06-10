@@ -85,6 +85,12 @@ export class User {
 
   @Prop({ default: 0 })
   renewalInstallmentsPaid!: number;
+
+  @Prop({ type: Date, default: null })
+  membershipGracePeriodEnd!: Date | null;
+
+  @Prop({ default: false })
+  membershipExpired!: boolean;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
