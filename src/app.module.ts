@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { APP_GUARD } from "@nestjs/core";
 import { MongooseModule } from "@nestjs/mongoose";
+import { ScheduleModule } from "@nestjs/schedule";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { AuthModule } from "./auth/auth.module";
 import { B2bModule } from "./b2b/b2b.module";
@@ -9,6 +10,7 @@ import { configValidationSchema } from "./config/config.validation";
 import { CsrfModule } from "./csrf/csrf.module";
 import { EventsModule } from "./events/events.module";
 import { MembershipModule } from "./membership/membership.module";
+import { MembershipExpirationModule } from "./membership/membership-expiration.module";
 import { PanelModule } from "./panel/panel.module";
 import { PaymentsModule } from "./payments/payments.module";
 import { ProfileModule } from "./profile/profile.module";
@@ -26,6 +28,7 @@ import { UsersModule } from "./users/users.module";
         uri: process.env.MONGODB_URI!,
       }),
     }),
+    ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([
       {
         name: "short",
@@ -51,6 +54,7 @@ import { UsersModule } from "./users/users.module";
     EventsModule,
     PaymentsModule,
     MembershipModule,
+    MembershipExpirationModule,
     CsrfModule,
   ],
   providers: [

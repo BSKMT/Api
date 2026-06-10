@@ -186,6 +186,8 @@ export class UsersService {
     user.membershipPaymentPlan = paymentPlan;
     user.installmentsPaid =
       paymentPlan === "single" ? 12 : user.installmentsPaid;
+    user.membershipGracePeriodEnd = null;
+    user.membershipExpired = false;
 
     return user.save();
   }
