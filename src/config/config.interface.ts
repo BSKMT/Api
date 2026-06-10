@@ -10,4 +10,8 @@ export interface EnvironmentConfig {
   PORT: number;
   CSRF_SECRET: string;
   BCRYPT_SALT_ROUNDS: number;
+  BOLD_IDENTITY_KEY: string;
+  BOLD_SECRET_KEY: string;
+  BOLD_PUBLIC_KEY: string;
+  BOLD_ENVIRONMENT: string;
 }

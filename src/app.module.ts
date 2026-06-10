@@ -4,8 +4,11 @@ import { APP_GUARD } from "@nestjs/core";
 import { MongooseModule } from "@nestjs/mongoose";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { AuthModule } from "./auth/auth.module";
+import { B2bModule } from "./b2b/b2b.module";
 import { configValidationSchema } from "./config/config.validation";
+import { EventsModule } from "./events/events.module";
 import { PanelModule } from "./panel/panel.module";
+import { PaymentsModule } from "./payments/payments.module";
 import { ProfileModule } from "./profile/profile.module";
 import { UsersModule } from "./users/users.module";
 
@@ -42,6 +45,9 @@ import { UsersModule } from "./users/users.module";
     UsersModule,
     ProfileModule,
     PanelModule,
+    B2bModule,
+    EventsModule,
+    PaymentsModule,
   ],
   providers: [
     {
