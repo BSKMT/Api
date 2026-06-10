@@ -39,7 +39,10 @@ export class EventsService {
 
     let membershipStatus: string;
 
-    if (membershipLevel === "Legend" && dto.registrationType === "professional") {
+    if (
+      membershipLevel === "Legend" &&
+      dto.registrationType === "professional"
+    ) {
       membershipStatus = "active-member";
     } else if (
       dto.registrationType === "professional" &&
@@ -116,14 +119,18 @@ export class EventsService {
       attendanceMode === "solo"
     ) {
       if (!registration.waiverAccepted) {
-        throw new BadRequestException("Debes aceptar la exoneración de responsabilidad");
+        throw new BadRequestException(
+          "Debes aceptar la exoneración de responsabilidad",
+        );
       }
     } else if (
       membershipStatus === "non-member-free" &&
       attendanceMode === "with-companion"
     ) {
       if (!registration.waiverAccepted) {
-        throw new BadRequestException("Debes aceptar la exoneración de responsabilidad");
+        throw new BadRequestException(
+          "Debes aceptar la exoneración de responsabilidad",
+        );
       }
       if (!registration.companionData) {
         throw new BadRequestException("Datos del acompañante requeridos");
@@ -133,7 +140,9 @@ export class EventsService {
     registration.status = "CONFIRMED";
     registration.confirmedAt = new Date();
     const saved = await registration.save();
-    this.logger.log(`Registration confirmed: user=${userId} event=${eventSlug}`);
+    this.logger.log(
+      `Registration confirmed: user=${userId} event=${eventSlug}`,
+    );
     return saved;
   }
 
@@ -170,7 +179,9 @@ export class EventsService {
       throw new NotFoundException("Registro no encontrado");
     }
 
-    this.logger.log(`Companion data submitted: user=${userId} event=${eventSlug}`);
+    this.logger.log(
+      `Companion data submitted: user=${userId} event=${eventSlug}`,
+    );
     return registration;
   }
 

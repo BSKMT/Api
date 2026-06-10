@@ -16,6 +16,8 @@ import { LocalAuthGuard } from "./guards/local-auth.guard";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { RegisterDto } from "./dto/register.dto";
 import { UsersService } from "../users/users.service";
+import { CsrfService } from "../csrf/csrf.service";
+import { Public } from "../common/decorators";
 import type { EnvironmentConfig } from "../config/config.interface";
 
 @Controller("auth")
@@ -24,8 +26,10 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly configService: ConfigService<EnvironmentConfig>,
     private readonly usersService: UsersService,
+    private readonly csrfService: CsrfService,
   ) {}
 
+  @Public()
   @UseGuards(LocalAuthGuard)
   @Post("login")
   @HttpCode(HttpStatus.OK)
@@ -33,9 +37,11 @@ export class AuthController {
     const { userId, email } = req.user as { userId: string; email: string };
     const tokens = await this.authService.generateTokensAndSave(userId, email);
     this.setTokenCookies(res, tokens.accessToken, tokens.refreshToken);
+    this.setCsrfCookie(res);
     return { user: tokens.user };
   }
 
+  @Public()
   @Post("register")
   async register(
     @Body() dto: RegisterDto,
@@ -43,6 +49,7 @@ export class AuthController {
   ) {
     const tokens = await this.authService.register(dto);
     this.setTokenCookies(res, tokens.accessToken, tokens.refreshToken);
+    this.setCsrfCookie(res);
     return { user: tokens.user };
   }
 
@@ -65,6 +72,7 @@ export class AuthController {
       refreshToken,
     );
     this.setTokenCookies(res, tokens.accessToken, tokens.refreshToken);
+    this.setCsrfCookie(res);
     return { user: tokens.user };
   }
 
@@ -98,6 +106,24 @@ export class AuthController {
       role: fullUser?.role ?? "user",
       completedSections: fullUser?.completedSections ?? [],
     };
+  }
+
+  private setCsrfCookie(res: Response) {
+    const token = this.csrfService.generateToken();
+    const domain =
+      this.configService.get<string>("COOKIE_DOMAIN", { infer: true }) ?? "";
+    const secure = Boolean(
+      this.configService.get<boolean>("COOKIE_SECURE") ?? true,
+    );
+
+    res.cookie("csrf_token", token, {
+      httpOnly: false,
+      secure,
+      sameSite: "lax",
+      domain,
+      path: "/",
+      maxAge: 24 * 60 * 60 * 1000,
+    });
   }
 
   private setTokenCookies(
@@ -152,6 +178,15 @@ export class AuthController {
       sameSite: "lax",
       domain,
       path: "/api/auth/refresh",
+      maxAge: 0,
+    });
+
+    res.cookie("csrf_token", "", {
+      httpOnly: false,
+      secure,
+      sameSite: "lax",
+      domain,
+      path: "/",
       maxAge: 0,
     });
   }

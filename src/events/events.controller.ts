@@ -8,6 +8,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  BadRequestException,
 } from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -27,10 +28,7 @@ export class EventsController {
 
   @Post("register")
   @HttpCode(HttpStatus.CREATED)
-  async registerForEvent(
-    @Req() req: Request,
-    @Body() dto: RegisterEventDto,
-  ) {
+  async registerForEvent(@Req() req: Request, @Body() dto: RegisterEventDto) {
     const user = req.user as { userId: string };
     const fullUser = await this.usersService.findById(user.userId);
     const membershipLevel = fullUser?.membershipLevel ?? null;
@@ -57,6 +55,11 @@ export class EventsController {
     @Body("eventSlug") eventSlug: string,
     @Body() dto: AcceptWaiverDto,
   ) {
+    if (!dto.waiverAccepted) {
+      throw new BadRequestException(
+        "Debes aceptar la exoneración de responsabilidad",
+      );
+    }
     const user = req.user as { userId: string };
     return this.eventsService.acceptWaiver(user.userId, eventSlug);
   }
@@ -68,11 +71,7 @@ export class EventsController {
     @Body() dto: SubmitCompanionDto,
   ) {
     const user = req.user as { userId: string };
-    return this.eventsService.submitCompanionData(
-      user.userId,
-      eventSlug,
-      dto,
-    );
+    return this.eventsService.submitCompanionData(user.userId, eventSlug, dto);
   }
 
   @Get("registration/:eventSlug")

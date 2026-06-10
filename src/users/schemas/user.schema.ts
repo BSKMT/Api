@@ -3,6 +3,14 @@ import { Document } from "mongoose";
 
 export type UserDocument = User & Document;
 
+export enum UserRole {
+  USER = "user",
+  ADMIN = "admin",
+  ROAD_CAPTAIN = "road-captain",
+  EVENT_MANAGER = "event-manager",
+  MODERATOR = "moderator",
+}
+
 const REQUIRED_PROFILE_SECTIONS = [
   "datos-personales",
   "contacto",
@@ -27,7 +35,11 @@ export class User {
   @Prop({ type: String, default: null })
   membershipLevel!: string | null;
 
-  @Prop({ default: "user" })
+  @Prop({
+    type: String,
+    enum: Object.values(UserRole),
+    default: UserRole.USER,
+  })
   role!: string;
 
   @Prop({ default: false })

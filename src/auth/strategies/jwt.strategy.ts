@@ -4,6 +4,7 @@ import { PassportStrategy } from "@nestjs/passport";
 import { ExtractJwt, Strategy } from "passport-jwt";
 import type { Request } from "express";
 import type { EnvironmentConfig } from "../../config/config.interface";
+import { UsersService } from "../../users/users.service";
 
 interface JwtPayload {
   sub: string;
@@ -16,6 +17,7 @@ interface JwtPayload {
 export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
   constructor(
     private readonly configService: ConfigService<EnvironmentConfig>,
+    private readonly usersService: UsersService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
@@ -32,10 +34,14 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
     });
   }
 
-  validate(payload: JwtPayload) {
+  async validate(payload: JwtPayload) {
     if (!payload.sub || !payload.email) {
       throw new UnauthorizedException("Token invalido");
     }
-    return { userId: payload.sub, email: payload.email };
+
+    const user = await this.usersService.findById(payload.sub);
+    const role = user?.role ?? "user";
+
+    return { userId: payload.sub, email: payload.email, role };
   }
 }
