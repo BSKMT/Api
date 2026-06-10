@@ -11,6 +11,8 @@ import {
   EventRegistration,
   EventRegistrationDocument,
 } from "./schemas/event-registration.schema";
+import { Event, EventDocument, EventStatus } from "./schemas/event.schema";
+import { Course, CourseDocument, CourseStatus } from "./schemas/course.schema";
 import { RegisterEventDto } from "./dto/register-event.dto";
 import { SubmitCompanionDto } from "./dto/submit-companion.dto";
 
@@ -21,6 +23,10 @@ export class EventsService {
   constructor(
     @InjectModel(EventRegistration.name)
     private eventRegistrationModel: Model<EventRegistrationDocument>,
+    @InjectModel(Event.name)
+    private eventModel: Model<EventDocument>,
+    @InjectModel(Course.name)
+    private courseModel: Model<CourseDocument>,
   ) {}
 
   async registerForEvent(
@@ -217,5 +223,70 @@ export class EventsService {
     userId: string,
   ): Promise<EventRegistrationDocument[]> {
     return this.eventRegistrationModel.find({ userId }).sort({ createdAt: -1 });
+  }
+
+  async getUpcomingEvents(limit: number = 6): Promise<EventDocument[]> {
+    const now = new Date();
+    return this.eventModel
+      .find({
+        status: EventStatus.PUBLISHED,
+        date: { $gte: now },
+      })
+      .sort({ date: 1 })
+      .limit(limit)
+      .lean();
+  }
+
+  async getFeaturedEvents(limit: number = 3): Promise<EventDocument[]> {
+    const now = new Date();
+    return this.eventModel
+      .find({
+        status: EventStatus.PUBLISHED,
+        featured: true,
+        date: { $gte: now },
+      })
+      .sort({ date: 1 })
+      .limit(limit)
+      .lean();
+  }
+
+  async getEventBySlug(slug: string): Promise<EventDocument | null> {
+    return this.eventModel
+      .findOne({ slug, status: EventStatus.PUBLISHED })
+      .lean();
+  }
+
+  async getAvailableCourses(limit: number = 6): Promise<CourseDocument[]> {
+    return this.courseModel
+      .find({ status: CourseStatus.PUBLISHED })
+      .sort({ featured: -1, title: 1 })
+      .limit(limit)
+      .lean();
+  }
+
+  async getCourseBySlug(slug: string): Promise<CourseDocument | null> {
+    return this.courseModel
+      .findOne({ slug, status: CourseStatus.PUBLISHED })
+      .lean();
+  }
+
+  async getEventStats() {
+    const now = new Date();
+    const totalEvents = await this.eventModel.countDocuments({
+      status: EventStatus.PUBLISHED,
+    });
+    const upcomingEvents = await this.eventModel.countDocuments({
+      status: EventStatus.PUBLISHED,
+      date: { $gte: now },
+    });
+    const totalCourses = await this.courseModel.countDocuments({
+      status: CourseStatus.PUBLISHED,
+    });
+
+    return {
+      totalEvents,
+      upcomingEvents,
+      totalCourses,
+    };
   }
 }
