@@ -16,6 +16,7 @@ import { PaymentsService } from "./payments.service";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
 import { SubmitCompanionDto } from "./dto/submit-companion.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { SkipCsrf } from "../common/decorators";
 
 @Controller("payments")
 export class PaymentsController {
@@ -29,9 +30,10 @@ export class PaymentsController {
     return this.paymentsService.createPayment(userId, dto);
   }
 
+  @SkipCsrf()
   @Post("webhook")
   @HttpCode(HttpStatus.OK)
-  async handleWebhook(
+  handleWebhook(
     @Req() req: Request,
     @Headers("x-bold-signature") signature: string,
   ) {
@@ -44,9 +46,11 @@ export class PaymentsController {
       throw new BadRequestException("Invalid request body");
     }
 
-    void this.paymentsService.handleWebhook(rawBody, signature).catch((err: Error) => {
-      console.error("Webhook processing error:", err.message);
-    });
+    void this.paymentsService
+      .handleWebhook(rawBody, signature)
+      .catch((err: Error) => {
+        console.error("Webhook processing error:", err.message);
+      });
 
     return { received: true };
   }
@@ -70,11 +74,7 @@ export class PaymentsController {
     @Body() dto: SubmitCompanionDto,
   ) {
     const { userId } = req.user as { userId: string };
-    return this.paymentsService.submitCompanionData(
-      userId,
-      reference,
-      dto,
-    );
+    return this.paymentsService.submitCompanionData(userId, reference, dto);
   }
 
   @UseGuards(JwtAuthGuard)

@@ -1,11 +1,13 @@
 import { Controller, Post, Body, HttpCode, HttpStatus } from "@nestjs/common";
 import { B2bService } from "./b2b.service";
 import { B2bContactDto } from "./dto/b2b-contact.dto";
+import { Public } from "../common/decorators";
 
 @Controller("b2b")
 export class B2bController {
   constructor(private readonly b2bService: B2bService) {}
 
+  @Public()
   @Post("contact")
   @HttpCode(HttpStatus.CREATED)
   async submitContact(@Body() dto: B2bContactDto) {

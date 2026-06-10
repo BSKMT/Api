@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
 import * as cookieParser from "cookie-parser";
 import * as helmet from "helmet";
+import { urlencoded } from "express";
 import { AppModule } from "./app.module";
 import { GlobalExceptionFilter } from "./common/filters/global-exception.filter";
 import type { EnvironmentConfig } from "./config/config.interface";
@@ -16,6 +17,8 @@ async function bootstrap() {
   const configService = app.get(ConfigService<EnvironmentConfig>);
 
   app.use(helmet.default());
+
+  app.use(urlencoded({ extended: true, limit: "1mb" }));
 
   const corsOrigin =
     configService.get("CORS_ORIGIN", { infer: true }) ?? "https://bskmt.com";

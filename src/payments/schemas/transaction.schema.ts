@@ -18,8 +18,7 @@ export class CompanionData {
   email: string;
 }
 
-export const CompanionDataSchema =
-  SchemaFactory.createForClass(CompanionData);
+export const CompanionDataSchema = SchemaFactory.createForClass(CompanionData);
 
 @Schema({ _id: false })
 export class WebhookEvent {

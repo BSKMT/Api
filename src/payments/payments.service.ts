@@ -9,10 +9,7 @@ import { InjectModel } from "@nestjs/mongoose";
 import { ConfigService } from "@nestjs/config";
 import { Model } from "mongoose";
 import * as crypto from "crypto";
-import {
-  Transaction,
-  TransactionDocument,
-} from "./schemas/transaction.schema";
+import { Transaction, TransactionDocument } from "./schemas/transaction.schema";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
 import { SubmitCompanionDto } from "./dto/submit-companion.dto";
 import type { EnvironmentConfig } from "../config/config.interface";
@@ -121,10 +118,7 @@ export class PaymentsService {
     };
   }
 
-  async handleWebhook(
-    rawBody: Buffer,
-    signature: string,
-  ): Promise<void> {
+  async handleWebhook(rawBody: Buffer, signature: string): Promise<void> {
     const secretKey = this.configService.get("BOLD_SECRET_KEY", {
       infer: true,
     })!;
@@ -265,9 +259,7 @@ export class PaymentsService {
     }
 
     if (!transaction.hasCompanion) {
-      throw new BadRequestException(
-        "Esta transacción no incluye acompañante",
-      );
+      throw new BadRequestException("Esta transacción no incluye acompañante");
     }
 
     if (transaction.companionData) {
@@ -284,9 +276,7 @@ export class PaymentsService {
     };
 
     await transaction.save();
-    this.logger.log(
-      `Companion data submitted for reference: ${reference}`,
-    );
+    this.logger.log(`Companion data submitted for reference: ${reference}`);
 
     return { message: "Datos del acompañante registrados exitosamente" };
   }
