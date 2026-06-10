@@ -12,6 +12,7 @@ import * as crypto from "crypto";
 import { Transaction, TransactionDocument } from "./schemas/transaction.schema";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
 import { SubmitCompanionDto } from "./dto/submit-companion.dto";
+import { EventsService } from "../events/events.service";
 import type { EnvironmentConfig } from "../config/config.interface";
 
 const TIER_PRICING: Record<string, number> = {
@@ -38,6 +39,7 @@ export class PaymentsService {
     @InjectModel(Transaction.name)
     private transactionModel: Model<TransactionDocument>,
     private configService: ConfigService<EnvironmentConfig>,
+    private eventsService: EventsService,
   ) {}
 
   async createPayment(userId: string, dto: CreatePaymentDto) {
@@ -220,6 +222,23 @@ export class PaymentsService {
     this.logger.log(
       `Webhook processed: ${eventType} for reference: ${referenceId}`,
     );
+
+    if (eventType === "PAYMENT_APPROVED") {
+      try {
+        await this.eventsService.linkPayment(
+          transaction.userId,
+          transaction.eventSlug,
+          transaction.reference,
+        );
+        this.logger.log(
+          `Event registration payment linked: user=${transaction.userId} event=${transaction.eventSlug}`,
+        );
+      } catch (err: unknown) {
+        this.logger.warn(
+          `Failed to link payment to event registration: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
   }
 
   async getTransactionStatus(userId: string, reference: string) {
