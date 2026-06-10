@@ -90,19 +90,11 @@ export class AuthController {
   async me(@Req() req: Request) {
     const user = req.user as { userId: string; email: string };
     const fullUser = await this.usersService.findById(user.userId);
-    const membershipLevel = fullUser?.membershipLevel;
-    const normalizedMembership =
-      membershipLevel &&
-      ["Friend", "Rider", "Expert", "Master", "Legend"].includes(
-        membershipLevel,
-      )
-        ? "Membresia BSK Legacy"
-        : (membershipLevel ?? "Membresia BSK Legacy");
     return {
       userId: user.userId,
       email: user.email,
       profileCompleted: fullUser?.profileCompleted ?? false,
-      membershipLevel: normalizedMembership,
+      membershipLevel: fullUser?.membershipLevel ?? null,
       role: fullUser?.role ?? "user",
       completedSections: fullUser?.completedSections ?? [],
     };
