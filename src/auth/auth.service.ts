@@ -12,22 +12,6 @@ import type { EnvironmentConfig } from "../config/config.interface";
 
 @Injectable()
 export class AuthService {
-  private readonly defaultMembership = "Membresia BSK Legacy";
-  private readonly legacyMemberships = new Set([
-    "Friend",
-    "Rider",
-    "Expert",
-    "Master",
-    "Legend",
-  ]);
-
-  private normalizeMembership(value?: string | null) {
-    if (!value || this.legacyMemberships.has(value)) {
-      return this.defaultMembership;
-    }
-    return value;
-  }
-
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
@@ -77,9 +61,7 @@ export class AuthService {
         email,
         userId,
         profileCompleted: fullUser?.profileCompleted ?? false,
-        membershipLevel: this.normalizeMembership(
-          fullUser?.membershipLevel ?? null,
-        ),
+        membershipLevel: fullUser?.membershipLevel ?? null,
         role: fullUser?.role ?? "user",
       },
     };
@@ -117,7 +99,7 @@ export class AuthService {
         email: user.email,
         userId: String(user._id),
         profileCompleted: false,
-        membershipLevel: this.normalizeMembership(user.membershipLevel),
+        membershipLevel: null,
         role: "user",
       },
     };
@@ -157,9 +139,7 @@ export class AuthService {
         email: user.email,
         userId,
         profileCompleted: fullUser?.profileCompleted ?? false,
-        membershipLevel: this.normalizeMembership(
-          fullUser?.membershipLevel ?? null,
-        ),
+        membershipLevel: fullUser?.membershipLevel ?? null,
         role: fullUser?.role ?? "user",
       },
     };

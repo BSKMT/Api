@@ -11,6 +11,7 @@ import type { EnvironmentConfig } from "../config/config.interface";
 import {
   User,
   UserDocument,
+  UserRole,
   REQUIRED_PROFILE_SECTIONS,
 } from "./schemas/user.schema";
 import { RegisterDto } from "../auth/dto/register.dto";
@@ -112,17 +113,12 @@ export class UsersService {
     );
 
     if (profileCompleted && !user.profileCompleted) {
-      user.membershipLevel = "Membresia BSK Legacy";
-
       const memSection = profile["membresia-ecosistema"] ?? {};
       if (!memSection.fechaIngreso) {
         memSection.fechaIngreso = getColombiaDate();
       }
       if (!memSection.numeroMiembro) {
         memSection.numeroMiembro = await generateMemberNumber(this.userModel);
-      }
-      if (!memSection.nivelMembresia) {
-        memSection.nivelMembresia = "Membresia BSK Legacy";
       }
       profile["membresia-ecosistema"] = memSection;
     }
@@ -170,5 +166,44 @@ export class UsersService {
     user.markModified("profile");
 
     return user.save();
+  }
+
+  async activateMembership(
+    userId: string,
+    startDate: Date,
+    expiryDate: Date,
+    paymentPlan: string,
+  ): Promise<UserDocument> {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException("Usuario no encontrado");
+    }
+
+    user.role = UserRole.MEMBER;
+    user.membershipLevel = "Legend";
+    user.membershipStartDate = startDate;
+    user.membershipExpiryDate = expiryDate;
+    user.membershipPaymentPlan = paymentPlan;
+    user.installmentsPaid =
+      paymentPlan === "single" ? 12 : user.installmentsPaid;
+
+    return user.save();
+  }
+
+  async updateInstallmentsPaid(userId: string, count: number): Promise<void> {
+    await this.userModel.updateOne(
+      { _id: userId },
+      { installmentsPaid: count },
+    );
+  }
+
+  async updateMembershipRenewal(
+    userId: string,
+    renewalCount: number,
+  ): Promise<void> {
+    await this.userModel.updateOne(
+      { _id: userId },
+      { renewalInstallmentsPaid: renewalCount },
+    );
   }
 }
