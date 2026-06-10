@@ -12,6 +12,27 @@ export enum UserRole {
   MODERATOR = "moderator",
 }
 
+export enum CreditType {
+  PENDING = "pending",
+  MEMBERSHIP = "membership",
+  SERVICES = "services",
+  REFUND_REQUESTED = "refund-requested",
+  REFUNDED = "refunded",
+}
+
+export interface PartialPaymentCredit {
+  amount: number;
+  installmentsPaid: number;
+  originalCurrency: string;
+  createdAt: Date;
+  type: CreditType;
+  usedAmount: number;
+  expiresAt: Date | null;
+  refundRequestedAt: Date | null;
+  convertedAt: Date | null;
+  notes: string | null;
+}
+
 const REQUIRED_PROFILE_SECTIONS = [
   "datos-personales",
   "contacto",
@@ -91,6 +112,27 @@ export class User {
 
   @Prop({ default: false })
   membershipExpired!: boolean;
+
+  @Prop({
+    type: {
+      amount: { type: Number, default: 0 },
+      installmentsPaid: { type: Number, default: 0 },
+      originalCurrency: { type: String, default: "COP" },
+      createdAt: { type: Date, default: null },
+      type: {
+        type: String,
+        enum: Object.values(CreditType),
+        default: null,
+      },
+      usedAmount: { type: Number, default: 0 },
+      expiresAt: { type: Date, default: null },
+      refundRequestedAt: { type: Date, default: null },
+      convertedAt: { type: Date, default: null },
+      notes: { type: String, default: null },
+    },
+    default: null,
+  })
+  partialPaymentCredit!: PartialPaymentCredit | null;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

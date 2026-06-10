@@ -1,0 +1,5 @@
+export const SINGLE_PAYMENT_AMOUNT = 2_800_000;
+export const INSTALLMENT_AMOUNT = 300_000;
+export const INSTALLMENTS_TOTAL = 12;
+export const MEMBERSHIP_DURATION_MS = 365 * 24 * 60 * 60 * 1000;
+export const CREDIT_EXPIRY_MONTHS = 12;

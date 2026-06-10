@@ -12,6 +12,8 @@ import {
   User,
   UserDocument,
   UserRole,
+  CreditType,
+  PartialPaymentCredit,
   REQUIRED_PROFILE_SECTIONS,
 } from "./schemas/user.schema";
 import { RegisterDto } from "../auth/dto/register.dto";
@@ -206,6 +208,47 @@ export class UsersService {
     await this.userModel.updateOne(
       { _id: userId },
       { renewalInstallmentsPaid: renewalCount },
+    );
+  }
+
+  async updatePartialPaymentCredit(
+    userId: string,
+    credit: PartialPaymentCredit,
+  ): Promise<void> {
+    await this.userModel.updateOne(
+      { _id: userId },
+      { partialPaymentCredit: credit },
+    );
+  }
+
+  async createPartialPaymentCredit(
+    userId: string,
+    amount: number,
+    installmentsPaid: number,
+  ): Promise<void> {
+    const credit: PartialPaymentCredit = {
+      amount,
+      installmentsPaid,
+      originalCurrency: "COP",
+      createdAt: new Date(),
+      type: CreditType.PENDING,
+      usedAmount: 0,
+      expiresAt: null,
+      refundRequestedAt: null,
+      convertedAt: null,
+      notes: `Crédito generado por ${installmentsPaid} cuotas de renovación no completadas`,
+    };
+
+    await this.userModel.updateOne(
+      { _id: userId },
+      { partialPaymentCredit: credit },
+    );
+  }
+
+  async clearPartialPaymentCredit(userId: string): Promise<void> {
+    await this.userModel.updateOne(
+      { _id: userId },
+      { partialPaymentCredit: null },
     );
   }
 }
