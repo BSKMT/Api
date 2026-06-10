@@ -12,4 +12,8 @@ export const configValidationSchema = Joi.object({
   PORT: Joi.number().default(3000),
   CSRF_SECRET: Joi.string().min(32).required(),
   BCRYPT_SALT_ROUNDS: Joi.number().min(10).max(14).default(12),
+  BOLD_IDENTITY_KEY: Joi.string().required(),
+  BOLD_SECRET_KEY: Joi.string().required(),
+  BOLD_PUBLIC_KEY: Joi.string().required(),
+  BOLD_ENVIRONMENT: Joi.string().valid("sandbox", "production").default("sandbox"),
 });

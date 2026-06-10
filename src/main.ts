@@ -10,6 +10,7 @@ import type { EnvironmentConfig } from "./config/config.interface";
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     cors: false,
+    rawBody: true,
   });
 
   const configService = app.get(ConfigService<EnvironmentConfig>);
