@@ -5,6 +5,7 @@ export type UserDocument = User & Document;
 
 export enum UserRole {
   USER = "user",
+  MEMBER = "member",
   ADMIN = "admin",
   ROAD_CAPTAIN = "road-captain",
   EVENT_MANAGER = "event-manager",
@@ -62,6 +63,28 @@ export class User {
 
   @Prop({ default: [] })
   completedSections!: string[];
+
+  @Prop({ type: Date, default: null })
+  membershipStartDate!: Date | null;
+
+  @Prop({ type: Date, default: null })
+  membershipExpiryDate!: Date | null;
+
+  @Prop({
+    type: String,
+    enum: ["single", "installments", null],
+    default: null,
+  })
+  membershipPaymentPlan!: string | null;
+
+  @Prop({ default: 0 })
+  installmentsPaid!: number;
+
+  @Prop({ default: 12 })
+  installmentsTotal!: number;
+
+  @Prop({ default: 0 })
+  renewalInstallmentsPaid!: number;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

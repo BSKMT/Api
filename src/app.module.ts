@@ -8,6 +8,7 @@ import { B2bModule } from "./b2b/b2b.module";
 import { configValidationSchema } from "./config/config.validation";
 import { CsrfModule } from "./csrf/csrf.module";
 import { EventsModule } from "./events/events.module";
+import { MembershipModule } from "./membership/membership.module";
 import { PanelModule } from "./panel/panel.module";
 import { PaymentsModule } from "./payments/payments.module";
 import { ProfileModule } from "./profile/profile.module";
@@ -49,6 +50,7 @@ import { UsersModule } from "./users/users.module";
     B2bModule,
     EventsModule,
     PaymentsModule,
+    MembershipModule,
     CsrfModule,
   ],
   providers: [
