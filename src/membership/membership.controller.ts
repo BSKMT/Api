@@ -15,6 +15,8 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { SkipCsrf } from "../common/decorators";
 import { MembershipService } from "./membership.service";
 import { CreateMembershipPaymentDto } from "./dto/create-membership-payment.dto";
+import { CreditChoiceDto } from "./dto/credit-choice.dto";
+import { UseCreditDto } from "./dto/use-credit.dto";
 
 @Controller("membership")
 export class MembershipController {
@@ -61,5 +63,36 @@ export class MembershipController {
   async getStatus(@Req() req: Request) {
     const { userId } = req.user as { userId: string };
     return this.membershipService.getMembershipStatus(userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("credit")
+  async getCreditBalance(@Req() req: Request) {
+    const { userId } = req.user as { userId: string };
+    return this.membershipService.getCreditBalance(userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("credit/choose")
+  @HttpCode(HttpStatus.OK)
+  async chooseCreditOption(@Req() req: Request, @Body() dto: CreditChoiceDto) {
+    const { userId } = req.user as { userId: string };
+    return this.membershipService.chooseCreditOption(userId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("credit/use")
+  @HttpCode(HttpStatus.OK)
+  async useCredit(@Req() req: Request, @Body() dto: UseCreditDto) {
+    const { userId } = req.user as { userId: string };
+    return this.membershipService.useCredit(userId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("credit/refund")
+  @HttpCode(HttpStatus.OK)
+  async requestRefund(@Req() req: Request) {
+    const { userId } = req.user as { userId: string };
+    return this.membershipService.requestRefund(userId);
   }
 }

@@ -3,6 +3,7 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { User, UserDocument, UserRole } from "../../users/schemas/user.schema";
+import { INSTALLMENT_AMOUNT } from "../membership.constants";
 
 @Injectable()
 export class MembershipExpirationService {
@@ -58,24 +59,62 @@ export class MembershipExpirationService {
       );
 
       for (const member of gracePeriodExpired) {
-        await this.userModel.updateOne(
-          { _id: member._id },
-          {
-            role: UserRole.USER,
-            membershipLevel: null,
-            membershipStartDate: null,
-            membershipExpiryDate: null,
-            membershipPaymentPlan: null,
-            installmentsPaid: 0,
-            renewalInstallmentsPaid: 0,
-            membershipGracePeriodEnd: null,
-            membershipExpired: true,
-          },
-        );
+        const hasPartialRenewal = (member.renewalInstallmentsPaid ?? 0) > 0;
+        const partialRenewalCount = member.renewalInstallmentsPaid ?? 0;
 
-        this.logger.log(
-          `User ${String(member._id)} reverted to user role after grace period expiration`,
-        );
+        if (hasPartialRenewal) {
+          const creditAmount = partialRenewalCount * INSTALLMENT_AMOUNT;
+
+          await this.userModel.updateOne(
+            { _id: member._id },
+            {
+              role: UserRole.USER,
+              membershipLevel: null,
+              membershipStartDate: null,
+              membershipExpiryDate: null,
+              membershipPaymentPlan: null,
+              installmentsPaid: 0,
+              membershipGracePeriodEnd: null,
+              membershipExpired: true,
+              renewalInstallmentsPaid: 0,
+              partialPaymentCredit: {
+                amount: creditAmount,
+                installmentsPaid: partialRenewalCount,
+                originalCurrency: "COP",
+                createdAt: now,
+                type: "pending",
+                usedAmount: 0,
+                expiresAt: null,
+                refundRequestedAt: null,
+                convertedAt: null,
+                notes: `Crédito generado por ${partialRenewalCount} cuotas de renovación no completadas. El usuario debe elegir: crédito para membresía, crédito para servicios, o reembolso.`,
+              },
+            },
+          );
+
+          this.logger.log(
+            `User ${String(member._id)} reverted to user role. ${partialRenewalCount} renewal installments converted to pending credit (${creditAmount} COP). User must choose: membership credit, service credit, or refund.`,
+          );
+        } else {
+          await this.userModel.updateOne(
+            { _id: member._id },
+            {
+              role: UserRole.USER,
+              membershipLevel: null,
+              membershipStartDate: null,
+              membershipExpiryDate: null,
+              membershipPaymentPlan: null,
+              installmentsPaid: 0,
+              membershipGracePeriodEnd: null,
+              membershipExpired: true,
+              renewalInstallmentsPaid: 0,
+            },
+          );
+
+          this.logger.log(
+            `User ${String(member._id)} reverted to user role after grace period expiration`,
+          );
+        }
       }
     }
 

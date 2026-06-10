@@ -6,12 +6,20 @@ import {
   MembershipTransaction,
   MembershipTransactionSchema,
 } from "./schemas/membership-transaction.schema";
+import {
+  ServiceCreditTransaction,
+  ServiceCreditTransactionSchema,
+} from "./schemas/service-credit-transaction.schema";
 import { UsersModule } from "../users/users.module";
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: MembershipTransaction.name, schema: MembershipTransactionSchema },
+      {
+        name: ServiceCreditTransaction.name,
+        schema: ServiceCreditTransactionSchema,
+      },
     ]),
     UsersModule,
   ],

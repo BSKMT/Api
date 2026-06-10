@@ -13,15 +13,25 @@ import {
   MembershipTransaction,
   MembershipTransactionDocument,
 } from "./schemas/membership-transaction.schema";
+import {
+  ServiceCreditTransaction,
+  ServiceCreditTransactionDocument,
+  CreditTransactionType,
+  CreditSource,
+} from "./schemas/service-credit-transaction.schema";
 import { CreateMembershipPaymentDto } from "./dto/create-membership-payment.dto";
+import { CreditChoiceDto } from "./dto/credit-choice.dto";
+import { UseCreditDto } from "./dto/use-credit.dto";
 import { UsersService } from "../users/users.service";
-import { UserRole } from "../users/schemas/user.schema";
+import { UserRole, CreditType } from "../users/schemas/user.schema";
 import type { EnvironmentConfig } from "../config/config.interface";
-
-const SINGLE_PAYMENT_AMOUNT = 2_800_000;
-const INSTALLMENT_AMOUNT = 300_000;
-const INSTALLMENTS_TOTAL = 12;
-const MEMBERSHIP_DURATION_MS = 365 * 24 * 60 * 60 * 1000;
+import {
+  SINGLE_PAYMENT_AMOUNT,
+  INSTALLMENT_AMOUNT,
+  INSTALLMENTS_TOTAL,
+  MEMBERSHIP_DURATION_MS,
+  CREDIT_EXPIRY_MONTHS,
+} from "./membership.constants";
 
 @Injectable()
 export class MembershipService {
@@ -30,6 +40,8 @@ export class MembershipService {
   constructor(
     @InjectModel(MembershipTransaction.name)
     private transactionModel: Model<MembershipTransactionDocument>,
+    @InjectModel(ServiceCreditTransaction.name)
+    private creditTransactionModel: Model<ServiceCreditTransactionDocument>,
     private usersService: UsersService,
     private configService: ConfigService<EnvironmentConfig>,
   ) {}
@@ -74,7 +86,7 @@ export class MembershipService {
       }
     }
 
-    const amount =
+    const totalAmount =
       dto.paymentPlan === "single" ? SINGLE_PAYMENT_AMOUNT : INSTALLMENT_AMOUNT;
 
     const installmentTotal =
@@ -101,6 +113,109 @@ export class MembershipService {
       }
     }
 
+    let creditUsedAmount = 0;
+    let remainingAmount = totalAmount;
+
+    if (dto.useCredit && dto.creditAmount && dto.creditAmount > 0) {
+      const credit = user.partialPaymentCredit;
+      if (!credit || credit.type !== CreditType.MEMBERSHIP) {
+        throw new BadRequestException(
+          "No tienes crédito de membresía disponible",
+        );
+      }
+
+      if (credit.expiresAt && new Date(credit.expiresAt) < now) {
+        throw new BadRequestException("Tu crédito ha expirado");
+      }
+
+      const availableCredit = credit.amount - credit.usedAmount;
+      if (availableCredit <= 0) {
+        throw new BadRequestException(
+          "Tu crédito ya ha sido utilizado por completo",
+        );
+      }
+
+      creditUsedAmount = Math.min(
+        dto.creditAmount,
+        availableCredit,
+        totalAmount,
+      );
+      remainingAmount = totalAmount - creditUsedAmount;
+
+      const newUsedAmount = credit.usedAmount + creditUsedAmount;
+      await this.usersService.updatePartialPaymentCredit(userId, {
+        ...credit,
+        usedAmount: newUsedAmount,
+      });
+
+      const timestamp = Date.now();
+      const shortUserId = userId.slice(-8);
+      const creditRef = `CRU-${shortUserId}-${timestamp}`;
+      await this.creditTransactionModel.create({
+        userId,
+        reference: creditRef,
+        transactionType: CreditTransactionType.CREDIT_USED,
+        creditSource: CreditSource.MEMBERSHIP,
+        amount: creditUsedAmount,
+        description: `Crédito aplicado a ${isRenewal ? "renovación" : "nueva"} membresía — cuota ${installmentNumber}/${installmentTotal}`,
+        metadata: {
+          membershipPaymentPlan: dto.paymentPlan,
+          installmentNumber,
+          isRenewal,
+        },
+      });
+
+      this.logger.log(
+        `Credit applied to membership: user=${userId} creditAmount=${creditUsedAmount} remaining=${remainingAmount}`,
+      );
+
+      if (remainingAmount === 0) {
+        const memTimestamp = Date.now();
+        const memShortUserId = userId.slice(-8);
+        const planPrefix = dto.paymentPlan === "single" ? "MEM" : "MEMI";
+        const renewSuffix = isRenewal ? "R" : "";
+        const reference = `${planPrefix}${renewSuffix}-${memShortUserId}-${installmentNumber}-${memTimestamp}`;
+
+        const transaction = new this.transactionModel({
+          userId,
+          reference,
+          paymentPlan: dto.paymentPlan,
+          amount: totalAmount,
+          installmentNumber,
+          installmentTotal,
+          status: "APPROVED",
+          isRenewal,
+          paidAt: now,
+          paymentMethod: "credit",
+        });
+
+        await transaction.save();
+
+        await this.processApprovedPayment(transaction);
+
+        this.logger.log(
+          `Membership fully paid with credit: user=${userId} reference=${reference}`,
+        );
+
+        return {
+          reference,
+          amount: totalAmount,
+          creditUsed: creditUsedAmount,
+          remainingAmount: 0,
+          status: "APPROVED",
+          installmentNumber,
+          installmentTotal,
+          isRenewal,
+          paidWithCredit: true,
+          description: isRenewal
+            ? `Renovación anticipada membresía BSK — Cuota ${installmentNumber}/${installmentTotal} (pagada con crédito)`
+            : dto.paymentPlan === "single"
+              ? "Membresía Legend BSK — Pago único anual (pagado con crédito)"
+              : `Membresía Legend BSK — Cuota ${installmentNumber}/${installmentTotal} (pagada con crédito)`,
+        };
+      }
+    }
+
     const timestamp = Date.now();
     const shortUserId = userId.slice(-8);
     const planPrefix = dto.paymentPlan === "single" ? "MEM" : "MEMI";
@@ -111,7 +226,7 @@ export class MembershipService {
       userId,
       reference,
       paymentPlan: dto.paymentPlan,
-      amount,
+      amount: remainingAmount,
       installmentNumber,
       installmentTotal,
       status: "PENDING",
@@ -142,16 +257,20 @@ export class MembershipService {
         : `Membresía Legend BSK — Cuota ${installmentNumber}/${installmentTotal}`;
 
     this.logger.log(
-      `Membership payment intent: ${reference} user=${userId} amount=${amount} plan=${dto.paymentPlan} installment=${installmentNumber}/${installmentTotal} renewal=${isRenewal}`,
+      `Membership payment intent: ${reference} user=${userId} amount=${remainingAmount} (total=${totalAmount}, credit=${creditUsedAmount}) plan=${dto.paymentPlan} installment=${installmentNumber}/${installmentTotal} renewal=${isRenewal}`,
     );
 
     return {
       reference,
-      amount,
+      amount: remainingAmount,
+      totalAmount,
+      creditUsed: creditUsedAmount,
+      remainingAmount,
       status: "PENDING",
       installmentNumber,
       installmentTotal,
       isRenewal,
+      paidWithCredit: creditUsedAmount > 0,
       description,
       boldConfig: {
         publicKey: boldPublicKey,
@@ -160,7 +279,7 @@ export class MembershipService {
         baseUrl: boldBaseUrl,
         referenceId: reference,
         description,
-        amount,
+        amount: remainingAmount,
         currency: "COP",
       },
     };
@@ -382,6 +501,7 @@ export class MembershipService {
       installmentsPaid: user.installmentsPaid,
       installmentsTotal: user.installmentsTotal,
       renewalInstallmentsPaid: user.renewalInstallmentsPaid,
+      partialPaymentCredit: user.partialPaymentCredit,
       transactions: transactions.map((t) => ({
         reference: t.reference,
         amount: t.amount,
@@ -393,6 +513,266 @@ export class MembershipService {
         paidAt: t.paidAt,
         createdAt: t.createdAt,
       })),
+    };
+  }
+
+  async chooseCreditOption(userId: string, dto: CreditChoiceDto) {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new NotFoundException("Usuario no encontrado");
+
+    const credit = user.partialPaymentCredit;
+    if (!credit || credit.type !== CreditType.PENDING) {
+      throw new BadRequestException(
+        "No tienes crédito pendiente para administrar",
+      );
+    }
+
+    const availableAmount = credit.amount - credit.usedAmount;
+    if (availableAmount <= 0) {
+      throw new BadRequestException(
+        "Tu crédito ya ha sido utilizado por completo",
+      );
+    }
+
+    const now = new Date();
+    const expiresAt = new Date(now);
+    expiresAt.setMonth(expiresAt.getMonth() + CREDIT_EXPIRY_MONTHS);
+
+    const timestamp = Date.now();
+    const shortUserId = userId.slice(-8);
+    let newType: CreditType;
+    let transactionType: CreditTransactionType;
+    let creditSource: CreditSource;
+    let description: string;
+
+    switch (dto.choice) {
+      case "membership":
+        newType = CreditType.MEMBERSHIP;
+        transactionType = CreditTransactionType.CREDIT_CONVERTED_FROM_RENEWAL;
+        creditSource = CreditSource.MEMBERSHIP;
+        description = `Crédito de renovación parcial convertido en crédito para futura membresía (${credit.installmentsPaid} cuotas)`;
+        break;
+      case "services":
+        newType = CreditType.SERVICES;
+        transactionType = CreditTransactionType.CREDIT_GRANTED;
+        creditSource = CreditSource.SERVICES;
+        description = `Crédito de renovación parcial convertido en crédito para servicios BSK (${credit.installmentsPaid} cuotas)`;
+        break;
+      case "refund":
+        newType = CreditType.REFUND_REQUESTED;
+        transactionType = CreditTransactionType.CREDIT_GRANTED;
+        creditSource = CreditSource.MEMBERSHIP;
+        description = `Solicitud de reembolso para crédito de renovación parcial (${credit.installmentsPaid} cuotas)`;
+        break;
+      default:
+        throw new BadRequestException("Opción de crédito inválida");
+    }
+
+    await this.usersService.updatePartialPaymentCredit(userId, {
+      ...credit,
+      type: newType,
+      convertedAt: now,
+      expiresAt: dto.choice !== "refund" ? expiresAt : null,
+      refundRequestedAt: dto.choice === "refund" ? now : null,
+      notes: description,
+    });
+
+    const reference = `CR-${creditSource.toUpperCase()}-${shortUserId}-${timestamp}`;
+    await this.creditTransactionModel.create({
+      userId,
+      reference,
+      transactionType,
+      creditSource,
+      amount: availableAmount,
+      description,
+      metadata: {
+        installmentsPaid: credit.installmentsPaid,
+        originalCreditAmount: credit.amount,
+      },
+    });
+
+    this.logger.log(
+      `Credit choice processed: user=${userId} choice=${dto.choice} amount=${availableAmount}`,
+    );
+
+    return {
+      success: true,
+      choice: dto.choice,
+      credit: {
+        type: newType,
+        amount: availableAmount,
+        expiresAt: dto.choice !== "refund" ? expiresAt : null,
+        description,
+      },
+    };
+  }
+
+  async useCredit(userId: string, dto: UseCreditDto) {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new NotFoundException("Usuario no encontrado");
+
+    const credit = user.partialPaymentCredit;
+    if (!credit) {
+      throw new BadRequestException("No tienes crédito disponible");
+    }
+
+    const expectedType =
+      dto.creditSource === "membership"
+        ? CreditType.MEMBERSHIP
+        : CreditType.SERVICES;
+
+    if (credit.type !== expectedType) {
+      throw new BadRequestException(
+        `Tu crédito es de tipo ${credit.type}, no ${dto.creditSource}`,
+      );
+    }
+
+    if (credit.expiresAt && new Date(credit.expiresAt) < new Date()) {
+      throw new BadRequestException("Tu crédito ha expirado");
+    }
+
+    const availableAmount = credit.amount - credit.usedAmount;
+    if (availableAmount <= 0) {
+      throw new BadRequestException(
+        "Tu crédito ya ha sido utilizado por completo",
+      );
+    }
+
+    if (dto.amount > availableAmount) {
+      throw new BadRequestException(
+        `El monto solicitado (${dto.amount}) excede tu crédito disponible (${availableAmount})`,
+      );
+    }
+
+    const newUsedAmount = credit.usedAmount + dto.amount;
+    await this.usersService.updatePartialPaymentCredit(userId, {
+      ...credit,
+      usedAmount: newUsedAmount,
+    });
+
+    const timestamp = Date.now();
+    const shortUserId = userId.slice(-8);
+    const reference = `CRU-${shortUserId}-${timestamp}`;
+    await this.creditTransactionModel.create({
+      userId,
+      reference,
+      transactionType: CreditTransactionType.CREDIT_USED,
+      creditSource: dto.creditSource,
+      amount: dto.amount,
+      description: dto.description ?? `Uso de crédito ${dto.creditSource}`,
+    });
+
+    this.logger.log(
+      `Credit used: user=${userId} amount=${dto.amount} source=${dto.creditSource} remaining=${availableAmount - dto.amount}`,
+    );
+
+    return {
+      success: true,
+      amountUsed: dto.amount,
+      remainingCredit: availableAmount - dto.amount,
+      reference,
+    };
+  }
+
+  async getCreditBalance(userId: string) {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new NotFoundException("Usuario no encontrado");
+
+    const credit = user.partialPaymentCredit;
+    if (!credit) {
+      return { hasCredit: false };
+    }
+
+    const availableAmount = credit.amount - credit.usedAmount;
+    const isExpired =
+      credit.expiresAt !== null && new Date(credit.expiresAt) < new Date();
+
+    const transactions = await this.creditTransactionModel
+      .find({ userId })
+      .sort({ createdAt: -1 })
+      .select("-__v");
+
+    return {
+      hasCredit: true,
+      credit: {
+        type: credit.type,
+        totalAmount: credit.amount,
+        usedAmount: credit.usedAmount,
+        availableAmount: isExpired ? 0 : availableAmount,
+        installmentsPaid: credit.installmentsPaid,
+        createdAt: credit.createdAt,
+        convertedAt: credit.convertedAt,
+        expiresAt: credit.expiresAt,
+        isExpired,
+        refundRequestedAt: credit.refundRequestedAt,
+        notes: credit.notes,
+      },
+      transactions: transactions.map((t) => ({
+        reference: t.reference,
+        transactionType: t.transactionType,
+        creditSource: t.creditSource,
+        amount: t.amount,
+        description: t.description,
+        createdAt: t.createdAt,
+      })),
+    };
+  }
+
+  async requestRefund(userId: string) {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new NotFoundException("Usuario no encontrado");
+
+    const credit = user.partialPaymentCredit;
+    if (!credit) {
+      throw new BadRequestException("No tienes crédito disponible");
+    }
+
+    if (credit.type !== CreditType.REFUND_REQUESTED) {
+      throw new BadRequestException(
+        "Primero debes elegir la opción de reembolso desde el panel de créditos",
+      );
+    }
+
+    if (credit.usedAmount > 0) {
+      throw new BadRequestException(
+        "Ya has utilizado parte de tu crédito. No puedes solicitar reembolso",
+      );
+    }
+
+    const timestamp = Date.now();
+    const shortUserId = userId.slice(-8);
+    const reference = `REF-${shortUserId}-${timestamp}`;
+
+    await this.creditTransactionModel.create({
+      userId,
+      reference,
+      transactionType: CreditTransactionType.CREDIT_REFUNDED,
+      creditSource: CreditSource.MEMBERSHIP,
+      amount: credit.amount,
+      description: `Reembolso de crédito de renovación parcial (${credit.installmentsPaid} cuotas)`,
+      metadata: {
+        installmentsPaid: credit.installmentsPaid,
+        status: "pending-admin-approval",
+      },
+    });
+
+    await this.usersService.updatePartialPaymentCredit(userId, {
+      ...credit,
+      type: CreditType.REFUNDED,
+      notes: `Reembolso solicitado - Pendiente aprobación admin. Ref: ${reference}`,
+    });
+
+    this.logger.log(
+      `Refund requested: user=${userId} amount=${credit.amount} ref=${reference}`,
+    );
+
+    return {
+      success: true,
+      reference,
+      amount: credit.amount,
+      status: "pending-admin-approval",
+      message:
+        "Tu solicitud de reembolso ha sido registrada. Un administrador la revisará en los próximos días hábiles.",
     };
   }
 }

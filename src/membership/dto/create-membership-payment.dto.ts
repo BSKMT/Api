@@ -1,4 +1,11 @@
-import { IsString, IsIn, IsBoolean, IsOptional } from "class-validator";
+import {
+  IsString,
+  IsIn,
+  IsBoolean,
+  IsOptional,
+  IsNumber,
+  Min,
+} from "class-validator";
 
 export class CreateMembershipPaymentDto {
   @IsString()
@@ -8,4 +15,13 @@ export class CreateMembershipPaymentDto {
   @IsBoolean()
   @IsOptional()
   isRenewal?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  useCredit?: boolean;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  creditAmount?: number;
 }
