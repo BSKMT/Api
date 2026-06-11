@@ -39,7 +39,6 @@ const REQUIRED_PROFILE_SECTIONS = [
   "motocicleta",
   "salud-seguridad",
   "documentacion-legal",
-  "membresia-ecosistema",
   "experiencia-motera",
 ];
 
