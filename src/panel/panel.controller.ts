@@ -78,7 +78,7 @@ export class PanelController {
       membershipLevel: level,
       profileCompleted: fullUser.profileCompleted,
       completedSectionsCount: completedSections.length,
-      totalSections: 8,
+      totalSections: 7,
     };
 
     const benefits = [
@@ -149,7 +149,7 @@ export class PanelController {
         bullets: [
           `${completedRides} rodadas`,
           `${completedCourses} cursos`,
-          `${completedSections.length}/8 secciones de perfil`,
+          `${completedSections.length}/7 secciones de perfil`,
         ],
       },
     ];
