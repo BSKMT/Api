@@ -129,9 +129,8 @@ export class User {
       convertedAt: { type: Date, default: null },
       notes: { type: String, default: null },
     },
-    default: null,
   })
-  partialPaymentCredit!: PartialPaymentCredit | null;
+  partialPaymentCredit?: PartialPaymentCredit | null;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
