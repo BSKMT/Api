@@ -16,6 +16,6 @@ export const configValidationSchema = Joi.object({
   BOLD_SECRET_KEY: Joi.string().required(),
   BOLD_PUBLIC_KEY: Joi.string().required(),
   BOLD_ENVIRONMENT: Joi.string()
-    .valid("sandbox", "production")
+    .valid("sandbox", "production", "test")
     .default("sandbox"),
 });
