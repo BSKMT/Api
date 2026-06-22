@@ -13,6 +13,7 @@ import {
   CourseFormat,
   CourseStatus,
 } from "./events/schemas/course.schema";
+import { ProductDocument, ProductStatus } from "./shop/schemas/product.schema";
 
 const logger = new Logger("SeedScript");
 
@@ -416,6 +417,93 @@ const coursesSeed = [
   },
 ];
 
+const productsSeed = [
+  {
+    slug: "chaqueta-bsk-stormline",
+    name: "Chaqueta BSK Stormline",
+    collection: "Riding Core",
+    description:
+      "Chaqueta técnica con protección D3O, membrana impermeable y ventilación estratégica.",
+    image: null,
+    publicPrice: 600000,
+    memberDiscountPercent: 20,
+    stock: 15,
+    isNew: true,
+    featured: true,
+    status: ProductStatus.PUBLISHED,
+  },
+  {
+    slug: "guantes-bsk-precision",
+    name: "Guantes BSK Precision",
+    collection: "Performance Lab",
+    description:
+      "Guantes de cuero con protección de nudillos, pantalla táctil y cierre de seguridad.",
+    image: null,
+    publicPrice: 180000,
+    memberDiscountPercent: 20,
+    stock: 28,
+    isNew: false,
+    featured: true,
+    status: ProductStatus.PUBLISHED,
+  },
+  {
+    slug: "botas-bsk-carbon-route",
+    name: "Botas BSK Carbon Route",
+    collection: "Legacy Signature",
+    description:
+      "Botas touring de edición limitada con suela Vibram y protección de tobillo reforzada.",
+    image: null,
+    publicPrice: 700000,
+    memberDiscountPercent: 20,
+    stock: 8,
+    isNew: true,
+    featured: true,
+    status: ProductStatus.PUBLISHED,
+  },
+  {
+    slug: "casco-bsk-aero-pro",
+    name: "Casco BSK Aero Pro",
+    collection: "Performance Lab",
+    description:
+      "Casco integral de fibra de carbono con ventilación avanzada y visor antiempañante.",
+    image: null,
+    publicPrice: 900000,
+    memberDiscountPercent: 20,
+    stock: 12,
+    isNew: false,
+    featured: true,
+    status: ProductStatus.PUBLISHED,
+  },
+  {
+    slug: "pantalon-bsk-touring-pro",
+    name: "Pantalón BSK Touring Pro",
+    collection: "Performance Lab",
+    description:
+      "Pantalón touring con protección reforzada y paneles reflectivos.",
+    image: null,
+    publicPrice: 480000,
+    memberDiscountPercent: 20,
+    stock: 20,
+    isNew: false,
+    featured: false,
+    status: ProductStatus.PUBLISHED,
+  },
+  {
+    slug: "chaleco-bsk-safety",
+    name: "Chaleco BSK Safety",
+    collection: "Riding Core",
+    description:
+      "Chaleco reflectivo de alta visibilidad con protección dorsal integrada.",
+    image: null,
+    publicPrice: 250000,
+    memberDiscountPercent: 20,
+    stock: 35,
+    isNew: false,
+    featured: false,
+    status: ProductStatus.PUBLISHED,
+  },
+];
+
 async function seed() {
   logger.log("Starting database seed...");
 
@@ -423,6 +511,7 @@ async function seed() {
 
   const eventModel = app.get<Model<EventDocument>>("EventModel");
   const courseModel = app.get<Model<CourseDocument>>("CourseModel");
+  const productModel = app.get<Model<ProductDocument>>("ProductModel");
 
   logger.log("Seeding events...");
   for (const eventData of eventsSeed) {
@@ -443,6 +532,17 @@ async function seed() {
       logger.log(`Created course: ${courseData.title}`);
     } else {
       logger.log(`Course already exists: ${courseData.title}`);
+    }
+  }
+
+  logger.log("Seeding shop products...");
+  for (const productData of productsSeed) {
+    const existing = await productModel.findOne({ slug: productData.slug });
+    if (!existing) {
+      await productModel.insertMany([productData]);
+      logger.log(`Created product: ${productData.name}`);
+    } else {
+      logger.log(`Product already exists: ${productData.name}`);
     }
   }
 

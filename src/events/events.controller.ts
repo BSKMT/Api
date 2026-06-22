@@ -120,4 +120,13 @@ export class EventsController {
     const user = req.user as { userId: string };
     return this.eventsService.getRegistrationsByUser(user.userId);
   }
+
+  @Post("cancel")
+  async cancelRegistration(
+    @Req() req: Request,
+    @Body("eventSlug") eventSlug: string,
+  ) {
+    const user = req.user as { userId: string };
+    return this.eventsService.cancelRegistration(user.userId, eventSlug);
+  }
 }

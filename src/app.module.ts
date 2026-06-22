@@ -15,6 +15,8 @@ import { PanelModule } from "./panel/panel.module";
 import { PaymentsModule } from "./payments/payments.module";
 import { ProfileModule } from "./profile/profile.module";
 import { UsersModule } from "./users/users.module";
+import { ArphaModule } from "./arpha/arpha.module";
+import { ShopModule } from "./shop/shop.module";
 
 @Module({
   imports: [
@@ -56,6 +58,8 @@ import { UsersModule } from "./users/users.module";
     MembershipModule,
     MembershipExpirationModule,
     CsrfModule,
+    ArphaModule,
+    ShopModule,
   ],
   providers: [
     {

@@ -1,8 +1,7 @@
-import { IsString, IsIn } from "class-validator";
+import { IsString, IsIn, IsOptional } from "class-validator";
 
 export class CreatePaymentDto {
   @IsString()
-  @IsIn(["rrf-training-bskmt"])
   eventSlug: string;
 
   @IsString()
@@ -13,4 +12,8 @@ export class CreatePaymentDto {
     "non-member-companion",
   ])
   tier: string;
+
+  @IsString()
+  @IsOptional()
+  productSlug?: string;
 }

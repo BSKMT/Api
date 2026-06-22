@@ -75,6 +75,12 @@ export class Transaction {
   @Prop({ type: [WebhookEventSchema], default: [] })
   webhookEvents: WebhookEvent[];
 
+  @Prop({ type: String, default: "event" })
+  purpose: string;
+
+  @Prop({ type: String, default: null })
+  relatedReference: string | null;
+
   createdAt: Date;
 
   updatedAt: Date;

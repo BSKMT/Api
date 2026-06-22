@@ -13,6 +13,10 @@ import {
 } from "./schemas/event-registration.schema";
 import { Event, EventDocument, EventStatus } from "./schemas/event.schema";
 import { Course, CourseDocument, CourseStatus } from "./schemas/course.schema";
+import {
+  CourseEnrollment,
+  CourseEnrollmentDocument,
+} from "./schemas/course-enrollment.schema";
 import { RegisterEventDto } from "./dto/register-event.dto";
 import { SubmitCompanionDto } from "./dto/submit-companion.dto";
 
@@ -27,6 +31,8 @@ export class EventsService {
     private eventModel: Model<EventDocument>,
     @InjectModel(Course.name)
     private courseModel: Model<CourseDocument>,
+    @InjectModel(CourseEnrollment.name)
+    private courseEnrollmentModel: Model<CourseEnrollmentDocument>,
   ) {}
 
   async registerForEvent(
@@ -288,5 +294,180 @@ export class EventsService {
       upcomingEvents,
       totalCourses,
     };
+  }
+
+  async cancelRegistration(
+    userId: string,
+    eventSlug: string,
+  ): Promise<{ message: string }> {
+    const registration = await this.eventRegistrationModel.findOne({
+      userId,
+      eventSlug,
+    });
+
+    if (!registration) {
+      throw new NotFoundException("Registro no encontrado");
+    }
+
+    if (registration.status === "CANCELLED") {
+      throw new BadRequestException("El registro ya está cancelado");
+    }
+
+    registration.status = "CANCELLED";
+    registration.confirmedAt = null;
+    await registration.save();
+
+    this.logger.log(
+      `Registration cancelled: user=${userId} event=${eventSlug}`,
+    );
+
+    return { message: "Registro cancelado exitosamente" };
+  }
+
+  async enrollInCourse(
+    userId: string,
+    courseSlug: string,
+    membershipLevel: string | null,
+  ): Promise<CourseEnrollmentDocument> {
+    const course = await this.courseModel.findOne({
+      slug: courseSlug,
+      status: CourseStatus.PUBLISHED,
+    });
+
+    if (!course) {
+      throw new NotFoundException("Curso no encontrado");
+    }
+
+    const existing = await this.courseEnrollmentModel.findOne({
+      userId,
+      courseSlug,
+    });
+
+    if (existing) {
+      throw new ConflictException("Ya estás inscrito en este curso");
+    }
+
+    const isMember =
+      membershipLevel === "Legend" ||
+      membershipLevel === "Friend" ||
+      membershipLevel === "Rider" ||
+      membershipLevel === "Expert" ||
+      membershipLevel === "Master";
+
+    const requiresPayment = !course.membersFree && !isMember;
+
+    const enrollment = new this.courseEnrollmentModel({
+      userId,
+      courseSlug,
+      status: requiresPayment ? "PENDING" : "ACTIVE",
+      progress: 0,
+      paymentConfirmed: !requiresPayment,
+    });
+
+    const saved = await enrollment.save();
+
+    await this.courseModel.updateOne(
+      { slug: courseSlug },
+      { $inc: { enrolledCount: 1 } },
+    );
+
+    this.logger.log(
+      `Course enrollment: user=${userId} course=${courseSlug} status=${enrollment.status}`,
+    );
+
+    return saved;
+  }
+
+  async cancelCourseEnrollment(
+    userId: string,
+    courseSlug: string,
+  ): Promise<{ message: string }> {
+    const enrollment = await this.courseEnrollmentModel.findOne({
+      userId,
+      courseSlug,
+    });
+
+    if (!enrollment) {
+      throw new NotFoundException("Inscripción no encontrada");
+    }
+
+    if (enrollment.status === "CANCELLED") {
+      throw new BadRequestException("La inscripción ya está cancelada");
+    }
+
+    enrollment.status = "CANCELLED";
+    await enrollment.save();
+
+    await this.courseModel.updateOne(
+      { slug: courseSlug },
+      { $inc: { enrolledCount: -1 } },
+    );
+
+    this.logger.log(
+      `Course enrollment cancelled: user=${userId} course=${courseSlug}`,
+    );
+
+    return { message: "Inscripción cancelada exitosamente" };
+  }
+
+  async updateCourseProgress(
+    userId: string,
+    courseSlug: string,
+    progress: number,
+  ): Promise<CourseEnrollmentDocument> {
+    const enrollment = await this.courseEnrollmentModel.findOne({
+      userId,
+      courseSlug,
+    });
+
+    if (!enrollment) {
+      throw new NotFoundException("Inscripción no encontrada");
+    }
+
+    if (enrollment.status !== "ACTIVE") {
+      throw new BadRequestException("La inscripción no está activa");
+    }
+
+    enrollment.progress = Math.min(100, Math.max(0, progress));
+
+    if (enrollment.progress === 100 && !enrollment.completedAt) {
+      enrollment.status = "COMPLETED";
+      enrollment.completedAt = new Date();
+      enrollment.certificateId = `BSK-${courseSlug.toUpperCase().slice(0, 3)}-${Date.now().toString(36)}`;
+    }
+
+    return enrollment.save();
+  }
+
+  async linkCoursePayment(
+    userId: string,
+    courseSlug: string,
+    transactionReference: string,
+  ): Promise<CourseEnrollmentDocument> {
+    const enrollment = await this.courseEnrollmentModel.findOneAndUpdate(
+      { userId, courseSlug },
+      {
+        transactionReference,
+        paymentConfirmed: true,
+        status: "ACTIVE",
+      },
+      { new: true },
+    );
+
+    if (!enrollment) {
+      throw new NotFoundException("Inscripción no encontrada");
+    }
+
+    this.logger.log(
+      `Course payment linked: user=${userId} course=${courseSlug} ref=${transactionReference}`,
+    );
+
+    return enrollment;
+  }
+
+  async getMyEnrollments(userId: string): Promise<CourseEnrollmentDocument[]> {
+    return this.courseEnrollmentModel
+      .find({ userId, status: { $ne: "CANCELLED" } })
+      .sort({ createdAt: -1 });
   }
 }
