@@ -2,7 +2,6 @@ import { IsString, IsIn } from "class-validator";
 
 export class RegisterEventDto {
   @IsString()
-  @IsIn(["rrf-training-bskmt"])
   eventSlug: string;
 
   @IsString()

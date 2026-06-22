@@ -13,6 +13,7 @@ import { Transaction, TransactionDocument } from "./schemas/transaction.schema";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
 import { SubmitCompanionDto } from "./dto/submit-companion.dto";
 import { EventsService } from "../events/events.service";
+import { ShopService } from "../shop/shop.service";
 import type { EnvironmentConfig } from "../config/config.interface";
 
 const TIER_PRICING: Record<string, number> = {
@@ -31,6 +32,13 @@ const TIER_DESCRIPTIONS: Record<string, string> = {
     "Inscripción RRF Training BSKMT - No Miembro (Con acompañante)",
 };
 
+const EVENT_TIER_REFERENCE_PREFIX: Record<string, string> = {
+  "member-solo": "MEM-EVT",
+  "member-companion": "MEMC-EVT",
+  "non-member-solo": "NM-EVT",
+  "non-member-companion": "NMC-EVT",
+};
+
 @Injectable()
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
@@ -40,9 +48,16 @@ export class PaymentsService {
     private transactionModel: Model<TransactionDocument>,
     private configService: ConfigService<EnvironmentConfig>,
     private eventsService: EventsService,
+    private shopService: ShopService,
   ) {}
 
   async createPayment(userId: string, dto: CreatePaymentDto) {
+    const purpose = dto.productSlug ? "shop" : "event";
+
+    if (purpose === "shop") {
+      return this.createShopPayment(userId, dto);
+    }
+
     const amount = TIER_PRICING[dto.tier];
     if (amount === undefined) {
       throw new BadRequestException("Tier de pago inválido");
@@ -54,7 +69,7 @@ export class PaymentsService {
     const timestamp = Date.now();
     const shortUserId = userId.slice(-8);
     const eventPrefix = dto.eventSlug.split("-")[0].toUpperCase();
-    const reference = `${eventPrefix}-2026-${shortUserId}-${timestamp}`;
+    const reference = `${EVENT_TIER_REFERENCE_PREFIX[dto.tier] ?? eventPrefix}-2026-${shortUserId}-${timestamp}`;
 
     const transaction = new this.transactionModel({
       userId,
@@ -65,6 +80,8 @@ export class PaymentsService {
       status: "PENDING",
       tier: dto.tier,
       hasCompanion,
+      purpose: "event",
+      relatedReference: null,
     });
 
     await transaction.save();
@@ -114,6 +131,85 @@ export class PaymentsService {
         baseUrl: boldBaseUrl,
         referenceId: reference,
         description: TIER_DESCRIPTIONS[dto.tier],
+        amount,
+        currency: "COP",
+      },
+    };
+  }
+
+  private async createShopPayment(userId: string, dto: CreatePaymentDto) {
+    if (!dto.productSlug) {
+      throw new BadRequestException(
+        "productSlug requerido para pagos de tienda",
+      );
+    }
+
+    const amount = parseInt(dto.tier, 10);
+    if (isNaN(amount) || amount < 0) {
+      throw new BadRequestException("Monto de pago inválido");
+    }
+
+    const timestamp = Date.now();
+    const shortUserId = userId.slice(-8);
+    const reference = `SHOP-${shortUserId}-${timestamp}`;
+
+    const transaction = new this.transactionModel({
+      userId,
+      eventSlug: dto.productSlug,
+      reference,
+      amount,
+      description: `Compra Tienda BSK - ${dto.productSlug}`,
+      status: "PENDING",
+      tier: dto.tier,
+      hasCompanion: false,
+      purpose: "shop",
+      relatedReference: dto.productSlug,
+    });
+
+    await transaction.save();
+
+    if (amount === 0) {
+      transaction.status = "APPROVED";
+      await transaction.save();
+      return {
+        reference,
+        amount,
+        status: "APPROVED",
+        requiresPayment: false,
+      };
+    }
+
+    const boldEnvironment = this.configService.get("BOLD_ENVIRONMENT", {
+      infer: true,
+    })!;
+    const boldPublicKey = this.configService.get("BOLD_PUBLIC_KEY", {
+      infer: true,
+    })!;
+    const boldIdentityKey = this.configService.get("BOLD_IDENTITY_KEY", {
+      infer: true,
+    })!;
+
+    const boldBaseUrl =
+      boldEnvironment === "production"
+        ? "https://payments.api.bold.co"
+        : "https://payments-api-test.bold.co";
+
+    this.logger.log(
+      `Shop payment intent created: ${reference} for user ${userId}, amount: ${amount} COP`,
+    );
+
+    return {
+      reference,
+      amount,
+      status: "PENDING",
+      requiresPayment: true,
+      boldConfig: {
+        publicKey: boldPublicKey,
+        identityKey: boldIdentityKey,
+        environment: boldEnvironment,
+        baseUrl: boldBaseUrl,
+        referenceId: reference,
+        description: `Compra Tienda BSK - ${dto.productSlug}`,
         amount,
         currency: "COP",
       },
@@ -225,17 +321,27 @@ export class PaymentsService {
 
     if (eventType === "PAYMENT_APPROVED") {
       try {
-        await this.eventsService.linkPayment(
-          transaction.userId,
-          transaction.eventSlug,
-          transaction.reference,
-        );
-        this.logger.log(
-          `Event registration payment linked: user=${transaction.userId} event=${transaction.eventSlug}`,
-        );
+        if (transaction.purpose === "shop" && transaction.relatedReference) {
+          await this.shopService.linkOrderPayment(
+            transaction.relatedReference,
+            transaction.reference,
+          );
+          this.logger.log(
+            `Shop order payment linked: order=${transaction.relatedReference} ref=${transaction.reference}`,
+          );
+        } else {
+          await this.eventsService.linkPayment(
+            transaction.userId,
+            transaction.eventSlug,
+            transaction.reference,
+          );
+          this.logger.log(
+            `Event registration payment linked: user=${transaction.userId} event=${transaction.eventSlug}`,
+          );
+        }
       } catch (err: unknown) {
         this.logger.warn(
-          `Failed to link payment to event registration: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to link payment: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
     }
