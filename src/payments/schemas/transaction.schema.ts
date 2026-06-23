@@ -28,6 +28,12 @@ export class WebhookEvent {
   @Prop({ required: true, type: Date })
   receivedAt: Date;
 
+  @Prop({ required: true, default: "UNKNOWN" })
+  notificationId: string;
+
+  @Prop({ required: true, default: "UNKNOWN" })
+  paymentId: string;
+
   @Prop({ type: Object })
   data: Record<string, unknown>;
 }

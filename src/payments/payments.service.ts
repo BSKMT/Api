@@ -9,7 +9,11 @@ import { InjectModel } from "@nestjs/mongoose";
 import { ConfigService } from "@nestjs/config";
 import { Model } from "mongoose";
 import * as crypto from "crypto";
-import { Transaction, TransactionDocument } from "./schemas/transaction.schema";
+import {
+  Transaction,
+  TransactionDocument,
+  WebhookEvent,
+} from "./schemas/transaction.schema";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
 import { SubmitCompanionDto } from "./dto/submit-companion.dto";
 import { EventsService } from "../events/events.service";
@@ -217,9 +221,15 @@ export class PaymentsService {
   }
 
   async handleWebhook(rawBody: Buffer, signature: string): Promise<void> {
-    const secretKey = this.configService.get("BOLD_SECRET_KEY", {
-      infer: true,
-    })!;
+    const boldEnv =
+      this.configService.get("BOLD_ENVIRONMENT", {
+        infer: true,
+      }) ?? "sandbox";
+    // Bold docs: in sandbox the HMAC must be computed with an empty secret.
+    const secretKey =
+      boldEnv === "sandbox"
+        ? ""
+        : (this.configService.get("BOLD_SECRET_KEY", { infer: true }) ?? "");
 
     const bodyBase64 = rawBody.toString("base64");
     const expectedSignature = crypto
@@ -242,12 +252,17 @@ export class PaymentsService {
       string,
       unknown
     >;
-    const paymentId = event["paymentId"] as string | undefined;
-    const referenceId = event["referenceId"] as string | undefined;
+    const notificationId = event["id"] as string | undefined;
     const eventType = event["type"] as string | undefined;
+    const data = (event["data"] ?? {}) as Record<string, unknown>;
+    const metadata = (data["metadata"] ?? {}) as Record<string, unknown>;
+    const paymentId = data["payment_id"] as string | undefined;
+    const referenceId = metadata["reference"] as string | undefined;
+    const paymentMethod = data["payment_method"] as string | undefined;
+    const payerEmail = data["payer_email"] as string | undefined;
 
     if (!referenceId) {
-      this.logger.warn("Webhook received without referenceId");
+      this.logger.warn("Webhook received without reference");
       return;
     }
 
@@ -262,56 +277,44 @@ export class PaymentsService {
       return;
     }
 
-    const alreadyProcessed = transaction.webhookEvents.some(
-      (e) =>
-        paymentId !== undefined &&
-        e.data["paymentId"] === paymentId &&
-        e.type === eventType,
-    );
+    const alreadyProcessed =
+      notificationId !== undefined &&
+      transaction.webhookEvents.some(
+        (e) =>
+          typeof e["notificationId"] === "string" &&
+          e["notificationId"] === notificationId,
+      );
 
     if (alreadyProcessed) {
       this.logger.log(
-        `Duplicate webhook ignored for paymentId: ${paymentId}, reference: ${referenceId}`,
+        `Duplicate webhook ignored: ${notificationId ?? paymentId}, ${referenceId}`,
       );
       return;
     }
 
-    transaction.webhookEvents.push({
-      type: eventType ?? "UNKNOWN",
-      receivedAt: new Date(),
-      data: event,
-    });
+    const webhookEvent = new WebhookEvent();
+    webhookEvent.notificationId = notificationId ?? "UNKNOWN";
+    webhookEvent.paymentId = paymentId ?? "UNKNOWN";
+    webhookEvent.type = eventType ?? "UNKNOWN";
+    webhookEvent.receivedAt = new Date();
+    webhookEvent.data = event;
+    transaction.webhookEvents.push(webhookEvent);
 
     if (paymentId && !transaction.boldPaymentId) {
       transaction.boldPaymentId = paymentId;
     }
 
-    switch (eventType) {
-      case "PAYMENT_APPROVED":
-        transaction.status = "APPROVED";
-        if (event["paymentMethod"]) {
-          transaction.paymentMethod = event["paymentMethod"] as string;
-        }
-        if (event["payerEmail"]) {
-          transaction.payerEmail = event["payerEmail"] as string;
-        }
-        break;
-      case "PAYMENT_REJECTED":
-        transaction.status = "REJECTED";
-        break;
-      case "PAYMENT_VOIDED":
-        transaction.status = "VOIDED";
-        break;
-      case "PAYMENT_FAILED":
-        transaction.status = "FAILED";
-        break;
-      case "PAYMENT_PROCESSING":
-        transaction.status = "PROCESSING";
-        break;
-      default:
-        this.logger.log(
-          `Unhandled webhook event type: ${eventType} for reference: ${referenceId}`,
-        );
+    const statusFromEvent = this.mapBoldStatus(eventType);
+    if (statusFromEvent) {
+      transaction.status = statusFromEvent;
+      if (statusFromEvent === "APPROVED") {
+        if (paymentMethod) transaction.paymentMethod = paymentMethod;
+        if (payerEmail) transaction.payerEmail = payerEmail;
+      }
+    } else {
+      this.logger.log(
+        `Unhandled webhook event type: ${eventType} for reference: ${referenceId}`,
+      );
     }
 
     await transaction.save();
@@ -319,7 +322,7 @@ export class PaymentsService {
       `Webhook processed: ${eventType} for reference: ${referenceId}`,
     );
 
-    if (eventType === "PAYMENT_APPROVED") {
+    if (statusFromEvent === "APPROVED") {
       try {
         if (transaction.purpose === "shop" && transaction.relatedReference) {
           await this.shopService.linkOrderPayment(
@@ -344,6 +347,27 @@ export class PaymentsService {
           `Failed to link payment: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
+    }
+  }
+
+  private mapBoldStatus(eventType: string | undefined): string | null {
+    switch (eventType) {
+      case "SALE_APPROVED":
+      case "PAYMENT_APPROVED":
+        return "APPROVED";
+      case "SALE_REJECTED":
+      case "PAYMENT_REJECTED":
+        return "REJECTED";
+      case "VOID_APPROVED":
+      case "PAYMENT_VOIDED":
+        return "VOIDED";
+      case "VOID_REJECTED":
+      case "PAYMENT_FAILED":
+        return "FAILED";
+      case "PAYMENT_PROCESSING":
+        return "PROCESSING";
+      default:
+        return null;
     }
   }
 

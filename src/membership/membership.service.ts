@@ -24,6 +24,11 @@ import { CreditChoiceDto } from "./dto/credit-choice.dto";
 import { UseCreditDto } from "./dto/use-credit.dto";
 import { UsersService } from "../users/users.service";
 import { UserRole, CreditType } from "../users/schemas/user.schema";
+import { NotificationsService } from "../notifications/notifications.service";
+import {
+  NotificationType,
+  NotificationPriority,
+} from "../notifications/schemas/notification.schema";
 import type { EnvironmentConfig } from "../config/config.interface";
 import {
   SINGLE_PAYMENT_AMOUNT,
@@ -43,6 +48,7 @@ export class MembershipService {
     @InjectModel(ServiceCreditTransaction.name)
     private creditTransactionModel: Model<ServiceCreditTransactionDocument>,
     private usersService: UsersService,
+    private readonly notificationsService: NotificationsService,
     private configService: ConfigService<EnvironmentConfig>,
   ) {}
 
@@ -56,11 +62,11 @@ export class MembershipService {
     const isRenewal = dto.isRenewal === true;
     const now = new Date();
     const membershipExpired =
-      user.membershipExpiryDate !== null &&
+      user.membershipExpiryDate != null &&
       new Date(user.membershipExpiryDate) < now;
     const isInGracePeriod =
       membershipExpired &&
-      user.membershipGracePeriodEnd !== null &&
+      user.membershipGracePeriodEnd != null &&
       new Date(user.membershipGracePeriodEnd) > now;
 
     if (isRenewal) {
@@ -286,9 +292,15 @@ export class MembershipService {
   }
 
   async handleWebhook(rawBody: Buffer, signature: string): Promise<void> {
-    const secretKey = this.configService.get("BOLD_SECRET_KEY", {
-      infer: true,
-    })!;
+    const boldEnv =
+      this.configService.get("BOLD_ENVIRONMENT", {
+        infer: true,
+      }) ?? "sandbox";
+    // Bold docs: in sandbox the HMAC must be computed with an empty secret.
+    const secretKey =
+      boldEnv === "sandbox"
+        ? ""
+        : (this.configService.get("BOLD_SECRET_KEY", { infer: true }) ?? "");
 
     const bodyBase64 = rawBody.toString("base64");
     const expectedSignature = crypto
@@ -311,12 +323,17 @@ export class MembershipService {
       string,
       unknown
     >;
-    const paymentId = event["paymentId"] as string | undefined;
-    const referenceId = event["referenceId"] as string | undefined;
+    const notificationId = event["id"] as string | undefined;
     const eventType = event["type"] as string | undefined;
+    const data = (event["data"] ?? {}) as Record<string, unknown>;
+    const metadata = (data["metadata"] ?? {}) as Record<string, unknown>;
+    const paymentId = data["payment_id"] as string | undefined;
+    const referenceId = metadata["reference"] as string | undefined;
+    const paymentMethod = data["payment_method"] as string | undefined;
+    const payerEmail = data["payer_email"] as string | undefined;
 
     if (!referenceId) {
-      this.logger.warn("Membership webhook without referenceId");
+      this.logger.warn("Membership webhook without reference");
       return;
     }
 
@@ -331,21 +348,24 @@ export class MembershipService {
       return;
     }
 
-    const alreadyProcessed = transaction.webhookEvents.some(
-      (e) =>
-        paymentId !== undefined &&
-        e["paymentId"] === paymentId &&
-        e["type"] === eventType,
-    );
+    const alreadyProcessed =
+      notificationId !== undefined &&
+      transaction.webhookEvents.some(
+        (e) =>
+          typeof e["notificationId"] === "string" &&
+          e["notificationId"] === notificationId,
+      );
 
     if (alreadyProcessed) {
       this.logger.log(
-        `Duplicate membership webhook ignored: ${paymentId}, ${referenceId}`,
+        `Duplicate membership webhook ignored: ${notificationId ?? paymentId}, ${referenceId}`,
       );
       return;
     }
 
     transaction.webhookEvents.push({
+      notificationId: notificationId ?? "UNKNOWN",
+      paymentId: paymentId ?? "UNKNOWN",
       type: eventType ?? "UNKNOWN",
       receivedAt: new Date(),
       data: event,
@@ -355,19 +375,17 @@ export class MembershipService {
       transaction.boldPaymentId = paymentId;
     }
 
-    if (eventType === "PAYMENT_APPROVED") {
-      transaction.status = "APPROVED";
-      transaction.paidAt = new Date();
-      if (event["paymentMethod"])
-        transaction.paymentMethod = event["paymentMethod"] as string;
-      if (event["payerEmail"])
-        transaction.payerEmail = event["payerEmail"] as string;
-    } else if (eventType === "PAYMENT_REJECTED") {
-      transaction.status = "REJECTED";
-    } else if (eventType === "PAYMENT_VOIDED") {
-      transaction.status = "VOIDED";
-    } else if (eventType === "PAYMENT_FAILED") {
-      transaction.status = "FAILED";
+    const statusFromEvent = this.mapBoldStatus(eventType);
+    if (statusFromEvent) {
+      const shouldActivate = statusFromEvent === "APPROVED";
+      if (shouldActivate) {
+        transaction.status = "APPROVED";
+        transaction.paidAt = new Date();
+        if (paymentMethod) transaction.paymentMethod = paymentMethod;
+        if (payerEmail) transaction.payerEmail = payerEmail;
+      } else {
+        transaction.status = statusFromEvent;
+      }
     }
 
     await transaction.save();
@@ -375,8 +393,46 @@ export class MembershipService {
       `Membership webhook processed: ${eventType} for ${referenceId}`,
     );
 
-    if (eventType === "PAYMENT_APPROVED") {
+    if (statusFromEvent === "APPROVED") {
       await this.processApprovedPayment(transaction);
+    } else if (statusFromEvent === "REJECTED" || statusFromEvent === "FAILED") {
+      const friendly =
+        statusFromEvent === "REJECTED"
+          ? "Tu pago fue rechazado por la pasarela. Puedes intentarlo de nuevo."
+          : "Ocurrió un fallo procesando tu pago. Revisa tu método de pago e intenta nuevamente.";
+      await this.notificationsService.create({
+        userId: transaction.userId,
+        type: NotificationType.MEMBERSHIP_PAYMENT_REJECTED,
+        title: "Pago de membresía rechazado",
+        message: `${friendly} Referencia: ${referenceId}.`,
+        priority: NotificationPriority.HIGH,
+        metadata: {
+          paymentPlan: transaction.paymentPlan,
+          installmentNumber: transaction.installmentNumber,
+          installmentTotal: transaction.installmentTotal,
+          status: statusFromEvent,
+        },
+        relatedReference: referenceId,
+      });
+    }
+  }
+
+  private mapBoldStatus(eventType: string | undefined): string | null {
+    switch (eventType) {
+      case "SALE_APPROVED":
+      case "PAYMENT_APPROVED":
+        return "APPROVED";
+      case "SALE_REJECTED":
+      case "PAYMENT_REJECTED":
+        return "REJECTED";
+      case "VOID_APPROVED":
+      case "PAYMENT_VOIDED":
+        return "VOIDED";
+      case "VOID_REJECTED":
+      case "PAYMENT_FAILED":
+        return "FAILED";
+      default:
+        return null;
     }
   }
 
@@ -419,6 +475,37 @@ export class MembershipService {
         this.logger.log(
           `Membership renewed: user=${transaction.userId} expiry=${newExpiry.toISOString()}`,
         );
+
+        await this.notificationsService.create({
+          userId: transaction.userId,
+          type: NotificationType.MEMBERSHIP_ACTIVATED,
+          title: "Membresía renovada",
+          message:
+            transaction.paymentPlan === "single"
+              ? `Tu renovación anual fue confirmada. Tu membresía Legend está activa hasta el ${newExpiry.toLocaleDateString("es-CO")}.`
+              : `Completaste las 12 cuotas de renovación. Tu membresía Legend está activa hasta el ${newExpiry.toLocaleDateString("es-CO")}.`,
+          priority: NotificationPriority.HIGH,
+          metadata: {
+            paymentPlan: transaction.paymentPlan,
+            renewalInstallmentsPaid: newRenewalCount,
+            newExpiry: newExpiry.toISOString(),
+          },
+          relatedReference: transaction.reference,
+        });
+      } else {
+        await this.notificationsService.create({
+          userId: transaction.userId,
+          type: NotificationType.MEMBERSHIP_INSTALLMENT_PAID,
+          title: `Cuota de renovación ${newRenewalCount}/${INSTALLMENTS_TOTAL} pagada`,
+          message: `Hemos registrado tu pago. Te faltan ${INSTALLMENTS_TOTAL - newRenewalCount} cuotas para completar tu renovación.`,
+          priority: NotificationPriority.MEDIUM,
+          metadata: {
+            installmentNumber: newRenewalCount,
+            installmentTotal: INSTALLMENTS_TOTAL,
+            isRenewal: true,
+          },
+          relatedReference: transaction.reference,
+        });
       }
       return;
     }
@@ -435,6 +522,20 @@ export class MembershipService {
       this.logger.log(
         `Membership activated (single payment): user=${transaction.userId} expiry=${expiry.toISOString()}`,
       );
+
+      await this.notificationsService.create({
+        userId: transaction.userId,
+        type: NotificationType.MEMBERSHIP_ACTIVATED,
+        title: "Membresía Legend activada",
+        message: `Tu pago único fue confirmado. Tu membresía Legend está activa hasta el ${expiry.toLocaleDateString("es-CO")}. ¡Bienvenido al ecosistema BSK!`,
+        priority: NotificationPriority.HIGH,
+        metadata: {
+          paymentPlan: "single",
+          amount: transaction.amount,
+          newExpiry: expiry.toISOString(),
+        },
+        relatedReference: transaction.reference,
+      });
       return;
     }
 
@@ -462,11 +563,125 @@ export class MembershipService {
       this.logger.log(
         `Membership activated (12 installments complete): user=${transaction.userId} expiry=${expiry.toISOString()}`,
       );
+
+      await this.notificationsService.create({
+        userId: transaction.userId,
+        type: NotificationType.MEMBERSHIP_ACTIVATED,
+        title: "Membresía Legend activada",
+        message: `Completaste las 12 cuotas. Tu membresía Legend está activa hasta el ${expiry.toLocaleDateString("es-CO")}. ¡Bienvenido al ecosistema BSK!`,
+        priority: NotificationPriority.HIGH,
+        metadata: {
+          paymentPlan: "installment",
+          installmentsPaid: approvedCount,
+          newExpiry: expiry.toISOString(),
+        },
+        relatedReference: transaction.reference,
+      });
     } else {
       this.logger.log(
         `Installment ${approvedCount}/${INSTALLMENTS_TOTAL} paid: user=${transaction.userId}`,
       );
+
+      await this.notificationsService.create({
+        userId: transaction.userId,
+        type: NotificationType.MEMBERSHIP_INSTALLMENT_PAID,
+        title: `Cuota ${approvedCount}/${INSTALLMENTS_TOTAL} pagada`,
+        message: `Hemos registrado tu pago de la cuota ${approvedCount} de ${INSTALLMENTS_TOTAL}. Te faltan ${INSTALLMENTS_TOTAL - approvedCount} cuotas para activar tu membresía Legend.`,
+        priority: NotificationPriority.MEDIUM,
+        metadata: {
+          installmentNumber: approvedCount,
+          installmentTotal: INSTALLMENTS_TOTAL,
+          amount: transaction.amount,
+        },
+        relatedReference: transaction.reference,
+      });
     }
+  }
+
+  /**
+   * Recupera un intento de pago de membresía por su referencia y reconstruye
+   * el objeto boldConfig si el pago sigue pendiente. Esto permite que la
+   * página /pagos del frontend renderice el widget de Bold o muestre el
+   * estado final del pago incluso tras una recarga del navegador.
+   */
+  async getMembershipPayment(userId: string, reference: string) {
+    const transaction = await this.transactionModel.findOne({
+      userId,
+      reference,
+    });
+    if (!transaction) {
+      throw new NotFoundException("Transacción de membresía no encontrada");
+    }
+
+    const result: {
+      reference: string;
+      type: "membership";
+      paymentPlan: string;
+      amount: number;
+      installmentNumber: number;
+      installmentTotal: number;
+      isRenewal: boolean;
+      status: string;
+      paidAt: Date | null;
+      paymentMethod: string | null;
+      description: string;
+      requiresPayment: boolean;
+      boldConfig?: {
+        publicKey: string;
+        environment: string;
+        baseUrl: string;
+        referenceId: string;
+        description: string;
+        amount: number;
+        currency: string;
+      };
+    } = {
+      reference: transaction.reference,
+      type: "membership",
+      paymentPlan: transaction.paymentPlan,
+      amount: transaction.amount,
+      installmentNumber: transaction.installmentNumber,
+      installmentTotal: transaction.installmentTotal,
+      isRenewal: transaction.isRenewal,
+      status: transaction.status,
+      paidAt: transaction.paidAt,
+      paymentMethod: transaction.paymentMethod ?? null,
+      description:
+        transaction.paymentPlan === "single"
+          ? transaction.isRenewal
+            ? "Renovación Membresía Legend BSK — Pago único anual"
+            : "Membresía Legend BSK — Pago único anual"
+          : transaction.isRenewal
+            ? `Renovación Membresía Legend BSK — Cuota ${transaction.installmentNumber}/${transaction.installmentTotal}`
+            : `Membresía Legend BSK — Cuota ${transaction.installmentNumber}/${transaction.installmentTotal}`,
+      requiresPayment: transaction.status !== "APPROVED",
+    };
+
+    if (transaction.status === "PENDING") {
+      const boldPublicKey =
+        this.configService.get<string>("BOLD_PUBLIC_KEY", {
+          infer: true,
+        }) ?? "";
+      const boldEnvironment =
+        this.configService.get<string>("BOLD_ENVIRONMENT", { infer: true }) ??
+        "sandbox";
+      const boldBaseUrl =
+        boldEnvironment === "production"
+          ? "https://payments.api.bold.co"
+          : "https://payments-api-test.bold.co";
+
+      result.boldConfig = {
+        publicKey: boldPublicKey,
+        environment: boldEnvironment,
+        baseUrl: boldBaseUrl,
+        referenceId: transaction.reference,
+        description: result.description,
+        amount: transaction.amount,
+        currency: "COP",
+      };
+    }
+
+    return result;
   }
 
   async getMembershipStatus(userId: string) {
@@ -475,12 +690,12 @@ export class MembershipService {
 
     const now = new Date();
     const isExpired =
-      user.membershipExpiryDate !== null &&
+      user.membershipExpiryDate != null &&
       new Date(user.membershipExpiryDate) < now;
 
     const isInGracePeriod =
       isExpired &&
-      user.membershipGracePeriodEnd !== null &&
+      user.membershipGracePeriodEnd != null &&
       new Date(user.membershipGracePeriodEnd) > now;
 
     const transactions = await this.transactionModel
@@ -685,7 +900,7 @@ export class MembershipService {
 
     const availableAmount = credit.amount - credit.usedAmount;
     const isExpired =
-      credit.expiresAt !== null && new Date(credit.expiresAt) < new Date();
+      credit.expiresAt != null && new Date(credit.expiresAt) < new Date();
 
     const transactions = await this.creditTransactionModel
       .find({ userId })
