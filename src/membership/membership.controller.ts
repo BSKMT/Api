@@ -3,6 +3,7 @@ import {
   Post,
   Get,
   Body,
+  Param,
   Req,
   UseGuards,
   HttpCode,
@@ -63,6 +64,13 @@ export class MembershipController {
   async getStatus(@Req() req: Request) {
     const { userId } = req.user as { userId: string };
     return this.membershipService.getMembershipStatus(userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("payment/:reference")
+  async getPayment(@Req() req: Request, @Param("reference") reference: string) {
+    const { userId } = req.user as { userId: string };
+    return this.membershipService.getMembershipPayment(userId, reference);
   }
 
   @UseGuards(JwtAuthGuard)

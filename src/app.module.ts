@@ -11,6 +11,7 @@ import { CsrfModule } from "./csrf/csrf.module";
 import { EventsModule } from "./events/events.module";
 import { MembershipModule } from "./membership/membership.module";
 import { MembershipExpirationModule } from "./membership/membership-expiration.module";
+import { NotificationsModule } from "./notifications/notifications.module";
 import { PanelModule } from "./panel/panel.module";
 import { PaymentsModule } from "./payments/payments.module";
 import { ProfileModule } from "./profile/profile.module";
@@ -57,6 +58,7 @@ import { ShopModule } from "./shop/shop.module";
     PaymentsModule,
     MembershipModule,
     MembershipExpirationModule,
+    NotificationsModule,
     CsrfModule,
     ArphaModule,
     ShopModule,
