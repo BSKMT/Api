@@ -75,7 +75,6 @@ export class UsersService {
     const created = new this.userModel({
       email: dto.email.toLowerCase(),
       password: passwordHash,
-      membershipLevel: null,
       role: "user",
       profileCompleted: false,
       completedSections: [],

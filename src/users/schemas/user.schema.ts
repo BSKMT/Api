@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
-import { Document } from "mongoose";
+import { Document, Schema as MongooseSchema } from "mongoose";
 
 export type UserDocument = User & Document;
 
@@ -33,6 +33,26 @@ export interface PartialPaymentCredit {
   notes: string | null;
 }
 
+const PartialPaymentCreditSchema = new MongooseSchema(
+  {
+    amount: { type: Number, default: 0 },
+    installmentsPaid: { type: Number, default: 0 },
+    originalCurrency: { type: String, default: "COP" },
+    createdAt: { type: Date, default: null },
+    type: {
+      type: String,
+      enum: Object.values(CreditType),
+      default: null,
+    },
+    usedAmount: { type: Number, default: 0 },
+    expiresAt: { type: Date, default: null },
+    refundRequestedAt: { type: Date, default: null },
+    convertedAt: { type: Date, default: null },
+    notes: { type: String, default: null },
+  },
+  { _id: false },
+);
+
 const REQUIRED_PROFILE_SECTIONS = [
   "datos-personales",
   "contacto",
@@ -53,8 +73,8 @@ export class User {
   @Prop({ required: true })
   password!: string;
 
-  @Prop({ type: String, default: null })
-  membershipLevel!: string | null;
+  @Prop({ type: String })
+  membershipLevel?: string | null;
 
   @Prop({
     type: String,
@@ -84,18 +104,17 @@ export class User {
   @Prop({ default: [] })
   completedSections!: string[];
 
-  @Prop({ type: Date, default: null })
-  membershipStartDate!: Date | null;
+  @Prop({ type: Date })
+  membershipStartDate?: Date | null;
 
-  @Prop({ type: Date, default: null })
-  membershipExpiryDate!: Date | null;
+  @Prop({ type: Date })
+  membershipExpiryDate?: Date | null;
 
   @Prop({
     type: String,
-    enum: ["single", "installments", null],
-    default: null,
+    enum: ["single", "installments"],
   })
-  membershipPaymentPlan!: string | null;
+  membershipPaymentPlan?: string | null;
 
   @Prop({ default: 0 })
   installmentsPaid!: number;
@@ -106,29 +125,15 @@ export class User {
   @Prop({ default: 0 })
   renewalInstallmentsPaid!: number;
 
-  @Prop({ type: Date, default: null })
-  membershipGracePeriodEnd!: Date | null;
+  @Prop({ type: Date })
+  membershipGracePeriodEnd?: Date | null;
 
   @Prop({ default: false })
   membershipExpired!: boolean;
 
   @Prop({
-    type: {
-      amount: { type: Number, default: 0 },
-      installmentsPaid: { type: Number, default: 0 },
-      originalCurrency: { type: String, default: "COP" },
-      createdAt: { type: Date, default: null },
-      type: {
-        type: String,
-        enum: Object.values(CreditType),
-        default: null,
-      },
-      usedAmount: { type: Number, default: 0 },
-      expiresAt: { type: Date, default: null },
-      refundRequestedAt: { type: Date, default: null },
-      convertedAt: { type: Date, default: null },
-      notes: { type: String, default: null },
-    },
+    type: PartialPaymentCreditSchema,
+    default: null,
   })
   partialPaymentCredit?: PartialPaymentCredit | null;
 }
