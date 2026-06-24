@@ -52,6 +52,23 @@ export class MembershipService {
     private configService: ConfigService<EnvironmentConfig>,
   ) {}
 
+  private generateBoldIntegritySignature(
+    orderId: string,
+    amount: number,
+    currency: string,
+  ): string {
+    const secretKey =
+      this.configService.get<string>("BOLD_SECRET_KEY", {
+        infer: true,
+      }) ?? "";
+    const boldEnv = this.configService.get<string>("BOLD_ENVIRONMENT", {
+      infer: true,
+    }) ?? "sandbox";
+    const effectiveSecretKey = boldEnv === "sandbox" ? "" : secretKey;
+    const concatenated = `${orderId}${amount}${currency}${effectiveSecretKey}`;
+    return crypto.createHash("sha256").update(concatenated).digest("hex");
+  }
+
   async createMembershipPayment(
     userId: string,
     dto: CreateMembershipPaymentDto,
@@ -287,6 +304,11 @@ export class MembershipService {
         description,
         amount: remainingAmount,
         currency: "COP",
+        integritySignature: this.generateBoldIntegritySignature(
+          reference,
+          remainingAmount,
+          "COP",
+        ),
       },
     };
   }
@@ -634,6 +656,7 @@ export class MembershipService {
         description: string;
         amount: number;
         currency: string;
+        integritySignature: string;
       };
     } = {
       reference: transaction.reference,
@@ -678,6 +701,11 @@ export class MembershipService {
         description: result.description,
         amount: transaction.amount,
         currency: "COP",
+        integritySignature: this.generateBoldIntegritySignature(
+          transaction.reference,
+          transaction.amount,
+          "COP",
+        ),
       };
     }
 
