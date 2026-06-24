@@ -55,6 +55,23 @@ export class PaymentsService {
     private shopService: ShopService,
   ) {}
 
+  private generateBoldIntegritySignature(
+    orderId: string,
+    amount: number,
+    currency: string,
+  ): string {
+    const secretKey =
+      this.configService.get<string>("BOLD_SECRET_KEY", {
+        infer: true,
+      }) ?? "";
+    const boldEnv = this.configService.get<string>("BOLD_ENVIRONMENT", {
+      infer: true,
+    }) ?? "sandbox";
+    const effectiveSecretKey = boldEnv === "sandbox" ? "" : secretKey;
+    const concatenated = `${orderId}${amount}${currency}${effectiveSecretKey}`;
+    return crypto.createHash("sha256").update(concatenated).digest("hex");
+  }
+
   async createPayment(userId: string, dto: CreatePaymentDto) {
     const purpose = dto.productSlug ? "shop" : "event";
 
@@ -137,6 +154,11 @@ export class PaymentsService {
         description: TIER_DESCRIPTIONS[dto.tier],
         amount,
         currency: "COP",
+        integritySignature: this.generateBoldIntegritySignature(
+          reference,
+          amount,
+          "COP",
+        ),
       },
     };
   }
@@ -216,6 +238,11 @@ export class PaymentsService {
         description: `Compra Tienda BSK - ${dto.productSlug}`,
         amount,
         currency: "COP",
+        integritySignature: this.generateBoldIntegritySignature(
+          reference,
+          amount,
+          "COP",
+        ),
       },
     };
   }
@@ -381,7 +408,27 @@ export class PaymentsService {
       throw new NotFoundException("Transacción no encontrada");
     }
 
-    return {
+    const result: {
+      reference: string;
+      status: string;
+      amount: number;
+      tier: string;
+      boldPaymentId: string | null;
+      paymentMethod: string | null;
+      createdAt: Date;
+      updatedAt: Date;
+      requiresPayment: boolean;
+      boldConfig?: {
+        publicKey: string;
+        environment: string;
+        baseUrl: string;
+        referenceId: string;
+        description: string;
+        amount: number;
+        currency: string;
+        integritySignature: string;
+      };
+    } = {
       reference: transaction.reference,
       status: transaction.status,
       amount: transaction.amount,
@@ -390,7 +437,40 @@ export class PaymentsService {
       paymentMethod: transaction.paymentMethod,
       createdAt: transaction.createdAt,
       updatedAt: transaction.updatedAt,
+      requiresPayment: transaction.status === "PENDING",
     };
+
+    if (transaction.status === "PENDING" && transaction.amount > 0) {
+      const boldEnvironment =
+        this.configService.get<string>("BOLD_ENVIRONMENT", {
+          infer: true,
+        }) ?? "sandbox";
+      const boldPublicKey =
+        this.configService.get<string>("BOLD_PUBLIC_KEY", {
+          infer: true,
+        }) ?? "";
+      const boldBaseUrl =
+        boldEnvironment === "production"
+          ? "https://payments.api.bold.co"
+          : "https://payments-api-test.bold.co";
+
+      result.boldConfig = {
+        publicKey: boldPublicKey,
+        environment: boldEnvironment,
+        baseUrl: boldBaseUrl,
+        referenceId: transaction.reference,
+        description: transaction.description,
+        amount: transaction.amount,
+        currency: "COP",
+        integritySignature: this.generateBoldIntegritySignature(
+          transaction.reference,
+          transaction.amount,
+          "COP",
+        ),
+      };
+    }
+
+    return result;
   }
 
   async submitCompanionData(
