@@ -64,9 +64,10 @@ export class PaymentsService {
       this.configService.get<string>("BOLD_SECRET_KEY", {
         infer: true,
       }) ?? "";
-    const boldEnv = this.configService.get<string>("BOLD_ENVIRONMENT", {
-      infer: true,
-    }) ?? "sandbox";
+    const boldEnv =
+      this.configService.get<string>("BOLD_ENVIRONMENT", {
+        infer: true,
+      }) ?? "sandbox";
     const effectiveSecretKey = boldEnv === "sandbox" ? "" : secretKey;
     const concatenated = `${orderId}${amount}${currency}${effectiveSecretKey}`;
     return crypto.createHash("sha256").update(concatenated).digest("hex");
@@ -420,6 +421,7 @@ export class PaymentsService {
       requiresPayment: boolean;
       boldConfig?: {
         publicKey: string;
+        identityKey: string;
         environment: string;
         baseUrl: string;
         referenceId: string;
@@ -449,6 +451,10 @@ export class PaymentsService {
         this.configService.get<string>("BOLD_PUBLIC_KEY", {
           infer: true,
         }) ?? "";
+      const boldIdentityKey =
+        this.configService.get<string>("BOLD_IDENTITY_KEY", {
+          infer: true,
+        }) ?? "";
       const boldBaseUrl =
         boldEnvironment === "production"
           ? "https://payments.api.bold.co"
@@ -456,6 +462,7 @@ export class PaymentsService {
 
       result.boldConfig = {
         publicKey: boldPublicKey,
+        identityKey: boldIdentityKey,
         environment: boldEnvironment,
         baseUrl: boldBaseUrl,
         referenceId: transaction.reference,
