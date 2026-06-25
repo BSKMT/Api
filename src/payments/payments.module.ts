@@ -5,6 +5,7 @@ import { PaymentsService } from "./payments.service";
 import { Transaction, TransactionSchema } from "./schemas/transaction.schema";
 import { EventsModule } from "../events/events.module";
 import { ShopModule } from "../shop/shop.module";
+import { ArphaModule } from "../arpha/arpha.module";
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { ShopModule } from "../shop/shop.module";
     ]),
     EventsModule,
     ShopModule,
+    ArphaModule,
   ],
   controllers: [PaymentsController],
   providers: [PaymentsService],

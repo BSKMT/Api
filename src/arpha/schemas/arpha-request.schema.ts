@@ -17,6 +17,13 @@ export enum ArphaRequestStatus {
   CANCELLED = "CANCELLED",
 }
 
+export const ARPHA_PRICING: Record<string, number> = {
+  tecnica: 15000,
+  emergencia: 25000,
+  juridica: 30000,
+  ruta: 20000,
+};
+
 @Schema({ timestamps: true })
 export class ArphaRequest {
   @Prop({ required: true, index: true })
@@ -61,6 +68,18 @@ export class ArphaRequest {
 
   @Prop({ type: Date, default: null })
   cancelledAt: Date | null;
+
+  @Prop({ type: String, default: null })
+  transactionReference: string | null;
+
+  @Prop({ default: false })
+  paymentConfirmed: boolean;
+
+  @Prop({ default: false })
+  isMember: boolean;
+
+  @Prop({ type: Number, default: 0 })
+  amount: number;
 }
 
 export const ArphaRequestSchema = SchemaFactory.createForClass(ArphaRequest);

@@ -65,6 +65,10 @@ export class PanelController {
       completedCourses,
       assistanceReceived,
       purchasedProducts,
+      activeArphaRequests,
+      pendingOrders,
+      activeEnrollments,
+      upcomingRegistrations,
     ] = await Promise.all([
       this.eventRegistrationModel.countDocuments({
         userId: user.userId,
@@ -81,6 +85,24 @@ export class PanelController {
       this.orderModel.countDocuments({
         userId: user.userId,
         status: { $ne: OrderStatus.CANCELLED },
+      }),
+      this.arphaRequestModel.countDocuments({
+        userId: user.userId,
+        status: {
+          $in: [ArphaRequestStatus.PENDING, ArphaRequestStatus.EN_CAMINO],
+        },
+      }),
+      this.orderModel.countDocuments({
+        userId: user.userId,
+        status: OrderStatus.PENDING,
+      }),
+      this.courseEnrollmentModel.countDocuments({
+        userId: user.userId,
+        status: "ACTIVE",
+      }),
+      this.eventRegistrationModel.countDocuments({
+        userId: user.userId,
+        status: "PENDING",
       }),
     ]);
 
@@ -103,6 +125,10 @@ export class PanelController {
         completedCourses,
         assistanceReceived,
         purchasedProducts,
+        activeArphaRequests,
+        pendingOrders,
+        activeEnrollments,
+        upcomingRegistrations,
       },
       session: {
         accountStatus: fullUser.isActive ? "Activa" : "Inactiva",

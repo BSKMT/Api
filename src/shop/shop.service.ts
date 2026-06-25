@@ -19,6 +19,14 @@ import {
 } from "./schemas/wishlist-item.schema";
 import { CreateOrderDto } from "./dto/create-order.dto";
 
+const LEGEND_LEVELS = new Set([
+  "Legend",
+  "Friend",
+  "Rider",
+  "Expert",
+  "Master",
+]);
+
 @Injectable()
 export class ShopService {
   private readonly logger = new Logger(ShopService.name);
@@ -35,13 +43,23 @@ export class ShopService {
   async getProducts(
     limit = 20,
     featuredOnly = false,
+    collection?: string,
   ): Promise<ProductDocument[]> {
     const filter: Record<string, unknown> = { status: ProductStatus.PUBLISHED };
     if (featuredOnly) filter.featured = true;
+    if (collection) filter.collection = collection;
 
     return this.productModel
       .find(filter)
       .sort({ featured: -1, createdAt: -1 })
+      .limit(limit)
+      .lean();
+  }
+
+  async getUpcomingReleases(limit = 10): Promise<ProductDocument[]> {
+    return this.productModel
+      .find({ status: ProductStatus.PUBLISHED, isNew: true })
+      .sort({ createdAt: -1 })
       .limit(limit)
       .lean();
   }
@@ -52,12 +70,20 @@ export class ShopService {
       .lean();
   }
 
-  async createOrder(userId: string, dto: CreateOrderDto) {
+  async createOrder(
+    userId: string,
+    dto: CreateOrderDto,
+    membershipLevel: string | null = null,
+  ) {
     if (!dto.items || dto.items.length === 0) {
       throw new BadRequestException("El pedido debe tener al menos un item");
     }
 
+    const isMember =
+      membershipLevel !== null && LEGEND_LEVELS.has(membershipLevel);
+
     let total = 0;
+    let publicTotal = 0;
     let memberDiscount = 0;
     const orderItems = [];
 
@@ -73,20 +99,30 @@ export class ShopService {
         );
       }
 
-      if (product.stock < Number(item.quantity)) {
+      if (product.stock < item.quantity) {
         throw new BadRequestException(
           `Stock insuficiente para: ${product.name}`,
         );
       }
 
-      const qty = Number(item.quantity);
-      const unitPrice = Number(item.unitPrice);
+      const qty = item.quantity;
+      const publicPrice = product.publicPrice;
+      const publicSubtotal = publicPrice * qty;
+
+      let unitPrice = publicPrice;
+      let discountPercent = 0;
+
+      if (isMember) {
+        discountPercent = product.memberDiscountPercent ?? 20;
+        unitPrice = Math.round(publicPrice * (1 - discountPercent / 100));
+      }
+
       const subtotal = unitPrice * qty;
-      const publicSubtotal = product.publicPrice * qty;
-      const discount = publicSubtotal - subtotal;
+      const itemDiscount = publicSubtotal - subtotal;
 
       total += subtotal;
-      memberDiscount += discount;
+      publicTotal += publicSubtotal;
+      memberDiscount += itemDiscount;
 
       orderItems.push({
         productSlug: product.slug,
@@ -116,7 +152,7 @@ export class ShopService {
     const saved = await order.save();
 
     this.logger.log(
-      `Order created: ${orderNumber} user=${userId} total=${total} discount=${memberDiscount}`,
+      `Order created: ${orderNumber} user=${userId} total=${total} publicTotal=${publicTotal} discount=${memberDiscount} member=${isMember}`,
     );
 
     return {
@@ -200,6 +236,11 @@ export class ShopService {
     userId: string,
     productSlug: string,
   ): Promise<WishlistItemDocument> {
+    const product = await this.productModel.findOne({ slug: productSlug });
+    if (!product) {
+      throw new NotFoundException("Producto no encontrado");
+    }
+
     const existing = await this.wishlistModel.findOne({
       userId,
       productSlug,

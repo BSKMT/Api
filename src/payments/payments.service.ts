@@ -18,6 +18,8 @@ import { CreatePaymentDto } from "./dto/create-payment.dto";
 import { SubmitCompanionDto } from "./dto/submit-companion.dto";
 import { EventsService } from "../events/events.service";
 import { ShopService } from "../shop/shop.service";
+import { ArphaService } from "../arpha/arpha.service";
+import { ARPHA_PRICING } from "../arpha/schemas/arpha-request.schema";
 import type { EnvironmentConfig } from "../config/config.interface";
 
 const EVENT_TIER_REFERENCE_PREFIX: Record<string, string> = {
@@ -43,6 +45,27 @@ const COURSE_TIERS = new Set([
 
 const COMPANION_TIERS = new Set(["member-companion", "non-member-companion"]);
 
+const ARPHA_TIERS = new Set([
+  "arpha-tecnica",
+  "arpha-emergencia",
+  "arpha-juridica",
+  "arpha-ruta",
+]);
+
+const ARPHA_TIER_PREFIX: Record<string, string> = {
+  "arpha-tecnica": "ARPHA-TEC",
+  "arpha-emergencia": "ARPHA-EMG",
+  "arpha-juridica": "ARPHA-JUR",
+  "arpha-ruta": "ARPHA-RUT",
+};
+
+const ARPHA_TIER_LABEL: Record<string, string> = {
+  "arpha-tecnica": "Asistencia Técnica",
+  "arpha-emergencia": "Emergencia",
+  "arpha-juridica": "Asistencia Jurídica",
+  "arpha-ruta": "Asistencia en Ruta",
+};
+
 @Injectable()
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
@@ -53,6 +76,7 @@ export class PaymentsService {
     private configService: ConfigService<EnvironmentConfig>,
     private eventsService: EventsService,
     private shopService: ShopService,
+    private arphaService: ArphaService,
   ) {}
 
   private generateBoldIntegritySignature(
@@ -74,15 +98,46 @@ export class PaymentsService {
   }
 
   async createPayment(userId: string, dto: CreatePaymentDto) {
-    if (dto.productSlug) {
-      return this.createShopPayment(userId, dto);
+    if (ARPHA_TIERS.has(dto.tier)) {
+      return this.createArphaPayment(userId, dto);
     }
 
     if (COURSE_TIERS.has(dto.tier)) {
       return this.createCoursePayment(userId, dto);
     }
 
+    if (dto.productSlug || dto.relatedReference) {
+      return this.createShopPayment(userId, dto);
+    }
+
     return this.createEventPayment(userId, dto);
+  }
+
+  private async createArphaPayment(userId: string, dto: CreatePaymentDto) {
+    const requestId = dto.eventSlug;
+    const amount = ARPHA_PRICING[dto.tier.replace("arpha-", "")] ?? 15000;
+    const label = ARPHA_TIER_LABEL[dto.tier] ?? "Asistencia ARPHA";
+
+    const timestamp = Date.now();
+    const shortUserId = userId.slice(-8);
+    const reference = `${ARPHA_TIER_PREFIX[dto.tier]}-${shortUserId}-${timestamp}`;
+
+    const transaction = new this.transactionModel({
+      userId,
+      eventSlug: requestId,
+      reference,
+      amount,
+      description: `ARPHA - ${label}`,
+      status: "PENDING",
+      tier: dto.tier,
+      hasCompanion: false,
+      purpose: "arpha",
+      relatedReference: requestId,
+    });
+
+    await transaction.save();
+
+    return this.buildBoldResponse(transaction, `ARPHA - ${label}`);
   }
 
   private async createEventPayment(userId: string, dto: CreatePaymentDto) {
@@ -273,9 +328,10 @@ export class PaymentsService {
   }
 
   private async createShopPayment(userId: string, dto: CreatePaymentDto) {
-    if (!dto.productSlug) {
+    const orderNumber = dto.relatedReference ?? dto.productSlug;
+    if (!orderNumber) {
       throw new BadRequestException(
-        "productSlug requerido para pagos de tienda",
+        "relatedReference (orderNumber) requerido para pagos de tienda",
       );
     }
 
@@ -290,15 +346,15 @@ export class PaymentsService {
 
     const transaction = new this.transactionModel({
       userId,
-      eventSlug: dto.productSlug,
+      eventSlug: orderNumber,
       reference,
       amount,
-      description: `Compra Tienda BSK - ${dto.productSlug}`,
+      description: `Compra Tienda BSK - ${orderNumber}`,
       status: "PENDING",
       tier: dto.tier,
       hasCompanion: false,
       purpose: "shop",
-      relatedReference: dto.productSlug,
+      relatedReference: orderNumber,
     });
 
     await transaction.save();
@@ -316,7 +372,7 @@ export class PaymentsService {
 
     return this.buildBoldResponse(
       transaction,
-      `Compra Tienda BSK - ${dto.productSlug}`,
+      `Compra Tienda BSK - ${orderNumber}`,
     );
   }
 
@@ -437,6 +493,15 @@ export class PaymentsService {
         );
         this.logger.log(
           `Shop order payment linked: order=${transaction.relatedReference} ref=${transaction.reference}`,
+        );
+      } else if (transaction.purpose === "arpha") {
+        await this.arphaService.linkArphaPayment(
+          transaction.userId,
+          transaction.eventSlug,
+          transaction.reference,
+        );
+        this.logger.log(
+          `ARPHA payment linked: user=${transaction.userId} request=${transaction.eventSlug}`,
         );
       } else if (transaction.purpose === "course") {
         await this.eventsService.linkCoursePayment(
