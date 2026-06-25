@@ -44,6 +44,9 @@ export class MembershipTransaction {
   @Prop({ type: Object, default: [] })
   webhookEvents: Record<string, unknown>[];
 
+  @Prop({ type: Date, default: null })
+  lastBoldSyncAt: Date | null;
+
   createdAt: Date;
 
   updatedAt: Date;
