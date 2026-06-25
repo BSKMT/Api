@@ -622,10 +622,160 @@ export class MembershipService {
   }
 
   /**
+   * Queries Bold's payment-voucher API for the real-time status of a
+   * transaction. This is the recommended fallback when the webhook is not
+   * received (Docs_Bold/pagos_en_linea/consulta_de_transacciones.md).
+   *
+   * Rate-limited via `lastBoldSyncAt` to at most one call every 10 seconds,
+   * preventing excessive API requests during frontend polling.
+   */
+  private async syncWithBold(
+    transaction: MembershipTransactionDocument,
+  ): Promise<void> {
+    const now = new Date();
+    const minIntervalMs = 10_000;
+
+    if (
+      transaction.lastBoldSyncAt &&
+      now.getTime() - new Date(transaction.lastBoldSyncAt).getTime() <
+        minIntervalMs
+    ) {
+      return;
+    }
+
+    const boldEnv =
+      this.configService.get<string>("BOLD_ENVIRONMENT", {
+        infer: true,
+      }) ?? "sandbox";
+    const identityKey =
+      this.configService.get<string>("BOLD_IDENTITY_KEY", {
+        infer: true,
+      }) ?? "";
+
+    if (!identityKey) {
+      this.logger.warn(
+        "Cannot sync with Bold: BOLD_IDENTITY_KEY is not configured",
+      );
+      return;
+    }
+
+    const baseUrl =
+      boldEnv === "production"
+        ? "https://payments.api.bold.co"
+        : "https://payments-api-test.bold.co";
+
+    const url = `${baseUrl}/v2/payment-voucher/${encodeURIComponent(transaction.reference)}`;
+
+    transaction.lastBoldSyncAt = now;
+    await transaction.save();
+
+    try {
+      const res = await fetch(url, {
+        method: "GET",
+        headers: {
+          Authorization: `x-api-key ${identityKey}`,
+          Accept: "application/json",
+        },
+      });
+
+      if (!res.ok) {
+        this.logger.warn(
+          `Bold sync API returned ${res.status} for reference: ${transaction.reference}`,
+        );
+        return;
+      }
+
+      const body = (await res.json()) as Record<string, unknown>;
+      const boldStatus = body["payment_status"] as string | undefined;
+
+      if (!boldStatus || boldStatus === "NO_TRANSACTION_FOUND") {
+        this.logger.log(
+          `Bold sync: no transaction found yet for reference: ${transaction.reference}`,
+        );
+        return;
+      }
+
+      const mappedStatus = this.mapBoldVoucherStatus(boldStatus);
+      if (!mappedStatus || mappedStatus === transaction.status) {
+        return;
+      }
+
+      this.logger.log(
+        `Bold sync: updating ${transaction.reference} from ${transaction.status} to ${mappedStatus}`,
+      );
+
+      transaction.status = mappedStatus;
+
+      if (mappedStatus === "APPROVED") {
+        transaction.paidAt = new Date();
+        const paymentMethod = body["payment_method"] as string | undefined;
+        const payerEmail = body["payer_email"] as string | undefined;
+        const boldPaymentId = body["transaction_id"] as string | undefined;
+        if (paymentMethod) transaction.paymentMethod = paymentMethod;
+        if (payerEmail) transaction.payerEmail = payerEmail;
+        if (boldPaymentId && !transaction.boldPaymentId) {
+          transaction.boldPaymentId = boldPaymentId;
+        }
+      }
+
+      await transaction.save();
+
+      if (mappedStatus === "APPROVED") {
+        await this.processApprovedPayment(transaction);
+      } else if (mappedStatus === "REJECTED" || mappedStatus === "FAILED") {
+        const friendly =
+          mappedStatus === "REJECTED"
+            ? "Tu pago fue rechazado por la pasarela. Puedes intentarlo de nuevo."
+            : "Ocurrió un fallo procesando tu pago. Revisa tu método de pago e intenta nuevamente.";
+        await this.notificationsService.create({
+          userId: transaction.userId,
+          type: NotificationType.MEMBERSHIP_PAYMENT_REJECTED,
+          title: "Pago de membresía rechazado",
+          message: `${friendly} Referencia: ${transaction.reference}.`,
+          priority: NotificationPriority.HIGH,
+          metadata: {
+            paymentPlan: transaction.paymentPlan,
+            installmentNumber: transaction.installmentNumber,
+            installmentTotal: transaction.installmentTotal,
+            status: mappedStatus,
+          },
+          relatedReference: transaction.reference,
+        });
+      }
+    } catch (err: unknown) {
+      this.logger.warn(
+        `Bold sync failed for ${transaction.reference}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  private mapBoldVoucherStatus(boldStatus: string): string | null {
+    switch (boldStatus.toUpperCase()) {
+      case "APPROVED":
+        return "APPROVED";
+      case "REJECTED":
+        return "REJECTED";
+      case "FAILED":
+        return "FAILED";
+      case "VOIDED":
+        return "VOIDED";
+      case "PROCESSING":
+        return "PROCESSING";
+      case "PENDING":
+        return null;
+      default:
+        return null;
+    }
+  }
+
+  /**
    * Recupera un intento de pago de membresía por su referencia y reconstruye
    * el objeto boldConfig si el pago sigue pendiente. Esto permite que la
    * página /pagos del frontend renderice el widget de Bold o muestre el
    * estado final del pago incluso tras una recarga del navegador.
+   *
+   * Si el pago sigue PENDING, consulta la API de Bold (payment-voucher) como
+   * mecanismo de fallback cuando el webhook no fue recibido.
    */
   async getMembershipPayment(userId: string, reference: string) {
     const transaction = await this.transactionModel.findOne({
@@ -634,6 +784,10 @@ export class MembershipService {
     });
     if (!transaction) {
       throw new NotFoundException("Transacción de membresía no encontrada");
+    }
+
+    if (transaction.status === "PENDING") {
+      await this.syncWithBold(transaction);
     }
 
     const result: {

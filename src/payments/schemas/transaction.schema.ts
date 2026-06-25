@@ -87,6 +87,9 @@ export class Transaction {
   @Prop({ type: String, default: null })
   relatedReference: string | null;
 
+  @Prop({ type: Date, default: null })
+  lastBoldSyncAt: Date | null;
+
   createdAt: Date;
 
   updatedAt: Date;

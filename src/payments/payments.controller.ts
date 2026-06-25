@@ -41,8 +41,8 @@ export class PaymentsController {
       throw new BadRequestException("Missing signature header");
     }
 
-    const rawBody = req.body as Buffer;
-    if (!Buffer.isBuffer(rawBody)) {
+    const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
+    if (!rawBody || !Buffer.isBuffer(rawBody)) {
       throw new BadRequestException("Invalid request body");
     }
 
