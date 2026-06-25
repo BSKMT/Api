@@ -20,6 +20,12 @@ import {
 import { RegisterEventDto } from "./dto/register-event.dto";
 import { SubmitCompanionDto } from "./dto/submit-companion.dto";
 
+export interface CoursePricing {
+  amount: number;
+  tier: string;
+  requiresPayment: boolean;
+}
+
 @Injectable()
 export class EventsService {
   private readonly logger = new Logger(EventsService.name);
@@ -215,6 +221,18 @@ export class EventsService {
     this.logger.log(
       `Payment linked: user=${userId} event=${eventSlug} ref=${transactionReference}`,
     );
+
+    try {
+      await this.confirmRegistration(userId, eventSlug);
+      this.logger.log(
+        `Auto-confirmed after payment: user=${userId} event=${eventSlug}`,
+      );
+    } catch {
+      this.logger.log(
+        `Auto-confirm skipped (prerequisites pending): user=${userId} event=${eventSlug}`,
+      );
+    }
+
     return registration;
   }
 
@@ -328,7 +346,7 @@ export class EventsService {
     userId: string,
     courseSlug: string,
     membershipLevel: string | null,
-  ): Promise<CourseEnrollmentDocument> {
+  ): Promise<{ enrollment: CourseEnrollmentDocument; pricing: CoursePricing }> {
     const course = await this.courseModel.findOne({
       slug: courseSlug,
       status: CourseStatus.PUBLISHED,
@@ -347,21 +365,14 @@ export class EventsService {
       throw new ConflictException("Ya estás inscrito en este curso");
     }
 
-    const isMember =
-      membershipLevel === "Legend" ||
-      membershipLevel === "Friend" ||
-      membershipLevel === "Rider" ||
-      membershipLevel === "Expert" ||
-      membershipLevel === "Master";
-
-    const requiresPayment = !course.membersFree && !isMember;
+    const pricing = this.calculateCoursePricing(course, membershipLevel);
 
     const enrollment = new this.courseEnrollmentModel({
       userId,
       courseSlug,
-      status: requiresPayment ? "PENDING" : "ACTIVE",
+      status: pricing.requiresPayment ? "PENDING" : "ACTIVE",
       progress: 0,
-      paymentConfirmed: !requiresPayment,
+      paymentConfirmed: !pricing.requiresPayment,
     });
 
     const saved = await enrollment.save();
@@ -372,10 +383,69 @@ export class EventsService {
     );
 
     this.logger.log(
-      `Course enrollment: user=${userId} course=${courseSlug} status=${enrollment.status}`,
+      `Course enrollment: user=${userId} course=${courseSlug} status=${enrollment.status} amount=${pricing.amount}`,
     );
 
-    return saved;
+    return { enrollment: saved, pricing };
+  }
+
+  calculateCoursePricing(
+    course: {
+      nonMemberPrice: number | null;
+      format: string;
+      membersFree: boolean;
+      memberSemipresencialDiscount: number | null;
+      memberPresencialDiscount: number | null;
+    },
+    membershipLevel: string | null,
+  ): CoursePricing {
+    const isMember =
+      membershipLevel === "Legend" ||
+      membershipLevel === "Friend" ||
+      membershipLevel === "Rider" ||
+      membershipLevel === "Expert" ||
+      membershipLevel === "Master";
+
+    const basePrice = course.nonMemberPrice ?? 0;
+
+    if (!isMember) {
+      return {
+        amount: basePrice,
+        tier: "course-non-member",
+        requiresPayment: basePrice > 0,
+      };
+    }
+
+    switch (course.format) {
+      case "virtual":
+        return {
+          amount: 0,
+          tier: "course-member-virtual",
+          requiresPayment: false,
+        };
+      case "semipresencial":
+        return {
+          amount: Math.round(
+            basePrice * ((course.memberSemipresencialDiscount ?? 25) / 100),
+          ),
+          tier: "course-member-semipresencial",
+          requiresPayment: basePrice > 0,
+        };
+      case "presencial":
+        return {
+          amount: Math.round(
+            basePrice * ((course.memberPresencialDiscount ?? 50) / 100),
+          ),
+          tier: "course-member-presencial",
+          requiresPayment: basePrice > 0,
+        };
+      default:
+        return {
+          amount: 0,
+          tier: "course-member-virtual",
+          requiresPayment: false,
+        };
+    }
   }
 
   async cancelCourseEnrollment(
@@ -469,5 +539,12 @@ export class EventsService {
     return this.courseEnrollmentModel
       .find({ userId, status: { $ne: "CANCELLED" } })
       .sort({ createdAt: -1 });
+  }
+
+  async getEnrollmentByUserAndCourse(
+    userId: string,
+    courseSlug: string,
+  ): Promise<CourseEnrollmentDocument | null> {
+    return this.courseEnrollmentModel.findOne({ userId, courseSlug });
   }
 }

@@ -115,6 +115,46 @@ export class EventsController {
     return this.eventsService.getRegistration(user.userId, eventSlug);
   }
 
+  @Get("registration-status/:eventSlug")
+  async getRegistrationWithPricing(
+    @Req() req: Request,
+    @Param("eventSlug") eventSlug: string,
+  ) {
+    const user = req.user as { userId: string };
+    const fullUser = await this.usersService.findById(user.userId);
+    const membershipLevel = fullUser?.membershipLevel ?? null;
+    const event = await this.eventsService.getEventBySlug(eventSlug);
+    if (!event) {
+      throw new BadRequestException("Evento no encontrado");
+    }
+    const registration = await this.eventsService.getRegistration(
+      user.userId,
+      eventSlug,
+    );
+    const basePrice = event.nonMemberPrice ?? 0;
+    const isLegend = membershipLevel === "Legend";
+    return {
+      event: {
+        slug: event.slug,
+        title: event.title,
+        date: event.date,
+        location: event.location,
+        nonMemberPrice: basePrice,
+        membersFree: event.membersFree,
+        maxCapacity: event.maxCapacity,
+        registeredCount: event.registeredCount,
+      },
+      pricing: {
+        memberSolo: 0,
+        memberCompanion: Math.round(basePrice * 0.5),
+        nonMemberSolo: basePrice,
+        nonMemberCompanion: Math.round(basePrice * 1.5),
+      },
+      isLegend,
+      registration,
+    };
+  }
+
   @Get("my-registrations")
   async getMyRegistrations(@Req() req: Request) {
     const user = req.user as { userId: string };
