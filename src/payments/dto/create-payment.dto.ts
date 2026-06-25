@@ -14,10 +14,18 @@ export class CreatePaymentDto {
     "course-member-semipresencial",
     "course-member-presencial",
     "course-non-member",
+    "arpha-tecnica",
+    "arpha-emergencia",
+    "arpha-juridica",
+    "arpha-ruta",
   ])
   tier: string;
 
   @IsString()
   @IsOptional()
   productSlug?: string;
+
+  @IsString()
+  @IsOptional()
+  relatedReference?: string;
 }

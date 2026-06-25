@@ -9,27 +9,46 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  NotFoundException,
 } from "@nestjs/common";
 import type { Request } from "express";
 import { Public } from "../common/decorators";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { UsersService } from "../users/users.service";
 import { ShopService } from "./shop.service";
 import { CreateOrderDto } from "./dto/create-order.dto";
 import { AddWishlistDto } from "./dto/add-wishlist.dto";
 
+interface AuthenticatedRequest extends Request {
+  user: { userId: string; email?: string };
+}
+
 @Controller("shop")
 export class ShopController {
-  constructor(private readonly shopService: ShopService) {}
+  constructor(
+    private readonly shopService: ShopService,
+    private readonly usersService: UsersService,
+  ) {}
 
   @Public()
   @Get("products")
   async getProducts(
     @Query("limit") limit?: string,
     @Query("featured") featured?: string,
+    @Query("collection") collection?: string,
   ) {
     return this.shopService.getProducts(
       limit ? parseInt(limit, 10) : 20,
       featured === "true",
+      collection,
+    );
+  }
+
+  @Public()
+  @Get("upcoming")
+  async getUpcomingReleases(@Query("limit") limit?: string) {
+    return this.shopService.getUpcomingReleases(
+      limit ? parseInt(limit, 10) : 10,
     );
   }
 
@@ -38,7 +57,7 @@ export class ShopController {
   async getProductBySlug(@Param("slug") slug: string) {
     const product = await this.shopService.getProductBySlug(slug);
     if (!product) {
-      return { error: "Producto no encontrado" };
+      throw new NotFoundException("Producto no encontrado");
     }
     return product;
   }
@@ -46,52 +65,60 @@ export class ShopController {
   @UseGuards(JwtAuthGuard)
   @Post("order")
   @HttpCode(HttpStatus.CREATED)
-  async createOrder(@Req() req: Request, @Body() dto: CreateOrderDto) {
-    const user = req.user as { userId: string };
-    return this.shopService.createOrder(user.userId, dto);
+  async createOrder(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: CreateOrderDto,
+  ) {
+    const { userId } = req.user;
+    const fullUser = await this.usersService.findById(userId);
+    const membershipLevel = fullUser?.membershipLevel ?? null;
+    return this.shopService.createOrder(userId, dto, membershipLevel);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post("order/cancel/:orderNumber")
   @HttpCode(HttpStatus.OK)
   async cancelOrder(
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Param("orderNumber") orderNumber: string,
   ) {
-    const user = req.user as { userId: string };
-    return this.shopService.cancelOrder(user.userId, orderNumber);
+    const { userId } = req.user;
+    return this.shopService.cancelOrder(userId, orderNumber);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get("my-orders")
-  async getMyOrders(@Req() req: Request) {
-    const user = req.user as { userId: string };
-    return this.shopService.getMyOrders(user.userId);
+  async getMyOrders(@Req() req: AuthenticatedRequest) {
+    const { userId } = req.user;
+    return this.shopService.getMyOrders(userId);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get("wishlist")
-  async getWishlist(@Req() req: Request) {
-    const user = req.user as { userId: string };
-    return this.shopService.getWishlist(user.userId);
+  async getWishlist(@Req() req: AuthenticatedRequest) {
+    const { userId } = req.user;
+    return this.shopService.getWishlist(userId);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post("wishlist/add")
   @HttpCode(HttpStatus.CREATED)
-  async addToWishlist(@Req() req: Request, @Body() dto: AddWishlistDto) {
-    const user = req.user as { userId: string };
-    return this.shopService.addToWishlist(user.userId, dto.productSlug);
+  async addToWishlist(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: AddWishlistDto,
+  ) {
+    const { userId } = req.user;
+    return this.shopService.addToWishlist(userId, dto.productSlug);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post("wishlist/remove")
   @HttpCode(HttpStatus.OK)
   async removeFromWishlist(
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Body("productSlug") productSlug: string,
   ) {
-    const user = req.user as { userId: string };
-    return this.shopService.removeFromWishlist(user.userId, productSlug);
+    const { userId } = req.user;
+    return this.shopService.removeFromWishlist(userId, productSlug);
   }
 }

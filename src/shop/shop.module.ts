@@ -8,6 +8,7 @@ import {
   WishlistItem,
   WishlistItemSchema,
 } from "./schemas/wishlist-item.schema";
+import { UsersModule } from "../users/users.module";
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import {
       { name: Order.name, schema: OrderSchema },
       { name: WishlistItem.name, schema: WishlistItemSchema },
     ]),
+    UsersModule,
   ],
   controllers: [ShopController],
   providers: [ShopService],

@@ -6,12 +6,14 @@ import {
   ArphaRequest,
   ArphaRequestSchema,
 } from "./schemas/arpha-request.schema";
+import { UsersModule } from "../users/users.module";
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: ArphaRequest.name, schema: ArphaRequestSchema },
     ]),
+    UsersModule,
   ],
   controllers: [ArphaController],
   providers: [ArphaService],
