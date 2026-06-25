@@ -49,11 +49,20 @@ export class CoursesController {
     const user = req.user as { userId: string };
     const fullUser = await this.usersService.findById(user.userId);
     const membershipLevel = fullUser?.membershipLevel ?? null;
-    return this.eventsService.enrollInCourse(
+    const result = await this.eventsService.enrollInCourse(
       user.userId,
       courseSlug,
       membershipLevel,
     );
+    return {
+      enrollment: {
+        status: result.enrollment.status,
+        courseSlug: result.enrollment.courseSlug,
+        progress: result.enrollment.progress,
+        paymentConfirmed: result.enrollment.paymentConfirmed,
+      },
+      pricing: result.pricing,
+    };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -86,5 +95,29 @@ export class CoursesController {
   async getMyEnrollments(@Req() req: Request) {
     const user = req.user as { userId: string };
     return this.eventsService.getMyEnrollments(user.userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("my-enrollment/:courseSlug")
+  async getMyEnrollment(
+    @Req() req: Request,
+    @Param("courseSlug") courseSlug: string,
+  ) {
+    const user = req.user as { userId: string };
+    const fullUser = await this.usersService.findById(user.userId);
+    const membershipLevel = fullUser?.membershipLevel ?? null;
+    const course = await this.eventsService.getCourseBySlug(courseSlug);
+    if (!course) {
+      throw new BadRequestException("Curso no encontrado");
+    }
+    const pricing = this.eventsService.calculateCoursePricing(
+      course,
+      membershipLevel,
+    );
+    const enrollment = await this.eventsService.getEnrollmentByUserAndCourse(
+      user.userId,
+      courseSlug,
+    );
+    return { pricing, enrollment };
   }
 }

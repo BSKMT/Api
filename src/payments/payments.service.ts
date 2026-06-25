@@ -20,28 +20,28 @@ import { EventsService } from "../events/events.service";
 import { ShopService } from "../shop/shop.service";
 import type { EnvironmentConfig } from "../config/config.interface";
 
-const TIER_PRICING: Record<string, number> = {
-  "member-solo": 0,
-  "member-companion": 190000,
-  "non-member-solo": 585000,
-  "non-member-companion": 775000,
-};
-
-const TIER_DESCRIPTIONS: Record<string, string> = {
-  "member-solo": "Inscripción RRF Training BSKMT - Miembro (Solo)",
-  "member-companion":
-    "Inscripción RRF Training BSKMT - Miembro (Con acompañante)",
-  "non-member-solo": "Inscripción RRF Training BSKMT - No Miembro (Solo)",
-  "non-member-companion":
-    "Inscripción RRF Training BSKMT - No Miembro (Con acompañante)",
-};
-
 const EVENT_TIER_REFERENCE_PREFIX: Record<string, string> = {
   "member-solo": "MEM-EVT",
   "member-companion": "MEMC-EVT",
   "non-member-solo": "NM-EVT",
   "non-member-companion": "NMC-EVT",
 };
+
+const COURSE_TIER_REFERENCE_PREFIX: Record<string, string> = {
+  "course-member-virtual": "CMV-CRS",
+  "course-member-semipresencial": "CMS-CRS",
+  "course-member-presencial": "CMP-CRS",
+  "course-non-member": "CNM-CRS",
+};
+
+const COURSE_TIERS = new Set([
+  "course-member-virtual",
+  "course-member-semipresencial",
+  "course-member-presencial",
+  "course-non-member",
+]);
+
+const COMPANION_TIERS = new Set(["member-companion", "non-member-companion"]);
 
 @Injectable()
 export class PaymentsService {
@@ -74,31 +74,60 @@ export class PaymentsService {
   }
 
   async createPayment(userId: string, dto: CreatePaymentDto) {
-    const purpose = dto.productSlug ? "shop" : "event";
-
-    if (purpose === "shop") {
+    if (dto.productSlug) {
       return this.createShopPayment(userId, dto);
     }
 
-    const amount = TIER_PRICING[dto.tier];
-    if (amount === undefined) {
-      throw new BadRequestException("Tier de pago inválido");
+    if (COURSE_TIERS.has(dto.tier)) {
+      return this.createCoursePayment(userId, dto);
     }
 
-    const hasCompanion =
-      dto.tier === "member-companion" || dto.tier === "non-member-companion";
+    return this.createEventPayment(userId, dto);
+  }
 
+  private async createEventPayment(userId: string, dto: CreatePaymentDto) {
+    const event = await this.eventsService.getEventBySlug(dto.eventSlug);
+    if (!event) {
+      throw new NotFoundException("Evento no encontrado");
+    }
+
+    const basePrice = event.nonMemberPrice ?? 0;
+
+    let amount: number;
+    let description: string;
+
+    switch (dto.tier) {
+      case "member-solo":
+        amount = 0;
+        description = `Inscripción ${event.title} - Miembro (Solo)`;
+        break;
+      case "member-companion":
+        amount = Math.round(basePrice * 0.5);
+        description = `Inscripción ${event.title} - Miembro (Con acompañante)`;
+        break;
+      case "non-member-solo":
+        amount = basePrice;
+        description = `Inscripción ${event.title} - No Miembro (Solo)`;
+        break;
+      case "non-member-companion":
+        amount = Math.round(basePrice * 1.5);
+        description = `Inscripción ${event.title} - No Miembro (Con acompañante)`;
+        break;
+      default:
+        throw new BadRequestException("Tier de pago inválido para evento");
+    }
+
+    const hasCompanion = COMPANION_TIERS.has(dto.tier);
     const timestamp = Date.now();
     const shortUserId = userId.slice(-8);
-    const eventPrefix = dto.eventSlug.split("-")[0].toUpperCase();
-    const reference = `${EVENT_TIER_REFERENCE_PREFIX[dto.tier] ?? eventPrefix}-2026-${shortUserId}-${timestamp}`;
+    const reference = `${EVENT_TIER_REFERENCE_PREFIX[dto.tier]}-${shortUserId}-${timestamp}`;
 
     const transaction = new this.transactionModel({
       userId,
       eventSlug: dto.eventSlug,
       reference,
       amount,
-      description: TIER_DESCRIPTIONS[dto.tier],
+      description,
       status: "PENDING",
       tier: dto.tier,
       hasCompanion,
@@ -122,6 +151,85 @@ export class PaymentsService {
       };
     }
 
+    return this.buildBoldResponse(transaction, description);
+  }
+
+  private async createCoursePayment(userId: string, dto: CreatePaymentDto) {
+    const course = await this.eventsService.getCourseBySlug(dto.eventSlug);
+    if (!course) {
+      throw new NotFoundException("Curso no encontrado");
+    }
+
+    const basePrice = course.nonMemberPrice ?? 0;
+
+    let amount: number;
+    let description: string;
+
+    switch (dto.tier) {
+      case "course-member-virtual":
+        amount = 0;
+        description = `Inscripción ${course.title} - Miembro (Virtual)`;
+        break;
+      case "course-member-semipresencial":
+        amount = Math.round(
+          basePrice * ((course.memberSemipresencialDiscount ?? 25) / 100),
+        );
+        description = `Inscripción ${course.title} - Miembro (Semipresencial)`;
+        break;
+      case "course-member-presencial":
+        amount = Math.round(
+          basePrice * ((course.memberPresencialDiscount ?? 50) / 100),
+        );
+        description = `Inscripción ${course.title} - Miembro (Presencial)`;
+        break;
+      case "course-non-member":
+        amount = basePrice;
+        description = `Inscripción ${course.title} - No Miembro`;
+        break;
+      default:
+        throw new BadRequestException("Tier de pago inválido para curso");
+    }
+
+    const timestamp = Date.now();
+    const shortUserId = userId.slice(-8);
+    const reference = `${COURSE_TIER_REFERENCE_PREFIX[dto.tier]}-${shortUserId}-${timestamp}`;
+
+    const transaction = new this.transactionModel({
+      userId,
+      eventSlug: dto.eventSlug,
+      reference,
+      amount,
+      description,
+      status: "PENDING",
+      tier: dto.tier,
+      hasCompanion: false,
+      purpose: "course",
+      relatedReference: null,
+    });
+
+    await transaction.save();
+
+    if (amount === 0) {
+      transaction.status = "APPROVED";
+      await transaction.save();
+      this.logger.log(
+        `Free course payment auto-approved: ${reference} for user ${userId}`,
+      );
+      return {
+        reference,
+        amount,
+        status: "APPROVED",
+        requiresPayment: false,
+      };
+    }
+
+    return this.buildBoldResponse(transaction, description);
+  }
+
+  private buildBoldResponse(
+    transaction: TransactionDocument,
+    description: string,
+  ) {
     const boldEnvironment = this.configService.get("BOLD_ENVIRONMENT", {
       infer: true,
     })!;
@@ -138,12 +246,12 @@ export class PaymentsService {
         : "https://payments-api-test.bold.co";
 
     this.logger.log(
-      `Payment intent created: ${reference} for user ${userId}, amount: ${amount} COP`,
+      `Payment intent created: ${transaction.reference} for user ${transaction.userId}, amount: ${transaction.amount} COP`,
     );
 
     return {
-      reference,
-      amount,
+      reference: transaction.reference,
+      amount: transaction.amount,
       status: "PENDING",
       requiresPayment: true,
       boldConfig: {
@@ -151,13 +259,13 @@ export class PaymentsService {
         identityKey: boldIdentityKey,
         environment: boldEnvironment,
         baseUrl: boldBaseUrl,
-        referenceId: reference,
-        description: TIER_DESCRIPTIONS[dto.tier],
-        amount,
+        referenceId: transaction.reference,
+        description,
+        amount: transaction.amount,
         currency: "COP",
         integritySignature: this.generateBoldIntegritySignature(
-          reference,
-          amount,
+          transaction.reference,
+          transaction.amount,
           "COP",
         ),
       },
@@ -206,54 +314,17 @@ export class PaymentsService {
       };
     }
 
-    const boldEnvironment = this.configService.get("BOLD_ENVIRONMENT", {
-      infer: true,
-    })!;
-    const boldPublicKey = this.configService.get("BOLD_PUBLIC_KEY", {
-      infer: true,
-    })!;
-    const boldIdentityKey = this.configService.get("BOLD_IDENTITY_KEY", {
-      infer: true,
-    })!;
-
-    const boldBaseUrl =
-      boldEnvironment === "production"
-        ? "https://payments.api.bold.co"
-        : "https://payments-api-test.bold.co";
-
-    this.logger.log(
-      `Shop payment intent created: ${reference} for user ${userId}, amount: ${amount} COP`,
+    return this.buildBoldResponse(
+      transaction,
+      `Compra Tienda BSK - ${dto.productSlug}`,
     );
-
-    return {
-      reference,
-      amount,
-      status: "PENDING",
-      requiresPayment: true,
-      boldConfig: {
-        publicKey: boldPublicKey,
-        identityKey: boldIdentityKey,
-        environment: boldEnvironment,
-        baseUrl: boldBaseUrl,
-        referenceId: reference,
-        description: `Compra Tienda BSK - ${dto.productSlug}`,
-        amount,
-        currency: "COP",
-        integritySignature: this.generateBoldIntegritySignature(
-          reference,
-          amount,
-          "COP",
-        ),
-      },
-    };
   }
 
   async handleWebhook(rawBody: Buffer, signature: string): Promise<void> {
     const boldEnv =
-      this.configService.get("BOLD_ENVIRONMENT", {
+      this.configService.get<string>("BOLD_ENVIRONMENT", {
         infer: true,
       }) ?? "sandbox";
-    // Bold docs: in sandbox the HMAC must be computed with an empty secret.
     const secretKey =
       boldEnv === "sandbox"
         ? ""
@@ -351,30 +422,45 @@ export class PaymentsService {
     );
 
     if (statusFromEvent === "APPROVED") {
-      try {
-        if (transaction.purpose === "shop" && transaction.relatedReference) {
-          await this.shopService.linkOrderPayment(
-            transaction.relatedReference,
-            transaction.reference,
-          );
-          this.logger.log(
-            `Shop order payment linked: order=${transaction.relatedReference} ref=${transaction.reference}`,
-          );
-        } else {
-          await this.eventsService.linkPayment(
-            transaction.userId,
-            transaction.eventSlug,
-            transaction.reference,
-          );
-          this.logger.log(
-            `Event registration payment linked: user=${transaction.userId} event=${transaction.eventSlug}`,
-          );
-        }
-      } catch (err: unknown) {
-        this.logger.warn(
-          `Failed to link payment: ${err instanceof Error ? err.message : String(err)}`,
+      await this.linkPaymentByPurpose(transaction);
+    }
+  }
+
+  private async linkPaymentByPurpose(
+    transaction: TransactionDocument,
+  ): Promise<void> {
+    try {
+      if (transaction.purpose === "shop" && transaction.relatedReference) {
+        await this.shopService.linkOrderPayment(
+          transaction.relatedReference,
+          transaction.reference,
+        );
+        this.logger.log(
+          `Shop order payment linked: order=${transaction.relatedReference} ref=${transaction.reference}`,
+        );
+      } else if (transaction.purpose === "course") {
+        await this.eventsService.linkCoursePayment(
+          transaction.userId,
+          transaction.eventSlug,
+          transaction.reference,
+        );
+        this.logger.log(
+          `Course payment linked: user=${transaction.userId} course=${transaction.eventSlug}`,
+        );
+      } else {
+        await this.eventsService.linkPayment(
+          transaction.userId,
+          transaction.eventSlug,
+          transaction.reference,
+        );
+        this.logger.log(
+          `Event registration payment linked: user=${transaction.userId} event=${transaction.eventSlug}`,
         );
       }
+    } catch (err: unknown) {
+      this.logger.warn(
+        `Failed to link payment: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
@@ -399,14 +485,6 @@ export class PaymentsService {
     }
   }
 
-  /**
-   * Queries Bold's payment-voucher API for the real-time status of a
-   * transaction. This is the recommended fallback when the webhook is not
-   * received (Docs_Bold/pagos_en_linea/consulta_de_transacciones.md).
-   *
-   * Rate-limited via `lastBoldSyncAt` to at most one call every 10 seconds,
-   * preventing excessive API requests during frontend polling.
-   */
   private async syncWithBold(transaction: TransactionDocument): Promise<void> {
     const now = new Date();
     const minIntervalMs = 10_000;
@@ -496,30 +574,7 @@ export class PaymentsService {
       await transaction.save();
 
       if (mappedStatus === "APPROVED") {
-        try {
-          if (transaction.purpose === "shop" && transaction.relatedReference) {
-            await this.shopService.linkOrderPayment(
-              transaction.relatedReference,
-              transaction.reference,
-            );
-            this.logger.log(
-              `Shop order payment linked via sync: order=${transaction.relatedReference} ref=${transaction.reference}`,
-            );
-          } else {
-            await this.eventsService.linkPayment(
-              transaction.userId,
-              transaction.eventSlug,
-              transaction.reference,
-            );
-            this.logger.log(
-              `Event registration payment linked via sync: user=${transaction.userId} event=${transaction.eventSlug}`,
-            );
-          }
-        } catch (err: unknown) {
-          this.logger.warn(
-            `Failed to link payment after sync: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        }
+        await this.linkPaymentByPurpose(transaction);
       }
     } catch (err: unknown) {
       this.logger.warn(

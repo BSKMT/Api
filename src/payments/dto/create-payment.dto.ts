@@ -10,6 +10,10 @@ export class CreatePaymentDto {
     "member-companion",
     "non-member-solo",
     "non-member-companion",
+    "course-member-virtual",
+    "course-member-semipresencial",
+    "course-member-presencial",
+    "course-non-member",
   ])
   tier: string;
 
