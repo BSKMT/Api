@@ -95,6 +95,10 @@ export class AuthController {
       email: user.email,
       profileCompleted: fullUser?.profileCompleted ?? false,
       membershipLevel: fullUser?.membershipLevel ?? null,
+      membershipExpired: fullUser?.membershipExpired ?? true,
+      membershipExpiryDate: fullUser?.membershipExpiryDate ?? null,
+      membershipStartDate: fullUser?.membershipStartDate ?? null,
+      membershipPaymentPlan: fullUser?.membershipPaymentPlan ?? null,
       role: fullUser?.role ?? "user",
       completedSections: fullUser?.completedSections ?? [],
     };
