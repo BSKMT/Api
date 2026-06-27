@@ -18,6 +18,7 @@ import { ProfileModule } from "./profile/profile.module";
 import { UsersModule } from "./users/users.module";
 import { ArphaModule } from "./arpha/arpha.module";
 import { ShopModule } from "./shop/shop.module";
+import { AdminModule } from "./admin/admin.module";
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { ShopModule } from "./shop/shop.module";
     CsrfModule,
     ArphaModule,
     ShopModule,
+    AdminModule,
   ],
   providers: [
     {
