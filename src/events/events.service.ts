@@ -89,6 +89,10 @@ export class EventsService {
       existing.transactionReference = null;
       existing.companionData = null;
       const saved = await existing.save();
+      await this.eventModel.updateOne(
+        { slug: dto.eventSlug },
+        { $inc: { registeredCount: 1 } },
+      );
       this.logger.log(
         `Event re-registration after cancellation: user=${userId} event=${dto.eventSlug} status=${status}`,
       );
@@ -106,6 +110,10 @@ export class EventsService {
     });
 
     const saved = await registration.save();
+    await this.eventModel.updateOne(
+      { slug: dto.eventSlug },
+      { $inc: { registeredCount: 1 } },
+    );
     this.logger.log(
       `Event registration: user=${userId} event=${dto.eventSlug} status=${status}`,
     );
@@ -352,6 +360,11 @@ export class EventsService {
     registration.status = "CANCELLED";
     registration.confirmedAt = null;
     await registration.save();
+
+    await this.eventModel.updateOne(
+      { slug: eventSlug },
+      { $inc: { registeredCount: -1 } },
+    );
 
     this.logger.log(
       `Registration cancelled: user=${userId} event=${eventSlug}`,
