@@ -686,6 +686,7 @@ export class PaymentsService {
       status: string;
       amount: number;
       tier: string;
+      purpose: string;
       boldPaymentId: string | null;
       paymentMethod: string | null;
       createdAt: Date;
@@ -707,6 +708,7 @@ export class PaymentsService {
       status: transaction.status,
       amount: transaction.amount,
       tier: transaction.tier,
+      purpose: transaction.purpose,
       boldPaymentId: transaction.boldPaymentId,
       paymentMethod: transaction.paymentMethod,
       createdAt: transaction.createdAt,
