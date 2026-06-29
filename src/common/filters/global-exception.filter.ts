@@ -29,6 +29,13 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           ...((exceptionResponse as Record<string, unknown>)
             .message as string[]),
         );
+      } else if (
+        typeof (exceptionResponse as Record<string, unknown>).message ===
+        "string"
+      ) {
+        message.push(
+          (exceptionResponse as Record<string, unknown>).message as string,
+        );
       } else {
         message.push(JSON.stringify(exceptionResponse));
       }

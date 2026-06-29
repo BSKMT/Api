@@ -51,7 +51,7 @@ export class EventsService {
       eventSlug: dto.eventSlug,
     });
 
-    if (existing) {
+    if (existing && existing.status !== "CANCELLED") {
       throw new ConflictException("Ya estás registrado para este evento");
     }
 
@@ -75,6 +75,24 @@ export class EventsService {
 
     if (membershipStatus === "active-member" && dto.attendanceMode === "solo") {
       status = "CONFIRMED";
+    }
+
+    if (existing) {
+      existing.registrationType = dto.registrationType;
+      existing.attendanceMode = dto.attendanceMode;
+      existing.status = status;
+      existing.membershipStatus = membershipStatus;
+      existing.confirmedAt = status === "CONFIRMED" ? new Date() : null;
+      existing.paymentConfirmed = false;
+      existing.waiverAccepted = false;
+      existing.waiverAcceptedAt = null;
+      existing.transactionReference = null;
+      existing.companionData = null;
+      const saved = await existing.save();
+      this.logger.log(
+        `Event re-registration after cancellation: user=${userId} event=${dto.eventSlug} status=${status}`,
+      );
+      return saved;
     }
 
     const registration = new this.eventRegistrationModel({
