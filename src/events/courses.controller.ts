@@ -92,9 +92,10 @@ export class CoursesController {
 
   @UseGuards(JwtAuthGuard)
   @Get("my-enrollments")
-  async getMyEnrollments(@Req() req: Request) {
+  async getMyEnrollments(@Req() req: Request, @Query("all") all?: string) {
     const user = req.user as { userId: string };
-    return this.eventsService.getMyEnrollments(user.userId);
+    const includeCancelled = all === "true" || all === "1";
+    return this.eventsService.getMyEnrollments(user.userId, includeCancelled);
   }
 
   @UseGuards(JwtAuthGuard)
