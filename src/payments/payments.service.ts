@@ -811,6 +811,8 @@ export class PaymentsService {
       amount: t.amount,
       description: t.description,
       tier: t.tier,
+      purpose: t.purpose,
+      relatedReference: t.relatedReference,
       hasCompanion: t.hasCompanion,
       companionData: t.companionData,
       paymentMethod: t.paymentMethod,

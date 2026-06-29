@@ -566,10 +566,15 @@ export class EventsService {
     return enrollment;
   }
 
-  async getMyEnrollments(userId: string): Promise<CourseEnrollmentDocument[]> {
-    return this.courseEnrollmentModel
-      .find({ userId, status: { $ne: "CANCELLED" } })
-      .sort({ createdAt: -1 });
+  async getMyEnrollments(
+    userId: string,
+    includeCancelled = false,
+  ): Promise<CourseEnrollmentDocument[]> {
+    const filter: Record<string, unknown> = { userId };
+    if (!includeCancelled) {
+      filter.status = { $ne: "CANCELLED" };
+    }
+    return this.courseEnrollmentModel.find(filter).sort({ createdAt: -1 });
   }
 
   async getEnrollmentByUserAndCourse(
