@@ -1,4 +1,4 @@
-import { IsString, IsIn, IsOptional } from "class-validator";
+import { IsString, IsIn, IsOptional, IsNumber, Min } from "class-validator";
 
 export class CreatePaymentDto {
   @IsString()
@@ -18,6 +18,7 @@ export class CreatePaymentDto {
     "arpha-emergencia",
     "arpha-juridica",
     "arpha-ruta",
+    "shop",
   ])
   tier: string;
 
@@ -28,4 +29,9 @@ export class CreatePaymentDto {
   @IsString()
   @IsOptional()
   relatedReference?: string;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  amount?: number;
 }

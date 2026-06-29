@@ -52,6 +52,8 @@ const ARPHA_TIERS = new Set([
   "arpha-ruta",
 ]);
 
+const SHOP_TIERS = new Set(["shop"]);
+
 const ARPHA_TIER_PREFIX: Record<string, string> = {
   "arpha-tecnica": "ARPHA-TEC",
   "arpha-emergencia": "ARPHA-EMG",
@@ -104,6 +106,10 @@ export class PaymentsService {
 
     if (COURSE_TIERS.has(dto.tier)) {
       return this.createCoursePayment(userId, dto);
+    }
+
+    if (SHOP_TIERS.has(dto.tier)) {
+      return this.createShopPayment(userId, dto);
     }
 
     if (dto.productSlug || dto.relatedReference) {
@@ -336,7 +342,7 @@ export class PaymentsService {
       );
     }
 
-    const amount = parseInt(dto.tier, 10);
+    const amount = dto.amount ?? parseInt(dto.tier, 10);
     if (isNaN(amount) || amount < 0) {
       throw new BadRequestException("Monto de pago inválido");
     }
