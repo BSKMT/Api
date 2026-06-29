@@ -59,11 +59,11 @@ export class EventsService {
 
     if (
       membershipLevel === "Legend" &&
-      dto.registrationType === "professional"
+      dto.registrationType === "managed"
     ) {
       membershipStatus = "active-member";
     } else if (
-      dto.registrationType === "professional" &&
+      dto.registrationType === "managed" &&
       membershipLevel !== "Legend"
     ) {
       membershipStatus = "non-member-paid";

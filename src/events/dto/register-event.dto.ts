@@ -5,7 +5,7 @@ export class RegisterEventDto {
   eventSlug: string;
 
   @IsString()
-  @IsIn(["professional", "self-managed"])
+  @IsIn(["managed", "self-managed"])
   registrationType: string;
 
   @IsString()
