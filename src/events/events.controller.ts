@@ -132,6 +132,7 @@ export class EventsController {
       eventSlug,
     );
     const basePrice = event.nonMemberPrice ?? 0;
+    const companionPrice = event.companionPrice ?? Math.round(basePrice * 0.5);
     const isLegend = membershipLevel === "Legend";
     return {
       event: {
@@ -146,9 +147,9 @@ export class EventsController {
       },
       pricing: {
         memberSolo: 0,
-        memberCompanion: Math.round(basePrice * 0.5),
+        memberCompanion: companionPrice,
         nonMemberSolo: basePrice,
-        nonMemberCompanion: Math.round(basePrice * 1.5),
+        nonMemberCompanion: basePrice + companionPrice,
       },
       isLegend,
       registration,

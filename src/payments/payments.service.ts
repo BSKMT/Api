@@ -147,6 +147,7 @@ export class PaymentsService {
     }
 
     const basePrice = event.nonMemberPrice ?? 0;
+    const companionPrice = event.companionPrice ?? Math.round(basePrice * 0.5);
 
     let amount: number;
     let description: string;
@@ -157,7 +158,7 @@ export class PaymentsService {
         description = `Inscripción ${event.title} - Miembro (Solo)`;
         break;
       case "member-companion":
-        amount = Math.round(basePrice * 0.5);
+        amount = companionPrice;
         description = `Inscripción ${event.title} - Miembro (Con acompañante)`;
         break;
       case "non-member-solo":
@@ -165,7 +166,7 @@ export class PaymentsService {
         description = `Inscripción ${event.title} - No Miembro (Solo)`;
         break;
       case "non-member-companion":
-        amount = Math.round(basePrice * 1.5);
+        amount = basePrice + companionPrice;
         description = `Inscripción ${event.title} - No Miembro (Con acompañante)`;
         break;
       default:
