@@ -5,7 +5,9 @@ import { ZohoMailService } from "./zoho-mail.service";
 import {
   contactAutoReplyTemplate,
   contactInternalTemplate,
+  emailVerificationTemplate,
   notificationTemplate,
+  passwordResetTemplate,
 } from "./email.templates";
 
 /**
@@ -98,6 +100,60 @@ export class EmailService {
       content: notificationTemplate({
         title: data.title,
         message: data.message,
+      }),
+    });
+    return result.ok;
+  }
+
+  /**
+   * Envia el correo de verificacion de correo electronico usando el
+   * enlace generado por Better Auth. Se llama desde el callback
+   * `emailVerification.sendVerificationEmail` en la configuracion de
+   * Better Auth.
+   */
+  async sendVerificationEmail(data: {
+    to: string;
+    name: string;
+    verificationUrl: string;
+  }): Promise<boolean> {
+    if (!this.zohoMailService.isConfigured()) {
+      return false;
+    }
+
+    const result = await this.zohoMailService.sendEmail({
+      fromAddress: this.getFromAddress(),
+      toAddress: data.to,
+      subject: "Verifica tu correo — BSK Motorcycle Team",
+      content: emailVerificationTemplate({
+        name: data.name,
+        verificationUrl: data.verificationUrl,
+      }),
+    });
+    return result.ok;
+  }
+
+  /**
+   * Envia el correo de restablecimiento de contrasena usando el
+   * enlace generado por Better Auth. Se llama desde el callback
+   * `emailAndPassword.sendResetPassword` en la configuracion de
+   * Better Auth.
+   */
+  async sendPasswordResetEmail(data: {
+    to: string;
+    name: string;
+    resetUrl: string;
+  }): Promise<boolean> {
+    if (!this.zohoMailService.isConfigured()) {
+      return false;
+    }
+
+    const result = await this.zohoMailService.sendEmail({
+      fromAddress: this.getFromAddress(),
+      toAddress: data.to,
+      subject: "Restablece tu contrasena — BSK Motorcycle Team",
+      content: passwordResetTemplate({
+        name: data.name,
+        resetUrl: data.resetUrl,
       }),
     });
     return result.ok;

@@ -8,7 +8,8 @@ import { urlencoded } from "express";
 import { AppModule } from "./app.module";
 import { GlobalExceptionFilter } from "./common/filters/global-exception.filter";
 import type { EnvironmentConfig } from "./config/config.interface";
-import { getAuth } from "./auth/better-auth";
+import { getAuth, setAuthDependencies } from "./auth/better-auth";
+import { EmailService } from "./zoho-mail/email.service";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -20,7 +21,12 @@ async function bootstrap() {
   const configService = app.get(ConfigService<EnvironmentConfig>);
 
   app.use(helmet.default());
-  app.use(urlencoded({ extended: true, limit: "1mb" }));
+
+  const emailService = app.get(EmailService);
+  const landingPageUrl =
+    configService.get<string>("LANDING_PAGE_URL", { infer: true }) ??
+    "http://localhost:4321";
+  setAuthDependencies(emailService, landingPageUrl);
 
   const corsOrigin =
     configService.get("CORS_ORIGIN", { infer: true }) ?? "https://bskmt.com";
@@ -36,7 +42,7 @@ async function bootstrap() {
    * Mount Better Auth handler at /api/auth/*
    *
    * Better Auth needs the raw request body, so we mount it BEFORE
-   * express.json() middleware. We skip /api/auth/me so NestJS
+   * any Express body parsers. We skip /api/auth/me so NestJS
    * can handle the custom /me endpoint via AuthController.
    */
   const auth = await getAuth();
@@ -50,6 +56,7 @@ async function bootstrap() {
     return authHandler(req, res);
   });
 
+  app.use(urlencoded({ extended: true, limit: "1mb" }));
   app.use(express.json({ limit: "1mb" }));
 
   app.useGlobalPipes(

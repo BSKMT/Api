@@ -18,4 +18,5 @@ export interface EnvironmentConfig {
   ZOHO_TEAM_EMAIL: string;
   ZOHO_API_BASE: string;
   ZOHO_TOKEN_BASE: string;
+  LANDING_PAGE_URL: string;
 }
