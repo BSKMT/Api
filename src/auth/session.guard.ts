@@ -38,7 +38,9 @@ export class SessionGuard {
     const request = context.switchToHttp().getRequest<Request>();
 
     const session = await auth.api.getSession({
-      headers: new Headers(Object.entries(request.headers as Record<string, string>)),
+      headers: new Headers(
+        Object.entries(request.headers as Record<string, string>),
+      ),
     });
 
     if (!session) {
@@ -58,7 +60,11 @@ export class SessionGuard {
       );
     }
 
-    (request as Request & { user: { userId: string; email: string; role: string } }).user = {
+    (
+      request as Request & {
+        user: { userId: string; email: string; role: string };
+      }
+    ).user = {
       userId: String(mongooseUser._id),
       email: session.user.email,
       role: mongooseUser.role,

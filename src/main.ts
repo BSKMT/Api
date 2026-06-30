@@ -41,16 +41,13 @@ async function bootstrap() {
    * can handle the custom /me endpoint via AuthController.
    */
   const authHandler = toNodeHandler(auth);
-  app.use(
-    "/api/auth",
-    (req: Request, res: Response, next: NextFunction) => {
-      const path = req.path;
-      if (path === "/me" || path === "/me/") {
-        return next();
-      }
-      return authHandler(req, res);
-    },
-  );
+  app.use("/api/auth", (req: Request, res: Response, next: NextFunction) => {
+    const path = req.path;
+    if (path === "/me" || path === "/me/") {
+      return next();
+    }
+    return authHandler(req, res);
+  });
 
   app.use(express.json({ limit: "1mb" }));
 

@@ -1,9 +1,4 @@
-import {
-  Controller,
-  Get,
-  Req,
-  UseGuards,
-} from "@nestjs/common";
+import { Controller, Get, Req, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import { UsersService } from "../users/users.service";
 import { SessionGuard } from "./session.guard";
