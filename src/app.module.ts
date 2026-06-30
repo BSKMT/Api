@@ -7,6 +7,7 @@ import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { AuthModule } from "./auth/auth.module";
 import { B2bModule } from "./b2b/b2b.module";
 import { configValidationSchema } from "./config/config.validation";
+import { ContactModule } from "./contact/contact.module";
 import { EventsModule } from "./events/events.module";
 import { MembershipModule } from "./membership/membership.module";
 import { MembershipExpirationModule } from "./membership/membership-expiration.module";
@@ -18,6 +19,7 @@ import { UsersModule } from "./users/users.module";
 import { ArphaModule } from "./arpha/arpha.module";
 import { ShopModule } from "./shop/shop.module";
 import { AdminModule } from "./admin/admin.module";
+import { ZohoMailModule } from "./zoho-mail/zoho-mail.module";
 
 @Module({
   imports: [
@@ -62,6 +64,8 @@ import { AdminModule } from "./admin/admin.module";
     ArphaModule,
     ShopModule,
     AdminModule,
+    ZohoMailModule,
+    ContactModule,
   ],
   providers: [
     {

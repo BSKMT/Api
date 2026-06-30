@@ -423,6 +423,7 @@ export class MembershipService {
         statusFromEvent === "REJECTED"
           ? "Tu pago fue rechazado por la pasarela. Puedes intentarlo de nuevo."
           : "Ocurrió un fallo procesando tu pago. Revisa tu método de pago e intenta nuevamente.";
+      const rejectedUser = await this.usersService.findById(transaction.userId);
       await this.notificationsService.create({
         userId: transaction.userId,
         type: NotificationType.MEMBERSHIP_PAYMENT_REJECTED,
@@ -436,6 +437,7 @@ export class MembershipService {
           status: statusFromEvent,
         },
         relatedReference: referenceId,
+        emailTo: rejectedUser?.email,
       });
     }
   }
@@ -514,6 +516,7 @@ export class MembershipService {
             newExpiry: newExpiry.toISOString(),
           },
           relatedReference: transaction.reference,
+          emailTo: user.email,
         });
       } else {
         await this.notificationsService.create({
@@ -527,6 +530,7 @@ export class MembershipService {
             installmentTotal: INSTALLMENTS_TOTAL,
             isRenewal: true,
           },
+          emailTo: user.email,
           relatedReference: transaction.reference,
         });
       }
@@ -558,6 +562,7 @@ export class MembershipService {
           newExpiry: expiry.toISOString(),
         },
         relatedReference: transaction.reference,
+        emailTo: user.email,
       });
       return;
     }
@@ -599,6 +604,7 @@ export class MembershipService {
           newExpiry: expiry.toISOString(),
         },
         relatedReference: transaction.reference,
+        emailTo: user.email,
       });
     } else {
       this.logger.log(
@@ -617,6 +623,7 @@ export class MembershipService {
           amount: transaction.amount,
         },
         relatedReference: transaction.reference,
+        emailTo: user.email,
       });
     }
   }
@@ -727,6 +734,9 @@ export class MembershipService {
           mappedStatus === "REJECTED"
             ? "Tu pago fue rechazado por la pasarela. Puedes intentarlo de nuevo."
             : "Ocurrió un fallo procesando tu pago. Revisa tu método de pago e intenta nuevamente.";
+        const rejectedUser = await this.usersService.findById(
+          transaction.userId,
+        );
         await this.notificationsService.create({
           userId: transaction.userId,
           type: NotificationType.MEMBERSHIP_PAYMENT_REJECTED,
@@ -740,6 +750,7 @@ export class MembershipService {
             status: mappedStatus,
           },
           relatedReference: transaction.reference,
+          emailTo: rejectedUser?.email,
         });
       }
     } catch (err: unknown) {

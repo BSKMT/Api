@@ -14,4 +14,14 @@ export const configValidationSchema = Joi.object({
   BOLD_ENVIRONMENT: Joi.string()
     .valid("sandbox", "production", "test")
     .default("sandbox"),
+  ZOHO_CLIENT_ID: Joi.string().allow("").default(""),
+  ZOHO_CLIENT_SECRET: Joi.string().allow("").default(""),
+  ZOHO_REFRESH_TOKEN: Joi.string().allow("").default(""),
+  ZOHO_ACCOUNT_ID: Joi.string().allow("").default(""),
+  ZOHO_FROM_ADDRESS: Joi.string().allow("").default(""),
+  ZOHO_TEAM_EMAIL: Joi.string().allow("").default(""),
+  ZOHO_API_BASE: Joi.string().uri().default("https://mail.zoho.com"),
+  ZOHO_TOKEN_BASE: Joi.string()
+    .uri()
+    .default("https://accounts.zoho.com/oauth/v2"),
 });
