@@ -102,3 +102,49 @@ export function notificationTemplate(data: {
 }): string {
   return SHELL(data.title, `${HEADING(data.title)}${PARAGRAPH(data.message)}`);
 }
+
+/**
+ * Correo de verificacion de correo electronico enviado por Better Auth.
+ * Contiene un enlace con el token para verificar la cuenta.
+ */
+export function emailVerificationTemplate(data: {
+  name: string;
+  verificationUrl: string;
+}): string {
+  return SHELL(
+    "Verifica tu correo electronico",
+    `${HEADING(`Hola ${data.name}, verifica tu correo`)}
+    ${PARAGRAPH("Has creado una cuenta en BSK Motorcycle Team. Confirma tu direccion de correo electronico para activar tu cuenta y acceder al panel de miembro.")}
+    <p style="margin:24px 0;">
+      <a href="${data.verificationUrl}" style="display:inline-block;background-color:#dc2626;color:#ffffff;font-size:14px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;padding:12px 32px;border-radius:9999px;text-decoration:none;">
+        Verificar correo
+      </a>
+    </p>
+    ${PARAGRAPH("Si no puedes ver el boton, copia y pega el siguiente enlace en tu navegador:")}
+    <p style="margin:8px 0 0;font-size:13px;line-height:1.5;color:#64748b;word-break:break-all;">${data.verificationUrl}</p>
+    ${PARAGRAPH("Si no creaste una cuenta en BSK Motorcycle Team, puedes ignorar este correo de forma segura.")}`,
+  );
+}
+
+/**
+ * Correo de restablecimiento de contrasena enviado por Better Auth.
+ * Contiene un enlace con el token para restablecer la contrasena.
+ */
+export function passwordResetTemplate(data: {
+  name: string;
+  resetUrl: string;
+}): string {
+  return SHELL(
+    "Restablece tu contrasena",
+    `${HEADING(`Hola ${data.name}`)}
+    ${PARAGRAPH("Has solicitado restablecer tu contrasena de acceso a BSK Motorcycle Team. Haz clic en el siguiente boton para establecer una nueva contrasena:")}
+    <p style="margin:24px 0;">
+      <a href="${data.resetUrl}" style="display:inline-block;background-color:#dc2626;color:#ffffff;font-size:14px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;padding:12px 32px;border-radius:9999px;text-decoration:none;">
+        Restablecer contrasena
+      </a>
+    </p>
+    ${PARAGRAPH("Si no puedes ver el boton, copia y pega el siguiente enlace en tu navegador:")}
+    <p style="margin:8px 0 0;font-size:13px;line-height:1.5;color:#64748b;word-break:break-all;">${data.resetUrl}</p>
+    ${PARAGRAPH("Este enlace expirara en 1 hora por razones de seguridad. Si no solicitaste este cambio, puedes ignorar este correo de forma segura.")}`,
+  );
+}
