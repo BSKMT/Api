@@ -8,8 +8,7 @@ import { urlencoded } from "express";
 import { AppModule } from "./app.module";
 import { GlobalExceptionFilter } from "./common/filters/global-exception.filter";
 import type { EnvironmentConfig } from "./config/config.interface";
-import { auth } from "./auth/better-auth";
-import { toNodeHandler } from "better-auth/node";
+import { getAuth } from "./auth/better-auth";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -40,6 +39,8 @@ async function bootstrap() {
    * express.json() middleware. We skip /api/auth/me so NestJS
    * can handle the custom /me endpoint via AuthController.
    */
+  const auth = await getAuth();
+  const { toNodeHandler } = await import("better-auth/node");
   const authHandler = toNodeHandler(auth);
   app.use("/api/auth", (req: Request, res: Response, next: NextFunction) => {
     const path = req.path;
