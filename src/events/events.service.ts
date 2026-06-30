@@ -57,10 +57,7 @@ export class EventsService {
 
     let membershipStatus: string;
 
-    if (
-      membershipLevel === "Legend" &&
-      dto.registrationType === "managed"
-    ) {
+    if (membershipLevel === "Legend" && dto.registrationType === "managed") {
       membershipStatus = "active-member";
     } else if (
       dto.registrationType === "managed" &&

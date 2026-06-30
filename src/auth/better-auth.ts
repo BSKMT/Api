@@ -20,7 +20,10 @@ export const auth = betterAuth({
   }),
 
   baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:3000",
-  secret: process.env.BETTER_AUTH_SECRET ?? process.env.JWT_SECRET ?? "fallback-secret-change-me",
+  secret:
+    process.env.BETTER_AUTH_SECRET ??
+    process.env.JWT_SECRET ??
+    "fallback-secret-change-me",
 
   emailAndPassword: {
     enabled: true,
@@ -29,10 +32,9 @@ export const auth = betterAuth({
     autoSignIn: true,
     requireEmailVerification: false,
 
-    sendResetPassword: async ({ user, url }, _request) => {
-      console.log(
-        `[Password Reset] Reset link for ${user.email}: ${url}`,
-      );
+    // eslint-disable-next-line @typescript-eslint/require-await
+    sendResetPassword: async ({ user, url }) => {
+      console.log(`[Password Reset] Reset link for ${user.email}: ${url}`);
     },
 
     revokeSessionsOnPasswordReset: true,
@@ -40,7 +42,8 @@ export const auth = betterAuth({
   },
 
   emailVerification: {
-    sendVerificationEmail: async ({ user, url }, _request) => {
+    // eslint-disable-next-line @typescript-eslint/require-await
+    sendVerificationEmail: async ({ user, url }) => {
       console.log(
         `[Email Verification] Verification link for ${user.email}: ${url}`,
       );
