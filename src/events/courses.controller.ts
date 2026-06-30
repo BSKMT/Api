@@ -11,7 +11,7 @@ import {
 } from "@nestjs/common";
 import type { Request } from "express";
 import { Public } from "../common/decorators";
-import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { SessionGuard } from "../auth/session.guard";
 import { UsersService } from "../users/users.service";
 import { EventsService } from "./events.service";
 
@@ -40,7 +40,7 @@ export class CoursesController {
     return course;
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Post("enroll")
   async enrollInCourse(
     @Req() req: Request,
@@ -65,7 +65,7 @@ export class CoursesController {
     };
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Post("cancel")
   async cancelEnrollment(
     @Req() req: Request,
@@ -75,7 +75,7 @@ export class CoursesController {
     return this.eventsService.cancelCourseEnrollment(user.userId, courseSlug);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Post("progress")
   async updateProgress(
     @Req() req: Request,
@@ -90,7 +90,7 @@ export class CoursesController {
     );
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Get("my-enrollments")
   async getMyEnrollments(@Req() req: Request, @Query("all") all?: string) {
     const user = req.user as { userId: string };
@@ -98,7 +98,7 @@ export class CoursesController {
     return this.eventsService.getMyEnrollments(user.userId, includeCancelled);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Get("my-enrollment/:courseSlug")
   async getMyEnrollment(
     @Req() req: Request,

@@ -5,9 +5,6 @@ import {
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
-import * as bcrypt from "bcrypt";
-import { ConfigService } from "@nestjs/config";
-import type { EnvironmentConfig } from "../config/config.interface";
 import {
   User,
   UserDocument,
@@ -16,7 +13,6 @@ import {
   PartialPaymentCredit,
   REQUIRED_PROFILE_SECTIONS,
 } from "./schemas/user.schema";
-import { RegisterDto } from "../auth/dto/register.dto";
 
 function getColombiaDate(): string {
   const now = new Date();
@@ -51,7 +47,6 @@ async function generateMemberNumber(
 export class UsersService {
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
-    private readonly configService: ConfigService<EnvironmentConfig>,
   ) {}
 
   async findByEmail(email: string): Promise<UserDocument | null> {
@@ -62,19 +57,23 @@ export class UsersService {
     return this.userModel.findById(id).lean();
   }
 
-  async create(dto: RegisterDto): Promise<UserDocument> {
-    const existing = await this.findByEmail(dto.email);
+  async findByBetterAuthId(betterAuthId: string): Promise<UserDocument | null> {
+    return this.userModel.findOne({ betterAuthId }).lean();
+  }
+
+  /**
+   * Creates a Mongoose business-data user linked to a Better Auth account.
+   * Called from the Better Auth `databaseHooks.user.create.after` hook.
+   */
+  async create(betterAuthId: string, email: string): Promise<UserDocument> {
+    const existing = await this.findByBetterAuthId(betterAuthId);
     if (existing) {
-      throw new ConflictException("El correo electronico ya esta registrado");
+      throw new ConflictException("El usuario ya existe en la base de datos");
     }
 
-    const saltRounds =
-      this.configService.get<number>("BCRYPT_SALT_ROUNDS", 12) ?? 12;
-    const passwordHash = await bcrypt.hash(dto.password, Number(saltRounds));
-
     const created = new this.userModel({
-      email: dto.email.toLowerCase(),
-      password: passwordHash,
+      email: email.toLowerCase(),
+      betterAuthId,
       role: "user",
       profileCompleted: false,
       completedSections: [],
@@ -82,13 +81,6 @@ export class UsersService {
     });
 
     return created.save();
-  }
-
-  async updateRefreshTokenHash(
-    userId: string,
-    refreshTokenHash: string | null,
-  ): Promise<void> {
-    await this.userModel.updateOne({ _id: userId }, { refreshTokenHash });
   }
 
   async updateProfileSection(

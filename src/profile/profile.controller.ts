@@ -9,14 +9,14 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type { Request } from "express";
-import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { SessionGuard } from "../auth/session.guard";
 import { UsersService } from "../users/users.service";
 import { UpdateProfileSectionDto } from "./dto/update-profile-section.dto";
 import { DeleteProfileSectionDto } from "./dto/delete-profile-section.dto";
 import { REQUIRED_PROFILE_SECTIONS } from "../users/schemas/user.schema";
 
 @Controller("profile")
-@UseGuards(JwtAuthGuard)
+@UseGuards(SessionGuard)
 export class ProfileController {
   constructor(private readonly usersService: UsersService) {}
 

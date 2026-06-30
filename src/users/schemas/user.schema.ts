@@ -70,8 +70,13 @@ export class User {
   @Prop({ required: true, unique: true, lowercase: true, trim: true })
   email!: string;
 
-  @Prop({ required: true })
-  password!: string;
+  /**
+   * Reference to the Better Auth `user` collection document.
+   * Better Auth manages authentication (password, sessions, email verification);
+   * this Mongoose collection stores business data only.
+   */
+  @Prop({ required: true, unique: true, index: true })
+  betterAuthId!: string;
 
   @Prop({ type: String })
   membershipLevel?: string | null;
@@ -94,9 +99,6 @@ export class User {
 
   @Prop({ default: true })
   isActive!: boolean;
-
-  @Prop()
-  refreshTokenHash?: string;
 
   @Prop({ type: Object, default: {} })
   profile!: Record<string, Record<string, unknown>>;

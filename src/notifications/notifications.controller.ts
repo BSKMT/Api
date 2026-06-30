@@ -11,7 +11,7 @@ import {
   HttpStatus,
 } from "@nestjs/common";
 import type { Request } from "express";
-import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { SessionGuard } from "../auth/session.guard";
 import { NotificationsService } from "./notifications.service";
 
 /**
@@ -22,7 +22,7 @@ import { NotificationsService } from "./notifications.service";
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Get()
   async listNotifications(
     @Req() req: Request,
@@ -40,7 +40,7 @@ export class NotificationsController {
     return { items, unreadCount };
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Post("read-all")
   @HttpCode(HttpStatus.OK)
   async markAllRead(@Req() req: Request) {
@@ -49,7 +49,7 @@ export class NotificationsController {
     return result;
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Post(":id/read")
   @HttpCode(HttpStatus.OK)
   async markAsRead(@Req() req: Request, @Param("id") notificationId: string) {
@@ -57,7 +57,7 @@ export class NotificationsController {
     return this.notificationsService.markAsRead(userId, notificationId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Delete(":id")
   @HttpCode(HttpStatus.OK)
   async deleteNotification(

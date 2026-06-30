@@ -9,7 +9,7 @@ import {
   HttpCode,
   HttpStatus,
 } from "@nestjs/common";
-import { JwtAuthGuard } from "../../auth/guards/jwt-auth.guard";
+import { SessionGuard } from "../../auth/session.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles, Role } from "../../common/decorators";
 import { AdminMembershipService } from "../services/admin-membership.service";
@@ -17,7 +17,7 @@ import { RejectRefundDto } from "../dto/reject-refund.dto";
 import { ExtendMembershipDto } from "../dto/extend-membership.dto";
 
 @Controller("admin/membership")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(SessionGuard, RolesGuard)
 @Roles(Role.ADMIN)
 export class AdminMembershipController {
   constructor(

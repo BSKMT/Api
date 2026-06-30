@@ -11,7 +11,7 @@ import {
   HttpCode,
   HttpStatus,
 } from "@nestjs/common";
-import { JwtAuthGuard } from "../../auth/guards/jwt-auth.guard";
+import { SessionGuard } from "../../auth/session.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles, Role } from "../../common/decorators";
 import { AdminCoursesService } from "../services/admin-courses.service";
@@ -20,7 +20,7 @@ import { UpdateCourseDto } from "../dto/update-course.dto";
 import { CourseStatus } from "../../events/schemas/course.schema";
 
 @Controller("admin/courses")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(SessionGuard, RolesGuard)
 @Roles(Role.ADMIN, Role.EVENT_MANAGER)
 export class AdminCoursesController {
   constructor(private readonly adminCoursesService: AdminCoursesService) {}

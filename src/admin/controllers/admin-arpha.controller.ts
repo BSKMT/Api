@@ -9,7 +9,7 @@ import {
   HttpCode,
   HttpStatus,
 } from "@nestjs/common";
-import { JwtAuthGuard } from "../../auth/guards/jwt-auth.guard";
+import { SessionGuard } from "../../auth/session.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles, Role } from "../../common/decorators";
 import { AdminArphaService } from "../services/admin-arpha.service";
@@ -17,7 +17,7 @@ import { AssignArphaRequestDto } from "../dto/assign-arpha-request.dto";
 import { UpdateArphaStatusDto } from "../dto/update-arpha-status.dto";
 
 @Controller("admin/arpha")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(SessionGuard, RolesGuard)
 @Roles(Role.ADMIN, Role.MODERATOR, Role.ROAD_CAPTAIN)
 export class AdminArphaController {
   constructor(private readonly adminArphaService: AdminArphaService) {}

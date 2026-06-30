@@ -10,7 +10,7 @@ import {
   HttpStatus,
 } from "@nestjs/common";
 import type { Request } from "express";
-import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { SessionGuard } from "../auth/session.guard";
 import { UsersService } from "../users/users.service";
 import { ArphaService } from "./arpha.service";
 import { CreateArphaRequestDto } from "./dto/create-arpha-request.dto";
@@ -21,7 +21,7 @@ interface AuthenticatedRequest extends Request {
 }
 
 @Controller("arpha")
-@UseGuards(JwtAuthGuard)
+@UseGuards(SessionGuard)
 export class ArphaController {
   constructor(
     private readonly arphaService: ArphaService,

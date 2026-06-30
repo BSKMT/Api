@@ -7,16 +7,19 @@ import {
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { ROLES_KEY, Role } from "../decorators/roles.decorator";
-import { UsersService } from "../../users/users.service";
 
+/**
+ * RolesGuard — checks that the authenticated user's role is in the
+ * required roles list. The role is already populated on `req.user`
+ * by `SessionGuard`, so no additional DB lookup is needed.
+ *
+ * Must be used AFTER `SessionGuard` in the `@UseGuards(...)` chain.
+ */
 @Injectable()
 export class RolesGuard implements CanActivate {
-  constructor(
-    private readonly reflector: Reflector,
-    private readonly usersService: UsersService,
-  ) {}
+  constructor(private readonly reflector: Reflector) {}
 
-  async canActivate(context: ExecutionContext): Promise<boolean> {
+  canActivate(context: ExecutionContext): boolean {
     const requiredRoles = this.reflector.getAllAndOverride<Role[]>(ROLES_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -26,35 +29,22 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest<Request>();
-    const user = (
-      request as Request & { user?: { userId: string; role?: string } }
-    ).user;
+    const request = context.switchToHttp().getRequest<
+      Request & { user?: { userId: string; role?: string } }
+    >();
 
-    if (!user?.userId) {
+    if (!request.user?.userId) {
       throw new ForbiddenException("Acceso denegado");
     }
 
-    if (user.role && requiredRoles.includes(user.role as Role)) {
-      return true;
-    }
+    const userRole = request.user.role as Role;
 
-    const fullUser = await this.usersService.findById(user.userId);
-    if (!fullUser) {
-      throw new ForbiddenException("Usuario no encontrado");
-    }
-
-    const userRole = fullUser.role as Role;
-    if (!requiredRoles.includes(userRole)) {
+    if (!userRole || !requiredRoles.includes(userRole)) {
       throw new ForbiddenException(
-        "No tienes permisos para realizar esta accion",
+        "No tienes permisos para realizar esta acción",
       );
     }
 
-    (request as Request & { user: { userId: string; role: string } }).user = {
-      ...user,
-      role: userRole,
-    };
     return true;
   }
 }

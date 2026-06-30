@@ -15,14 +15,13 @@ import type { Request } from "express";
 import { PaymentsService } from "./payments.service";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
 import { SubmitCompanionDto } from "./dto/submit-companion.dto";
-import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
-import { SkipCsrf } from "../common/decorators";
+import { SessionGuard } from "../auth/session.guard";
 
 @Controller("payments")
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Post("create")
   @HttpCode(HttpStatus.CREATED)
   async createPayment(@Req() req: Request, @Body() dto: CreatePaymentDto) {
@@ -30,7 +29,6 @@ export class PaymentsController {
     return this.paymentsService.createPayment(userId, dto);
   }
 
-  @SkipCsrf()
   @Post("webhook")
   @HttpCode(HttpStatus.OK)
   handleWebhook(
@@ -55,7 +53,7 @@ export class PaymentsController {
     return { received: true };
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Get("status/:reference")
   async getTransactionStatus(
     @Req() req: Request,
@@ -65,7 +63,7 @@ export class PaymentsController {
     return this.paymentsService.getTransactionStatus(userId, reference);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Post("companion/:reference")
   @HttpCode(HttpStatus.OK)
   async submitCompanionData(
@@ -77,7 +75,7 @@ export class PaymentsController {
     return this.paymentsService.submitCompanionData(userId, reference, dto);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Get("my-transactions")
   async getMyTransactions(@Req() req: Request) {
     const { userId } = req.user as { userId: string };
