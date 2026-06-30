@@ -12,8 +12,7 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import type { Request } from "express";
-import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
-import { SkipCsrf } from "../common/decorators";
+import { SessionGuard } from "../auth/session.guard";
 import { MembershipService } from "./membership.service";
 import { CreateMembershipPaymentDto } from "./dto/create-membership-payment.dto";
 import { CreditChoiceDto } from "./dto/credit-choice.dto";
@@ -23,7 +22,7 @@ import { UseCreditDto } from "./dto/use-credit.dto";
 export class MembershipController {
   constructor(private readonly membershipService: MembershipService) {}
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Post("purchase")
   @HttpCode(HttpStatus.CREATED)
   async createPayment(
@@ -34,7 +33,6 @@ export class MembershipController {
     return this.membershipService.createMembershipPayment(userId, dto);
   }
 
-  @SkipCsrf()
   @Post("webhook")
   @HttpCode(HttpStatus.OK)
   handleWebhook(
@@ -59,28 +57,28 @@ export class MembershipController {
     return { received: true };
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Get("status")
   async getStatus(@Req() req: Request) {
     const { userId } = req.user as { userId: string };
     return this.membershipService.getMembershipStatus(userId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Get("payment/:reference")
   async getPayment(@Req() req: Request, @Param("reference") reference: string) {
     const { userId } = req.user as { userId: string };
     return this.membershipService.getMembershipPayment(userId, reference);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Get("credit")
   async getCreditBalance(@Req() req: Request) {
     const { userId } = req.user as { userId: string };
     return this.membershipService.getCreditBalance(userId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Post("credit/choose")
   @HttpCode(HttpStatus.OK)
   async chooseCreditOption(@Req() req: Request, @Body() dto: CreditChoiceDto) {
@@ -88,7 +86,7 @@ export class MembershipController {
     return this.membershipService.chooseCreditOption(userId, dto);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Post("credit/use")
   @HttpCode(HttpStatus.OK)
   async useCredit(@Req() req: Request, @Body() dto: UseCreditDto) {
@@ -96,7 +94,7 @@ export class MembershipController {
     return this.membershipService.useCredit(userId, dto);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Post("credit/refund")
   @HttpCode(HttpStatus.OK)
   async requestRefund(@Req() req: Request) {

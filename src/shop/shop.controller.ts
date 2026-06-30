@@ -13,7 +13,7 @@ import {
 } from "@nestjs/common";
 import type { Request } from "express";
 import { Public } from "../common/decorators";
-import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { SessionGuard } from "../auth/session.guard";
 import { UsersService } from "../users/users.service";
 import { ShopService } from "./shop.service";
 import { CreateOrderDto } from "./dto/create-order.dto";
@@ -62,7 +62,7 @@ export class ShopController {
     return product;
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Post("order")
   @HttpCode(HttpStatus.CREATED)
   async createOrder(
@@ -75,7 +75,7 @@ export class ShopController {
     return this.shopService.createOrder(userId, dto, membershipLevel);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Post("order/cancel/:orderNumber")
   @HttpCode(HttpStatus.OK)
   async cancelOrder(
@@ -86,21 +86,21 @@ export class ShopController {
     return this.shopService.cancelOrder(userId, orderNumber);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Get("my-orders")
   async getMyOrders(@Req() req: AuthenticatedRequest) {
     const { userId } = req.user;
     return this.shopService.getMyOrders(userId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Get("wishlist")
   async getWishlist(@Req() req: AuthenticatedRequest) {
     const { userId } = req.user;
     return this.shopService.getWishlist(userId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Post("wishlist/add")
   @HttpCode(HttpStatus.CREATED)
   async addToWishlist(
@@ -111,7 +111,7 @@ export class ShopController {
     return this.shopService.addToWishlist(userId, dto.productSlug);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SessionGuard)
   @Post("wishlist/remove")
   @HttpCode(HttpStatus.OK)
   async removeFromWishlist(

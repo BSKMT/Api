@@ -12,7 +12,7 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import type { Request } from "express";
-import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { SessionGuard } from "../auth/session.guard";
 import { Public } from "../common/decorators";
 import { UsersService } from "../users/users.service";
 import { EventsService } from "./events.service";
@@ -21,7 +21,7 @@ import { AcceptWaiverDto } from "./dto/accept-waiver.dto";
 import { SubmitCompanionDto } from "./dto/submit-companion.dto";
 
 @Controller("events")
-@UseGuards(JwtAuthGuard)
+@UseGuards(SessionGuard)
 export class EventsController {
   constructor(
     private readonly eventsService: EventsService,

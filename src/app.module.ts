@@ -7,7 +7,6 @@ import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { AuthModule } from "./auth/auth.module";
 import { B2bModule } from "./b2b/b2b.module";
 import { configValidationSchema } from "./config/config.validation";
-import { CsrfModule } from "./csrf/csrf.module";
 import { EventsModule } from "./events/events.module";
 import { MembershipModule } from "./membership/membership.module";
 import { MembershipExpirationModule } from "./membership/membership-expiration.module";
@@ -60,7 +59,6 @@ import { AdminModule } from "./admin/admin.module";
     MembershipModule,
     MembershipExpirationModule,
     NotificationsModule,
-    CsrfModule,
     ArphaModule,
     ShopModule,
     AdminModule,

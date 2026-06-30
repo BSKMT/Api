@@ -2,7 +2,7 @@ import { Controller, Get, Req, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
-import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { SessionGuard } from "../auth/session.guard";
 import { UsersService } from "../users/users.service";
 import {
   EventRegistration,
@@ -24,7 +24,7 @@ import {
 } from "../shop/schemas/order.schema";
 
 @Controller("panel")
-@UseGuards(JwtAuthGuard)
+@UseGuards(SessionGuard)
 export class PanelController {
   constructor(
     private readonly usersService: UsersService,

@@ -11,7 +11,7 @@ import {
   HttpCode,
   HttpStatus,
 } from "@nestjs/common";
-import { JwtAuthGuard } from "../../auth/guards/jwt-auth.guard";
+import { SessionGuard } from "../../auth/session.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles, Role } from "../../common/decorators";
 import { AdminShopService } from "../services/admin-shop.service";
@@ -21,7 +21,7 @@ import { UpdateOrderStatusDto } from "../dto/update-order-status.dto";
 import { ProductStatus } from "../../shop/schemas/product.schema";
 
 @Controller("admin/shop")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(SessionGuard, RolesGuard)
 @Roles(Role.ADMIN, Role.EVENT_MANAGER)
 export class AdminShopController {
   constructor(private readonly adminShopService: AdminShopService) {}
