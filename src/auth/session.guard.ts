@@ -5,7 +5,7 @@ import {
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
-import { auth } from "./better-auth";
+import { getAuth } from "./better-auth";
 import { UsersService } from "../users/users.service";
 import { IS_PUBLIC_KEY } from "../common/decorators/public.decorator";
 
@@ -37,6 +37,7 @@ export class SessionGuard {
 
     const request = context.switchToHttp().getRequest<Request>();
 
+    const auth = await getAuth();
     const session = await auth.api.getSession({
       headers: new Headers(
         Object.entries(request.headers as Record<string, string>),
