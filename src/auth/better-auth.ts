@@ -61,30 +61,26 @@ async function initAuth() {
       autoSignIn: true,
       requireEmailVerification: true,
 
-      sendResetPassword: ({ user, token }) => {
+      sendResetPassword: async ({ user, token }) => {
         const resetUrl = `${landingPageUrl}/restaurar-contrasena?token=${token}`;
 
         if (injectedEmailService) {
-          void injectedEmailService
-            .sendPasswordResetEmail({
-              to: user.email,
-              name: (user as { name?: string }).name ?? user.email,
-              resetUrl,
-            })
-            .then((ok) => {
-              if (!ok) {
-                console.warn(
-                  `[Password Reset] No se pudo enviar el correo a ${user.email} (Zoho no configurado o fallo)`,
-                );
-                console.log(`[Password Reset] Fallback link: ${resetUrl}`);
-              }
-            });
+          const ok = await injectedEmailService.sendPasswordResetEmail({
+            to: user.email,
+            name: (user as { name?: string }).name ?? user.email,
+            resetUrl,
+          });
+          if (!ok) {
+            console.warn(
+              `[Password Reset] No se pudo enviar el correo a ${user.email} (Zoho no configurado o fallo)`,
+            );
+            console.log(`[Password Reset] Fallback link: ${resetUrl}`);
+          }
         } else {
           console.log(
             `[Password Reset] Reset link for ${user.email}: ${resetUrl}`,
           );
         }
-        return Promise.resolve();
       },
 
       revokeSessionsOnPasswordReset: true,
@@ -92,32 +88,28 @@ async function initAuth() {
     },
 
     emailVerification: {
-      sendVerificationEmail: ({ user, token }) => {
+      sendVerificationEmail: async ({ user, token }) => {
         const verificationUrl = `${landingPageUrl}/verificar-correo?token=${token}`;
 
         if (injectedEmailService) {
-          void injectedEmailService
-            .sendVerificationEmail({
-              to: user.email,
-              name: (user as { name?: string }).name ?? user.email,
-              verificationUrl,
-            })
-            .then((ok) => {
-              if (!ok) {
-                console.warn(
-                  `[Email Verification] No se pudo enviar el correo a ${user.email} (Zoho no configurado o fallo)`,
-                );
-                console.log(
-                  `[Email Verification] Fallback link: ${verificationUrl}`,
-                );
-              }
-            });
+          const ok = await injectedEmailService.sendVerificationEmail({
+            to: user.email,
+            name: (user as { name?: string }).name ?? user.email,
+            verificationUrl,
+          });
+          if (!ok) {
+            console.warn(
+              `[Email Verification] No se pudo enviar el correo a ${user.email} (Zoho no configurado o fallo)`,
+            );
+            console.log(
+              `[Email Verification] Fallback link: ${verificationUrl}`,
+            );
+          }
         } else {
           console.log(
             `[Email Verification] Verification link for ${user.email}: ${verificationUrl}`,
           );
         }
-        return Promise.resolve();
       },
 
       sendOnSignUp: true,
