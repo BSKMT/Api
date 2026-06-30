@@ -5,10 +5,21 @@ import {
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
-import { fromNodeHeaders } from "better-auth/node";
 import { getAuth } from "./better-auth";
 import { UsersService } from "../users/users.service";
 import { IS_PUBLIC_KEY } from "../common/decorators/public.decorator";
+
+let fromNodeHeadersFn:
+  | (typeof import("better-auth/node"))["fromNodeHeaders"]
+  | null = null;
+
+async function getFromNodeHeaders() {
+  if (!fromNodeHeadersFn) {
+    const mod = await import("better-auth/node");
+    fromNodeHeadersFn = mod.fromNodeHeaders;
+  }
+  return fromNodeHeadersFn;
+}
 
 /**
  * SessionGuard — replaces the old JwtAuthGuard.
@@ -39,6 +50,7 @@ export class SessionGuard {
     const request = context.switchToHttp().getRequest<Request>();
 
     const auth = await getAuth();
+    const fromNodeHeaders = await getFromNodeHeaders();
     const session = await auth.api.getSession({
       headers: fromNodeHeaders(request.headers),
     });
