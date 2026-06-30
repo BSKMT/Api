@@ -61,6 +61,7 @@ export class MembershipExpirationService {
             previousExpiry: member.membershipExpiryDate,
             gracePeriodEnd: gracePeriodEnd.toISOString(),
           },
+          emailTo: member.email,
         });
       }
     }
@@ -124,6 +125,7 @@ export class MembershipExpirationService {
               creditAmount,
               partialRenewalCount,
             },
+            emailTo: member.email,
           });
         } else {
           await this.userModel.updateOne(
@@ -152,6 +154,7 @@ export class MembershipExpirationService {
             message:
               "Tu periodo de gracia finalizó y tu membresía Legend fue revocada. Puedes adquirir una nueva membresía cuando lo desees.",
             priority: NotificationPriority.HIGH,
+            emailTo: member.email,
           });
         }
       }

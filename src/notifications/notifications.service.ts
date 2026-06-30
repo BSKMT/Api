@@ -6,10 +6,12 @@ import {
   NotificationDocument,
   NotificationPriority,
 } from "./schemas/notification.schema";
+import { EmailService } from "../zoho-mail/email.service";
 
 /**
  * NotificationsService - Crea, consulta y marca como leídas las notificaciones
- * a nivel de sistema (sin envío por correo todavía).
+ * a nivel de sistema. Adicionalmente, cuando se provee `emailTo`, envia una
+ * copia del mensaje por correo electronico a traves de Zoho Mail.
  */
 @Injectable()
 export class NotificationsService {
@@ -18,6 +20,7 @@ export class NotificationsService {
   constructor(
     @InjectModel(Notification.name)
     private readonly notificationModel: Model<NotificationDocument>,
+    private readonly emailService: EmailService,
   ) {}
 
   async create(data: {
@@ -28,9 +31,12 @@ export class NotificationsService {
     priority?: string;
     metadata?: Record<string, unknown>;
     relatedReference?: string;
+    /** Destinatario de correo opcional; si se omite no se envia correo. */
+    emailTo?: string;
   }): Promise<NotificationDocument | null> {
+    let created: NotificationDocument | null = null;
     try {
-      return await this.notificationModel.create({
+      created = await this.notificationModel.create({
         userId: data.userId,
         type: data.type,
         title: data.title,
@@ -43,8 +49,31 @@ export class NotificationsService {
       this.logger.warn(
         `Failed to create notification: ${err instanceof Error ? err.message : String(err)}`,
       );
-      return null;
     }
+
+    if (data.emailTo && created) {
+      // El envio de correo es best-effort: nunca debe romper el flujo principal.
+      this.emailService
+        .sendNotificationEmail({
+          to: data.emailTo,
+          title: data.title,
+          message: data.message,
+        })
+        .then((ok) => {
+          if (!ok) {
+            this.logger.warn(
+              `No se pudo enviar el correo de notificacion a ${data.emailTo}`,
+            );
+          }
+        })
+        .catch((err: unknown) => {
+          this.logger.warn(
+            `Error enviando correo de notificacion a ${data.emailTo}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
+    }
+
+    return created;
   }
 
   async getByUser(
