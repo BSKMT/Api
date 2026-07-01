@@ -148,6 +148,18 @@ async function initAuth() {
           input: true,
           required: false,
         },
+        country: {
+          type: "string",
+          defaultValue: "",
+          input: true,
+          required: false,
+        },
+        birthDate: {
+          type: "string",
+          defaultValue: "",
+          input: true,
+          required: false,
+        },
       },
     },
 
@@ -190,6 +202,9 @@ async function initAuth() {
                 (user as { primerApellido?: string }).primerApellido ?? "";
               const segundoApellido =
                 (user as { segundoApellido?: string }).segundoApellido ?? "";
+              const country = (user as { country?: string }).country ?? "";
+              const birthDate =
+                (user as { birthDate?: string }).birthDate ?? "";
 
               const tieneDatosPersonales = primerNombre || primerApellido;
 
@@ -211,6 +226,8 @@ async function initAuth() {
                         segundoNombre,
                         primerApellido,
                         segundoApellido,
+                        nacionalidad: country,
+                        fechaNacimiento: birthDate,
                       },
                     }
                   : {},
