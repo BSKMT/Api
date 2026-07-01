@@ -124,6 +124,30 @@ async function initAuth() {
           input: false,
           required: false,
         },
+        primerNombre: {
+          type: "string",
+          defaultValue: "",
+          input: true,
+          required: false,
+        },
+        segundoNombre: {
+          type: "string",
+          defaultValue: "",
+          input: true,
+          required: false,
+        },
+        primerApellido: {
+          type: "string",
+          defaultValue: "",
+          input: true,
+          required: false,
+        },
+        segundoApellido: {
+          type: "string",
+          defaultValue: "",
+          input: true,
+          required: false,
+        },
       },
     },
 
@@ -137,11 +161,14 @@ async function initAuth() {
     },
 
     advanced: {
-      crossSubDomainCookies: {
-        enabled: true,
-        domain: process.env.COOKIE_DOMAIN ?? "bskmt.com",
-      },
-      useSecureCookies: process.env.COOKIE_SECURE !== "false",
+      /**
+       * useSecureCookies is false because the Astro proxy (BFF pattern)
+       * handles the `Secure` flag on cookies using `isSecure` (based on
+       * the request protocol). Setting this to `true` causes better-auth
+       * to prepend `__Secure-` to cookie names, which breaks all cookie
+       * lookups in the landing page (middleware, AuthButton, me.ts).
+       */
+      useSecureCookies: false,
     },
 
     trustedOrigins: [
@@ -155,6 +182,17 @@ async function initAuth() {
         create: {
           after: async (user) => {
             try {
+              const primerNombre =
+                (user as { primerNombre?: string }).primerNombre ?? "";
+              const segundoNombre =
+                (user as { segundoNombre?: string }).segundoNombre ?? "";
+              const primerApellido =
+                (user as { primerApellido?: string }).primerApellido ?? "";
+              const segundoApellido =
+                (user as { segundoApellido?: string }).segundoApellido ?? "";
+
+              const tieneDatosPersonales = primerNombre || primerApellido;
+
               await mongoDb.collection("users").insertOne({
                 email: user.email.toLowerCase(),
                 betterAuthId: user.id,
@@ -163,8 +201,19 @@ async function initAuth() {
                 emailVerified: user.emailVerified ?? false,
                 legalConsentAccepted: false,
                 isActive: true,
-                completedSections: [],
-                profile: {},
+                completedSections: tieneDatosPersonales
+                  ? ["datos-personales"]
+                  : [],
+                profile: tieneDatosPersonales
+                  ? {
+                      "datos-personales": {
+                        primerNombre,
+                        segundoNombre,
+                        primerApellido,
+                        segundoApellido,
+                      },
+                    }
+                  : {},
                 installmentsPaid: 0,
                 installmentsTotal: 12,
                 renewalInstallmentsPaid: 0,
