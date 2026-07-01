@@ -243,6 +243,26 @@ async function initAuth() {
             }
           },
         },
+        update: {
+          after: async (user) => {
+            try {
+              await mongoDb.collection("users").updateOne(
+                { betterAuthId: user.id },
+                {
+                  $set: {
+                    emailVerified: user.emailVerified ?? false,
+                    updatedAt: new Date(),
+                  },
+                },
+              );
+            } catch (err) {
+              console.error(
+                "[databaseHooks] Failed to sync emailVerified:",
+                err,
+              );
+            }
+          },
+        },
       },
     },
   });
