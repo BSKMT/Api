@@ -58,7 +58,7 @@ async function initAuth() {
       enabled: true,
       minPasswordLength: 8,
       maxPasswordLength: 128,
-      autoSignIn: true,
+      autoSignIn: false,
       requireEmailVerification: true,
 
       sendResetPassword: async ({ user, token }) => {
