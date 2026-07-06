@@ -17,7 +17,7 @@ export class AdminSettingsService {
   private readonly logger = new Logger(AdminSettingsService.name);
 
   constructor(
-    @InjectModel(User.name) private userModel: Model<UserDocument>,
+    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     private readonly notificationsService: NotificationsService,
   ) {}
 

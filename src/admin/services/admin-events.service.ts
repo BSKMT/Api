@@ -25,9 +25,9 @@ export class AdminEventsService {
 
   constructor(
     @InjectModel(Event.name)
-    private eventModel: Model<EventDocument>,
+    private readonly eventModel: Model<EventDocument>,
     @InjectModel(EventRegistration.name)
-    private registrationModel: Model<EventRegistrationDocument>,
+    private readonly registrationModel: Model<EventRegistrationDocument>,
   ) {}
 
   async listEvents(filters: {

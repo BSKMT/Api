@@ -3,7 +3,7 @@ import { ArphaRequestStatus } from "../../arpha/schemas/arpha-request.schema";
 
 export class UpdateArphaStatusDto {
   @IsEnum(ArphaRequestStatus)
-  status: ArphaRequestStatus;
+  status!: ArphaRequestStatus;
 
   @IsString()
   @IsOptional()

@@ -3,7 +3,7 @@ import { OrderStatus } from "../../shop/schemas/order.schema";
 
 export class UpdateOrderStatusDto {
   @IsEnum(OrderStatus)
-  status: OrderStatus;
+  status!: OrderStatus;
 
   @IsString()
   @IsOptional()

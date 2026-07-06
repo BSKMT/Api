@@ -35,11 +35,11 @@ export class AdminMembershipService {
 
   constructor(
     @InjectModel(MembershipTransaction.name)
-    private transactionModel: Model<MembershipTransactionDocument>,
+    private readonly transactionModel: Model<MembershipTransactionDocument>,
     @InjectModel(ServiceCreditTransaction.name)
-    private creditTransactionModel: Model<ServiceCreditTransactionDocument>,
+    private readonly creditTransactionModel: Model<ServiceCreditTransactionDocument>,
     @InjectModel(User.name)
-    private userModel: Model<UserDocument>,
+    private readonly userModel: Model<UserDocument>,
     private readonly notificationsService: NotificationsService,
   ) {}
 
@@ -205,12 +205,14 @@ export class AdminMembershipService {
     }
 
     const now = new Date();
-    const baseDate =
-      baseDateStr && user.membershipExpiryDate
-        ? new Date(baseDateStr)
-        : user.membershipExpiryDate
-          ? new Date(user.membershipExpiryDate)
-          : now;
+    let baseDate: Date;
+    if (baseDateStr && user.membershipExpiryDate) {
+      baseDate = new Date(baseDateStr);
+    } else if (user.membershipExpiryDate) {
+      baseDate = new Date(user.membershipExpiryDate);
+    } else {
+      baseDate = now;
+    }
     const start = baseDate > now ? baseDate : now;
 
     const expiry = new Date(start);
@@ -329,7 +331,7 @@ export class AdminMembershipService {
       throw new NotFoundException("Usuario no encontrado");
     }
     const credit = user.partialPaymentCredit;
-    if (!credit || credit.type !== CreditType.REFUND_REQUESTED) {
+    if (credit?.type !== CreditType.REFUND_REQUESTED) {
       throw new BadRequestException(
         "El usuario no tiene una solicitud de reembolso pendiente",
       );
@@ -395,7 +397,7 @@ export class AdminMembershipService {
       throw new NotFoundException("Usuario no encontrado");
     }
     const credit = user.partialPaymentCredit;
-    if (!credit || credit.type !== CreditType.REFUND_REQUESTED) {
+    if (credit?.type !== CreditType.REFUND_REQUESTED) {
       throw new BadRequestException(
         "El usuario no tiene una solicitud de reembolso pendiente",
       );

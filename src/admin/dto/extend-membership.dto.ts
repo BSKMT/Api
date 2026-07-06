@@ -9,7 +9,7 @@ import {
 
 export class ExtendMembershipDto {
   @IsEnum(["days", "months", "years"])
-  unit: "days" | "months" | "years";
+  unit!: "days" | "months" | "years";
 
   @IsInt()
   @Min(1)

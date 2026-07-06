@@ -11,7 +11,7 @@ export class RateArphaRequestDto {
   @IsNumber()
   @Min(1)
   @Max(5)
-  rating: number;
+  rating!: number;
 
   @IsString()
   @IsOptional()
