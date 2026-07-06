@@ -6,13 +6,13 @@ export type B2bContactDocument = B2bContact & Document;
 @Schema({ timestamps: true })
 export class B2bContact {
   @Prop({ required: true, trim: true, maxlength: 100 })
-  companyName: string;
+  companyName!: string;
 
   @Prop({ required: true, trim: true, maxlength: 100 })
-  contactName: string;
+  contactName!: string;
 
   @Prop({ required: true, trim: true, lowercase: true })
-  email: string;
+  email!: string;
 
   @Prop({
     required: true,
@@ -24,13 +24,13 @@ export class B2bContact {
       "Otro",
     ],
   })
-  interest: string;
+  interest!: string;
 
   @Prop({ required: true, trim: true, maxlength: 2000 })
-  message: string;
+  message!: string;
 
   @Prop({ default: false })
-  reviewed: boolean;
+  reviewed!: boolean;
 }
 
 export const B2bContactSchema = SchemaFactory.createForClass(B2bContact);

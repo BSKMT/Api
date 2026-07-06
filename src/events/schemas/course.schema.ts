@@ -25,76 +25,76 @@ export enum CourseStatus {
 @Schema({ timestamps: true })
 export class Course {
   @Prop({ required: true, unique: true, index: true })
-  slug: string;
+  slug!: string;
 
   @Prop({ required: true })
-  title: string;
+  title!: string;
 
   @Prop({ required: true })
-  subtitle: string;
+  subtitle!: string;
 
   @Prop({
     required: true,
     enum: Object.values(CourseLevel),
     default: CourseLevel.TODOS,
   })
-  level: string;
+  level!: string;
 
   @Prop({
     required: true,
     enum: Object.values(CourseFormat),
     default: CourseFormat.VIRTUAL,
   })
-  format: string;
+  format!: string;
 
   @Prop({ type: String, default: null })
-  icon: string | null;
+  icon!: string | null;
 
   @Prop({ type: String, default: null })
-  description: string | null;
+  description!: string | null;
 
   @Prop({ type: String, default: null })
-  heroImage: string | null;
+  heroImage!: string | null;
 
   @Prop({ type: Number, default: null })
-  durationHours: number | null;
+  durationHours!: number | null;
 
   @Prop({ type: [String], default: [] })
-  modules: string[];
+  modules!: string[];
 
   @Prop({ default: true })
-  membersFree: boolean;
+  membersFree!: boolean;
 
   @Prop({ type: Number, default: null })
-  nonMemberPrice: number | null;
+  nonMemberPrice!: number | null;
 
   @Prop({ type: Number, default: null })
-  memberSemipresencialDiscount: number | null;
+  memberSemipresencialDiscount!: number | null;
 
   @Prop({ type: Number, default: null })
-  memberPresencialDiscount: number | null;
+  memberPresencialDiscount!: number | null;
 
   @Prop({ type: Number, default: null })
-  maxCapacity: number | null;
+  maxCapacity!: number | null;
 
   @Prop({ type: Number, default: 0 })
-  enrolledCount: number;
+  enrolledCount!: number;
 
   @Prop({
     required: true,
     enum: Object.values(CourseStatus),
     default: CourseStatus.PUBLISHED,
   })
-  status: string;
+  status!: string;
 
   @Prop({ default: false })
-  featured: boolean;
+  featured!: boolean;
 
   @Prop({ type: [String], default: [] })
-  featuresIncluded: string[];
+  featuresIncluded!: string[];
 
   @Prop({ type: Object, default: {} })
-  metadata: Record<string, unknown>;
+  metadata!: Record<string, unknown>;
 }
 
 export const CourseSchema = SchemaFactory.createForClass(Course);

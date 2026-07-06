@@ -8,7 +8,7 @@ export class B2bContactDto {
   @MaxLength(100, {
     message: "El nombre de la empresa no puede exceder 100 caracteres",
   })
-  companyName: string;
+  companyName!: string;
 
   @IsString({ message: "El nombre de contacto debe ser texto" })
   @MinLength(2, {
@@ -17,10 +17,10 @@ export class B2bContactDto {
   @MaxLength(100, {
     message: "El nombre de contacto no puede exceder 100 caracteres",
   })
-  contactName: string;
+  contactName!: string;
 
   @IsEmail({}, { message: "Correo electronico invalido" })
-  email: string;
+  email!: string;
 
   @IsString({ message: "El tipo de alianza debe ser texto" })
   @IsIn(
@@ -33,10 +33,10 @@ export class B2bContactDto {
     ],
     { message: "Tipo de alianza invalido" },
   )
-  interest: string;
+  interest!: string;
 
   @IsString({ message: "El mensaje debe ser texto" })
   @MinLength(10, { message: "El mensaje debe tener al menos 10 caracteres" })
   @MaxLength(2000, { message: "El mensaje no puede exceder 2000 caracteres" })
-  message: string;
+  message!: string;
 }
