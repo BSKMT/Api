@@ -2,7 +2,7 @@ import { IsString, IsIn, IsOptional, IsNumber, Min } from "class-validator";
 
 export class CreatePaymentDto {
   @IsString()
-  eventSlug: string;
+  eventSlug!: string;
 
   @IsString()
   @IsIn([
@@ -20,7 +20,7 @@ export class CreatePaymentDto {
     "arpha-ruta",
     "shop",
   ])
-  tier: string;
+  tier!: string;
 
   @IsString()
   @IsOptional()

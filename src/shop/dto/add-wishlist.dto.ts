@@ -2,7 +2,7 @@ import { IsString, IsOptional, MaxLength } from "class-validator";
 
 export class AddWishlistDto {
   @IsString()
-  productSlug: string;
+  productSlug!: string;
 
   @IsString()
   @IsOptional()

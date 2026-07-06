@@ -10,7 +10,7 @@ import {
 export class CreateMembershipPaymentDto {
   @IsString()
   @IsIn(["single", "installment"])
-  paymentPlan: string;
+  paymentPlan!: string;
 
   @IsBoolean()
   @IsOptional()

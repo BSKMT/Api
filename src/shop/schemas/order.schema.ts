@@ -14,53 +14,53 @@ export enum OrderStatus {
 @Schema({ timestamps: true })
 export class OrderItem {
   @Prop({ required: true })
-  productSlug: string;
+  productSlug!: string;
 
   @Prop({ required: true })
-  productName: string;
+  productName!: string;
 
   @Prop({ required: true })
-  unitPrice: number;
+  unitPrice!: number;
 
   @Prop({ required: true })
-  quantity: number;
+  quantity!: number;
 
   @Prop({ required: true })
-  subtotal: number;
+  subtotal!: number;
 }
 
 @Schema({ timestamps: true })
 export class Order {
   @Prop({ required: true, index: true })
-  userId: string;
+  userId!: string;
 
   @Prop({ required: true, unique: true })
-  orderNumber: string;
+  orderNumber!: string;
 
   @Prop({ type: [Object], default: [] })
-  items: OrderItem[];
+  items!: OrderItem[];
 
   @Prop({ required: true })
-  total: number;
+  total!: number;
 
   @Prop({ required: true, default: 0 })
-  memberDiscount: number;
+  memberDiscount!: number;
 
   @Prop({
     required: true,
     default: OrderStatus.PENDING,
     enum: Object.values(OrderStatus),
   })
-  status: OrderStatus;
+  status!: OrderStatus;
 
   @Prop({ type: String, default: null })
-  transactionReference: string | null;
+  transactionReference!: string | null;
 
   @Prop({ type: String, default: null })
-  trackingNumber: string | null;
+  trackingNumber!: string | null;
 
   @Prop({ type: String, default: null })
-  shippingAddress: string | null;
+  shippingAddress!: string | null;
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);

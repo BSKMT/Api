@@ -1,15 +1,20 @@
 import { Logger, ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
-import express from "express";
+import express, { urlencoded } from "express";
 import type { Request, Response, NextFunction } from "express";
 import * as helmet from "helmet";
-import { urlencoded } from "express";
 import { AppModule } from "./app.module";
 import { GlobalExceptionFilter } from "./common/filters/global-exception.filter";
 import type { EnvironmentConfig } from "./config/config.interface";
 import { getAuth, setAuthDependencies } from "./auth/better-auth";
+import type { AuthInstance } from "./auth/better-auth";
 import { EmailService } from "./zoho-mail/email.service";
+
+/** Typed shape of the `better-auth/node` module (avoids unsafe dynamic import). */
+interface BetterAuthNodeModule {
+  toNodeHandler: (auth: AuthInstance) => (req: Request, res: Response) => void;
+}
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -46,7 +51,8 @@ async function bootstrap() {
    * can handle the custom /me endpoint via AuthController.
    */
   const auth = await getAuth();
-  const { toNodeHandler } = await import("better-auth/node");
+  const { toNodeHandler } =
+    (await import("better-auth/node")) as BetterAuthNodeModule;
   const authHandler = toNodeHandler(auth);
   app.use("/api/auth", (req: Request, res: Response, next: NextFunction) => {
     const path = req.path;

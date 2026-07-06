@@ -17,6 +17,10 @@ import { CreatePaymentDto } from "./dto/create-payment.dto";
 import { SubmitCompanionDto } from "./dto/submit-companion.dto";
 import { SessionGuard } from "../auth/session.guard";
 
+interface AuthenticatedRequest extends Request {
+  user: { userId: string };
+}
+
 @Controller("payments")
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
@@ -24,8 +28,11 @@ export class PaymentsController {
   @UseGuards(SessionGuard)
   @Post("create")
   @HttpCode(HttpStatus.CREATED)
-  async createPayment(@Req() req: Request, @Body() dto: CreatePaymentDto) {
-    const { userId } = req.user as { userId: string };
+  async createPayment(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: CreatePaymentDto,
+  ) {
+    const { userId } = req.user;
     return this.paymentsService.createPayment(userId, dto);
   }
 
@@ -56,10 +63,10 @@ export class PaymentsController {
   @UseGuards(SessionGuard)
   @Get("status/:reference")
   async getTransactionStatus(
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Param("reference") reference: string,
   ) {
-    const { userId } = req.user as { userId: string };
+    const { userId } = req.user;
     return this.paymentsService.getTransactionStatus(userId, reference);
   }
 
@@ -67,18 +74,18 @@ export class PaymentsController {
   @Post("companion/:reference")
   @HttpCode(HttpStatus.OK)
   async submitCompanionData(
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Param("reference") reference: string,
     @Body() dto: SubmitCompanionDto,
   ) {
-    const { userId } = req.user as { userId: string };
+    const { userId } = req.user;
     return this.paymentsService.submitCompanionData(userId, reference, dto);
   }
 
   @UseGuards(SessionGuard)
   @Get("my-transactions")
-  async getMyTransactions(@Req() req: Request) {
-    const { userId } = req.user as { userId: string };
+  async getMyTransactions(@Req() req: AuthenticatedRequest) {
+    const { userId } = req.user;
     return this.paymentsService.getTransactionsByUser(userId);
   }
 }
