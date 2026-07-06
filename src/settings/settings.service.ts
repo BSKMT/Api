@@ -14,12 +14,32 @@ const DEFAULT_SETTINGS = {
   notifications: {
     channels: { email: true, sms: true, whatsapp: false, push: false },
     categories: {
-      "Rodadas y eventos": { email: true, sms: true, whatsapp: true, push: true },
+      "Rodadas y eventos": {
+        email: true,
+        sms: true,
+        whatsapp: true,
+        push: true,
+      },
       "ARPHA 24/7": { email: true, sms: true, whatsapp: false, push: true },
       "Tienda BSK": { email: true, sms: false, whatsapp: false, push: false },
-      "Academia Ready To Ride": { email: true, sms: false, whatsapp: true, push: false },
-      "Membresia y pagos": { email: true, sms: true, whatsapp: false, push: false },
-      "Comunidad BSK": { email: false, sms: false, whatsapp: true, push: false },
+      "Academia Ready To Ride": {
+        email: true,
+        sms: false,
+        whatsapp: true,
+        push: false,
+      },
+      "Membresia y pagos": {
+        email: true,
+        sms: true,
+        whatsapp: false,
+        push: false,
+      },
+      "Comunidad BSK": {
+        email: false,
+        sms: false,
+        whatsapp: true,
+        push: false,
+      },
     },
   },
   privacy: {
@@ -84,13 +104,19 @@ function parseUserAgent(ua: string | null): {
   os: string;
   device: string;
 } {
-  if (!ua) return { browser: "Desconocido", os: "Desconocido", device: "Dispositivo desconocido" };
+  if (!ua)
+    return {
+      browser: "Desconocido",
+      os: "Desconocido",
+      device: "Dispositivo desconocido",
+    };
   let browser = "Desconocido";
   let os = "Desconocido";
   const device = "Dispositivo desconocido";
 
   if (/Edg\//.test(ua)) browser = "Microsoft Edge";
-  else if (/Chrome\//.test(ua) && !/Chromium\//.test(ua)) browser = "Google Chrome";
+  else if (/Chrome\//.test(ua) && !/Chromium\//.test(ua))
+    browser = "Google Chrome";
   else if (/Firefox\//.test(ua)) browser = "Mozilla Firefox";
   else if (/Safari\//.test(ua) && !/Chrome\//.test(ua)) browser = "Safari";
   else if (/OPR\//.test(ua)) browser = "Opera";
@@ -104,7 +130,8 @@ function parseUserAgent(ua: string | null): {
 
   if (/iPhone/.test(ua)) return { browser, os, device: "iPhone" };
   if (/iPad/.test(ua)) return { browser, os, device: "iPad" };
-  if (/Android/.test(ua) && /Mobile/.test(ua)) return { browser, os, device: "Android Phone" };
+  if (/Android/.test(ua) && /Mobile/.test(ua))
+    return { browser, os, device: "Android Phone" };
   if (/Android/.test(ua)) return { browser, os, device: "Android Tablet" };
   if (/Mac/.test(ua)) return { browser, os, device: "MacBook" };
   if (/Windows/.test(ua)) return { browser, os, device: "Windows PC" };
@@ -117,9 +144,7 @@ function parseUserAgent(ua: string | null): {
 export class SettingsService {
   private readonly logger = new Logger(SettingsService.name);
 
-  constructor(
-    @InjectModel(User.name) private userModel: Model<UserDocument>,
-  ) {}
+  constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
 
   async getSettings(userId: string) {
     const user = await this.userModel.findById(userId).lean();
@@ -134,7 +159,10 @@ export class SettingsService {
     const settings = user.settings ?? {};
     for (const key of ["notifications", "privacy", "appearance", "dashboard"]) {
       if (dto[key]) {
-        settings[key] = { ...(settings[key] as Record<string, unknown> ?? {}), ...dto[key] as Record<string, unknown> };
+        settings[key] = {
+          ...(settings[key] ?? {}),
+          ...dto[key],
+        };
       }
     }
 
@@ -145,8 +173,13 @@ export class SettingsService {
     return { ...DEFAULT_SETTINGS, ...settings };
   }
 
-  async getSessions(userId: string, betterAuthId: string, currentToken: string) {
-    const mongoUrl = process.env.MONGODB_URI ?? "mongodb://localhost:27017/bskmt";
+  async getSessions(
+    userId: string,
+    betterAuthId: string,
+    currentToken: string,
+  ) {
+    const mongoUrl =
+      process.env.MONGODB_URI ?? "mongodb://localhost:27017/bskmt";
     const { MongoClient } = await import("mongodb");
     const client = new MongoClient(mongoUrl);
     try {
@@ -178,7 +211,8 @@ export class SettingsService {
   }
 
   async revokeSession(token: string) {
-    const mongoUrl = process.env.MONGODB_URI ?? "mongodb://localhost:27017/bskmt";
+    const mongoUrl =
+      process.env.MONGODB_URI ?? "mongodb://localhost:27017/bskmt";
     const { MongoClient } = await import("mongodb");
     const client = new MongoClient(mongoUrl);
     try {
@@ -195,7 +229,8 @@ export class SettingsService {
   }
 
   async revokeAllOtherSessions(betterAuthId: string, currentToken: string) {
-    const mongoUrl = process.env.MONGODB_URI ?? "mongodb://localhost:27017/bskmt";
+    const mongoUrl =
+      process.env.MONGODB_URI ?? "mongodb://localhost:27017/bskmt";
     const { MongoClient } = await import("mongodb");
     const client = new MongoClient(mongoUrl);
     try {
@@ -203,7 +238,9 @@ export class SettingsService {
       const result = await db
         .collection("session")
         .deleteMany({ userId: betterAuthId, token: { $ne: currentToken } });
-      this.logger.log(`Revoked ${result.deletedCount} other sessions for user ${betterAuthId}`);
+      this.logger.log(
+        `Revoked ${result.deletedCount} other sessions for user ${betterAuthId}`,
+      );
       return { revoked: result.deletedCount };
     } finally {
       await client.close();
@@ -214,23 +251,30 @@ export class SettingsService {
     const user = await this.userModel.findById(userId);
     if (!user) throw new NotFoundException("Usuario no encontrado");
     if (user.accountDeletionRequested) {
-      throw new BadRequestException("Ya tienes una solicitud de eliminacion pendiente");
+      throw new BadRequestException(
+        "Ya tienes una solicitud de eliminacion pendiente",
+      );
     }
 
     user.accountDeletionRequested = true;
     user.accountDeletionRequestedAt = new Date();
     await user.save();
 
-    this.logger.log(`Account deletion requested by user ${userId}: ${reason ?? "no reason"}`);
+    this.logger.log(
+      `Account deletion requested by user ${userId}: ${reason ?? "no reason"}`,
+    );
     return {
       success: true,
-      message: "Solicitud de eliminacion enviada. Un administrador la revisara.",
+      message:
+        "Solicitud de eliminacion enviada. Un administrador la revisara.",
       requestedAt: user.accountDeletionRequestedAt,
     };
   }
 
   async getDeletionStatus(userId: string) {
-    const user = await this.userModel.findById(userId).lean() as unknown as LeanUser | null;
+    const user = (await this.userModel
+      .findById(userId)
+      .lean()) as unknown as LeanUser | null;
     if (!user) throw new NotFoundException("Usuario no encontrado");
     return {
       requested: user.accountDeletionRequested ?? false,
@@ -248,19 +292,23 @@ export class SettingsService {
   }
 
   async exportUserData(userId: string) {
-    const user = (await this.userModel.findById(userId).lean()) as unknown as LeanUser;
+    const user = (await this.userModel
+      .findById(userId)
+      .lean()) as unknown as LeanUser;
 
     if (!user) throw new NotFoundException("Usuario no encontrado");
 
-    const auth = await getAuth();
     let authData: Record<string, unknown> | null = null;
     try {
-      const mongoUrl = process.env.MONGODB_URI ?? "mongodb://localhost:27017/bskmt";
+      const mongoUrl =
+        process.env.MONGODB_URI ?? "mongodb://localhost:27017/bskmt";
       const { MongoClient } = await import("mongodb");
       const client = new MongoClient(mongoUrl);
       try {
         const db = client.db();
-        const betterAuthUser = await db.collection("user").findOne({ id: user.betterAuthId });
+        const betterAuthUser = await db
+          .collection("user")
+          .findOne({ id: user.betterAuthId });
         if (betterAuthUser) {
           authData = {
             id: betterAuthUser.id,
@@ -303,12 +351,16 @@ export class SettingsService {
     };
   }
 
-  async changePassword(req: Request, currentPassword: string, newPassword: string) {
+  async changePassword(
+    req: Request,
+    currentPassword: string,
+    newPassword: string,
+  ) {
     const auth = await getAuth();
     try {
       await auth.api.changePassword({
         body: { currentPassword, newPassword },
-        headers: (req.headers as Record<string, string>) ?? {},
+        headers: req.headers,
       });
       return { success: true, message: "Contraseña actualizada correctamente" };
     } catch {
@@ -321,11 +373,13 @@ export class SettingsService {
     try {
       const result = await auth.api.enableTwoFactor({
         body: { password },
-        headers: (req.headers as Record<string, string>) ?? {},
+        headers: req.headers,
       });
       return result;
     } catch {
-      throw new BadRequestException("No se pudo activar 2FA. Verifica tu contrasena.");
+      throw new BadRequestException(
+        "No se pudo activar 2FA. Verifica tu contrasena.",
+      );
     }
   }
 
@@ -334,7 +388,7 @@ export class SettingsService {
     try {
       const result = await auth.api.verifyTwoFactorOTP({
         body: { code },
-        headers: (req.headers as Record<string, string>) ?? {},
+        headers: req.headers,
       });
       return result;
     } catch {
@@ -347,11 +401,13 @@ export class SettingsService {
     try {
       await auth.api.disableTwoFactor({
         body: { password },
-        headers: (req.headers as Record<string, string>) ?? {},
+        headers: req.headers,
       });
       return { success: true, message: "2FA desactivado" };
     } catch {
-      throw new BadRequestException("No se pudo desactivar 2FA. Verifica tu contrasena.");
+      throw new BadRequestException(
+        "No se pudo desactivar 2FA. Verifica tu contrasena.",
+      );
     }
   }
 }

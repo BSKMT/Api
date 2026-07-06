@@ -4,7 +4,7 @@ export const configValidationSchema = Joi.object({
   MONGODB_URI: Joi.string().uri().required(),
   BETTER_AUTH_SECRET: Joi.string().min(32).required(),
   BETTER_AUTH_URL: Joi.string().uri().default("http://localhost:3000"),
-  
+
   CORS_ORIGIN: Joi.string().required(),
   PORT: Joi.number().default(3000),
   BOLD_IDENTITY_KEY: Joi.string().required(),

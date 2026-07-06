@@ -2,7 +2,7 @@ export interface EnvironmentConfig {
   MONGODB_URI: string;
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;
-  
+
   CORS_ORIGIN: string;
   PORT: number;
   BOLD_IDENTITY_KEY: string;
