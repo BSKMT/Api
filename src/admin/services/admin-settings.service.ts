@@ -45,9 +45,11 @@ export class AdminSettingsService {
         requestedAt: u.accountDeletionRequestedAt,
         createdAt: u.createdAt,
         primerNombre:
-          (u.profile?.["datos-personales"] as Record<string, unknown>)?.primerNombre ?? "",
+          (u.profile?.["datos-personales"] as Record<string, unknown>)
+            ?.primerNombre ?? "",
         primerApellido:
-          (u.profile?.["datos-personales"] as Record<string, unknown>)?.primerApellido ?? "",
+          (u.profile?.["datos-personales"] as Record<string, unknown>)
+            ?.primerApellido ?? "",
       })),
     };
   }
@@ -56,18 +58,23 @@ export class AdminSettingsService {
     const user = await this.userModel.findById(userId).lean();
     if (!user) throw new NotFoundException("Usuario no encontrado");
     if (!user.accountDeletionRequested) {
-      throw new BadRequestException("Este usuario no ha solicitado eliminacion");
+      throw new BadRequestException(
+        "Este usuario no ha solicitado eliminacion",
+      );
     }
 
     try {
-      const mongoUrl = process.env.MONGODB_URI ?? "mongodb://localhost:27017/bskmt";
+      const mongoUrl =
+        process.env.MONGODB_URI ?? "mongodb://localhost:27017/bskmt";
       const { MongoClient } = await import("mongodb");
       const client = new MongoClient(mongoUrl);
       const db = client.db();
 
       await db.collection("user").deleteOne({ id: user.betterAuthId });
       await db.collection("session").deleteMany({ userId: user.betterAuthId });
-      await db.collection("twoFactor").deleteMany({ userId: user.betterAuthId });
+      await db
+        .collection("twoFactor")
+        .deleteMany({ userId: user.betterAuthId });
 
       await client.close();
     } catch (err) {
@@ -76,7 +83,9 @@ export class AdminSettingsService {
 
     await this.userModel.deleteOne({ _id: userId });
 
-    this.logger.log(`Account permanently deleted by admin: userId=${userId} email=${user.email}`);
+    this.logger.log(
+      `Account permanently deleted by admin: userId=${userId} email=${user.email}`,
+    );
     return { success: true, message: "Cuenta eliminada permanentemente" };
   }
 
@@ -84,7 +93,9 @@ export class AdminSettingsService {
     const user = await this.userModel.findById(userId);
     if (!user) throw new NotFoundException("Usuario no encontrado");
     if (!user.accountDeletionRequested) {
-      throw new BadRequestException("Este usuario no ha solicitado eliminacion");
+      throw new BadRequestException(
+        "Este usuario no ha solicitado eliminacion",
+      );
     }
 
     user.accountDeletionRequested = false;
