@@ -23,90 +23,90 @@ export enum EventStatus {
 @Schema({ timestamps: true })
 export class Event {
   @Prop({ required: true, unique: true, index: true })
-  slug: string;
+  slug!: string;
 
   @Prop({ required: true })
-  title: string;
+  title!: string;
 
   @Prop({ required: true })
-  subtitle: string;
+  subtitle!: string;
 
   @Prop({ required: true })
-  date: Date;
+  date!: Date;
 
   @Prop({ type: Date, default: null })
-  endDate: Date | null;
+  endDate!: Date | null;
 
   @Prop({ required: true })
-  location: string;
+  location!: string;
 
   @Prop({ type: String, default: null })
-  meetingPoint: string | null;
+  meetingPoint!: string | null;
 
   @Prop({ type: String, default: null })
-  meetingTime: string | null;
+  meetingTime!: string | null;
 
   @Prop({ type: String, default: null })
-  departureTime: string | null;
+  departureTime!: string | null;
 
   @Prop({
     required: true,
     enum: Object.values(EventCategory),
     default: EventCategory.RODADA,
   })
-  category: string;
+  category!: string;
 
   @Prop({ type: String, default: null })
-  tag: string | null;
+  tag!: string | null;
 
   @Prop({ type: String, default: null })
-  icon: string | null;
+  icon!: string | null;
 
   @Prop({ type: String, default: null })
-  difficulty: string | null;
+  difficulty!: string | null;
 
   @Prop({ type: String, default: null })
-  duration: string | null;
+  duration!: string | null;
 
   @Prop({ type: String, default: null })
-  description: string | null;
+  description!: string | null;
 
   @Prop({ type: String, default: null })
-  heroImage: string | null;
+  heroImage!: string | null;
 
   @Prop({ type: String, default: null })
-  heroImageAvif: string | null;
+  heroImageAvif!: string | null;
 
   @Prop({ default: true })
-  membersFree: boolean;
+  membersFree!: boolean;
 
   @Prop({ type: Number, default: null })
-  nonMemberPrice: number | null;
+  nonMemberPrice!: number | null;
 
   @Prop({ type: Number, default: null })
-  companionPrice: number | null;
+  companionPrice!: number | null;
 
   @Prop({ type: Number, default: null })
-  maxCapacity: number | null;
+  maxCapacity!: number | null;
 
   @Prop({ type: Number, default: 0 })
-  registeredCount: number;
+  registeredCount!: number;
 
   @Prop({
     required: true,
     enum: Object.values(EventStatus),
     default: EventStatus.PUBLISHED,
   })
-  status: string;
+  status!: string;
 
   @Prop({ default: false })
-  featured: boolean;
+  featured!: boolean;
 
   @Prop({ type: [String], default: [] })
-  featuresIncluded: string[];
+  featuresIncluded!: string[];
 
   @Prop({ type: Object, default: {} })
-  metadata: Record<string, unknown>;
+  metadata!: Record<string, unknown>;
 }
 
 export const EventSchema = SchemaFactory.createForClass(Event);

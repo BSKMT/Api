@@ -6,28 +6,28 @@ export type CourseEnrollmentDocument = CourseEnrollment & Document;
 @Schema({ timestamps: true })
 export class CourseEnrollment {
   @Prop({ required: true, index: true })
-  userId: string;
+  userId!: string;
 
   @Prop({ required: true, index: true })
-  courseSlug: string;
+  courseSlug!: string;
 
   @Prop({ required: true, default: "ACTIVE" })
-  status: string;
+  status!: string;
 
   @Prop({ required: true, default: 0 })
-  progress: number;
+  progress!: number;
 
   @Prop({ default: false })
-  paymentConfirmed: boolean;
+  paymentConfirmed!: boolean;
 
   @Prop({ type: String, default: null })
-  transactionReference: string | null;
+  transactionReference!: string | null;
 
   @Prop({ type: Date, default: null })
-  completedAt: Date | null;
+  completedAt!: Date | null;
 
   @Prop({ type: String, default: null })
-  certificateId: string | null;
+  certificateId!: string | null;
 }
 
 export const CourseEnrollmentSchema =

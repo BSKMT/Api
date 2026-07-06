@@ -20,6 +20,10 @@ import { RegisterEventDto } from "./dto/register-event.dto";
 import { AcceptWaiverDto } from "./dto/accept-waiver.dto";
 import { SubmitCompanionDto } from "./dto/submit-companion.dto";
 
+interface AuthenticatedRequest extends Request {
+  user: { userId: string; email?: string };
+}
+
 @Controller("events")
 @UseGuards(SessionGuard)
 export class EventsController {
@@ -31,14 +35,14 @@ export class EventsController {
   @Public()
   @Get("upcoming")
   async getUpcomingEvents(@Query("limit") limit?: string) {
-    const parsedLimit = limit ? parseInt(limit, 10) : 6;
+    const parsedLimit = limit ? Number.parseInt(limit, 10) : 6;
     return this.eventsService.getUpcomingEvents(parsedLimit);
   }
 
   @Public()
   @Get("featured")
   async getFeaturedEvents(@Query("limit") limit?: string) {
-    const parsedLimit = limit ? parseInt(limit, 10) : 3;
+    const parsedLimit = limit ? Number.parseInt(limit, 10) : 3;
     return this.eventsService.getFeaturedEvents(parsedLimit);
   }
 
@@ -60,12 +64,15 @@ export class EventsController {
 
   @Post("register")
   @HttpCode(HttpStatus.CREATED)
-  async registerForEvent(@Req() req: Request, @Body() dto: RegisterEventDto) {
-    const user = req.user as { userId: string };
-    const fullUser = await this.usersService.findById(user.userId);
+  async registerForEvent(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: RegisterEventDto,
+  ) {
+    const { userId } = req.user;
+    const fullUser = await this.usersService.findById(userId);
     const membershipLevel = fullUser?.membershipLevel ?? null;
     const registration = await this.eventsService.registerForEvent(
-      user.userId,
+      userId,
       dto,
       membershipLevel,
     );
@@ -74,16 +81,16 @@ export class EventsController {
 
   @Post("confirm")
   async confirmRegistration(
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Body("eventSlug") eventSlug: string,
   ) {
-    const user = req.user as { userId: string };
-    return this.eventsService.confirmRegistration(user.userId, eventSlug);
+    const { userId } = req.user;
+    return this.eventsService.confirmRegistration(userId, eventSlug);
   }
 
   @Post("waiver")
   async acceptWaiver(
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Body("eventSlug") eventSlug: string,
     @Body() dto: AcceptWaiverDto,
   ) {
@@ -92,43 +99,43 @@ export class EventsController {
         "Debes aceptar la exoneración de responsabilidad",
       );
     }
-    const user = req.user as { userId: string };
-    return this.eventsService.acceptWaiver(user.userId, eventSlug);
+    const { userId } = req.user;
+    return this.eventsService.acceptWaiver(userId, eventSlug);
   }
 
   @Post("companion")
   async submitCompanion(
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Body("eventSlug") eventSlug: string,
     @Body() dto: SubmitCompanionDto,
   ) {
-    const user = req.user as { userId: string };
-    return this.eventsService.submitCompanionData(user.userId, eventSlug, dto);
+    const { userId } = req.user;
+    return this.eventsService.submitCompanionData(userId, eventSlug, dto);
   }
 
   @Get("registration/:eventSlug")
   async getRegistration(
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Param("eventSlug") eventSlug: string,
   ) {
-    const user = req.user as { userId: string };
-    return this.eventsService.getRegistration(user.userId, eventSlug);
+    const { userId } = req.user;
+    return this.eventsService.getRegistration(userId, eventSlug);
   }
 
   @Get("registration-status/:eventSlug")
   async getRegistrationWithPricing(
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Param("eventSlug") eventSlug: string,
   ) {
-    const user = req.user as { userId: string };
-    const fullUser = await this.usersService.findById(user.userId);
+    const { userId } = req.user;
+    const fullUser = await this.usersService.findById(userId);
     const membershipLevel = fullUser?.membershipLevel ?? null;
     const event = await this.eventsService.getEventBySlug(eventSlug);
     if (!event) {
       throw new BadRequestException("Evento no encontrado");
     }
     const registration = await this.eventsService.getRegistration(
-      user.userId,
+      userId,
       eventSlug,
     );
     const basePrice = event.nonMemberPrice ?? 0;
@@ -157,17 +164,17 @@ export class EventsController {
   }
 
   @Get("my-registrations")
-  async getMyRegistrations(@Req() req: Request) {
-    const user = req.user as { userId: string };
-    return this.eventsService.getRegistrationsByUser(user.userId);
+  async getMyRegistrations(@Req() req: AuthenticatedRequest) {
+    const { userId } = req.user;
+    return this.eventsService.getRegistrationsByUser(userId);
   }
 
   @Post("cancel")
   async cancelRegistration(
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Body("eventSlug") eventSlug: string,
   ) {
-    const user = req.user as { userId: string };
-    return this.eventsService.cancelRegistration(user.userId, eventSlug);
+    const { userId } = req.user;
+    return this.eventsService.cancelRegistration(userId, eventSlug);
   }
 }

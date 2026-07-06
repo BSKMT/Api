@@ -10,7 +10,7 @@ export class B2bService {
 
   constructor(
     @InjectModel(B2bContact.name)
-    private b2bContactModel: Model<B2bContactDocument>,
+    private readonly b2bContactModel: Model<B2bContactDocument>,
   ) {}
 
   async createContact(dto: B2bContactDto): Promise<B2bContact> {

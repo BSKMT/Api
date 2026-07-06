@@ -8,25 +8,25 @@ import {
 
 export class SubmitCompanionDto {
   @IsString()
-  eventSlug: string;
+  eventSlug!: string;
 
   @IsString()
   @MinLength(2)
   @MaxLength(100)
-  fullName: string;
+  fullName!: string;
 
   @IsString()
   @MinLength(5)
   @MaxLength(20)
-  documentId: string;
+  documentId!: string;
 
   @IsString()
   @MinLength(7)
   @MaxLength(20)
-  phone: string;
+  phone!: string;
 
   @IsEmail()
-  email: string;
+  email!: string;
 
   @IsString()
   @IsOptional()

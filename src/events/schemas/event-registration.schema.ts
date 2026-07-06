@@ -6,40 +6,40 @@ export type EventRegistrationDocument = EventRegistration & Document;
 @Schema({ timestamps: true })
 export class EventRegistration {
   @Prop({ required: true, index: true })
-  userId: string;
+  userId!: string;
 
   @Prop({ required: true, index: true })
-  eventSlug: string;
+  eventSlug!: string;
 
   @Prop({ required: true })
-  registrationType: string;
+  registrationType!: string;
 
   @Prop({ required: true })
-  attendanceMode: string;
+  attendanceMode!: string;
 
   @Prop({ required: true, default: "PENDING" })
-  status: string;
+  status!: string;
 
   @Prop({ required: true })
-  membershipStatus: string;
+  membershipStatus!: string;
 
   @Prop({ type: String, default: null })
-  transactionReference: string | null;
+  transactionReference!: string | null;
 
   @Prop({ default: false })
-  paymentConfirmed: boolean;
+  paymentConfirmed!: boolean;
 
   @Prop({ default: false })
-  waiverAccepted: boolean;
+  waiverAccepted!: boolean;
 
   @Prop({ type: Date, default: null })
-  waiverAcceptedAt: Date | null;
+  waiverAcceptedAt!: Date | null;
 
   @Prop({
     type: Object,
     default: null,
   })
-  companionData: {
+  companionData!: {
     fullName: string;
     documentId: string;
     phone: string;
@@ -48,7 +48,7 @@ export class EventRegistration {
   } | null;
 
   @Prop({ type: Date, default: null })
-  confirmedAt: Date | null;
+  confirmedAt!: Date | null;
 }
 
 export const EventRegistrationSchema =

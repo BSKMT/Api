@@ -32,13 +32,13 @@ export class EventsService {
 
   constructor(
     @InjectModel(EventRegistration.name)
-    private eventRegistrationModel: Model<EventRegistrationDocument>,
+    private readonly eventRegistrationModel: Model<EventRegistrationDocument>,
     @InjectModel(Event.name)
-    private eventModel: Model<EventDocument>,
+    private readonly eventModel: Model<EventDocument>,
     @InjectModel(Course.name)
-    private courseModel: Model<CourseDocument>,
+    private readonly courseModel: Model<CourseDocument>,
     @InjectModel(CourseEnrollment.name)
-    private courseEnrollmentModel: Model<CourseEnrollmentDocument>,
+    private readonly courseEnrollmentModel: Model<CourseEnrollmentDocument>,
   ) {}
 
   async registerForEvent(
@@ -134,49 +134,7 @@ export class EventsService {
       throw new BadRequestException("El registro ya está confirmado");
     }
 
-    const { membershipStatus, attendanceMode } = registration;
-
-    if (membershipStatus === "active-member" && attendanceMode === "solo") {
-      // no prerequisites
-    } else if (
-      membershipStatus === "active-member" &&
-      attendanceMode === "with-companion"
-    ) {
-      if (!registration.paymentConfirmed) {
-        throw new BadRequestException("Pago del acompañante pendiente");
-      }
-      if (!registration.companionData) {
-        throw new BadRequestException("Datos del acompañante requeridos");
-      }
-    } else if (membershipStatus === "non-member-paid") {
-      if (!registration.paymentConfirmed) {
-        throw new BadRequestException("Pago pendiente");
-      }
-      if (attendanceMode === "with-companion" && !registration.companionData) {
-        throw new BadRequestException("Datos del acompañante requeridos");
-      }
-    } else if (
-      membershipStatus === "non-member-free" &&
-      attendanceMode === "solo"
-    ) {
-      if (!registration.waiverAccepted) {
-        throw new BadRequestException(
-          "Debes aceptar la exoneración de responsabilidad",
-        );
-      }
-    } else if (
-      membershipStatus === "non-member-free" &&
-      attendanceMode === "with-companion"
-    ) {
-      if (!registration.waiverAccepted) {
-        throw new BadRequestException(
-          "Debes aceptar la exoneración de responsabilidad",
-        );
-      }
-      if (!registration.companionData) {
-        throw new BadRequestException("Datos del acompañante requeridos");
-      }
-    }
+    this.validateConfirmationPrerequisites(registration);
 
     registration.status = "CONFIRMED";
     registration.confirmedAt = new Date();
@@ -185,6 +143,76 @@ export class EventsService {
       `Registration confirmed: user=${userId} event=${eventSlug}`,
     );
     return saved;
+  }
+
+  private validateConfirmationPrerequisites(
+    registration: EventRegistrationDocument,
+  ): void {
+    const { membershipStatus, attendanceMode } = registration;
+
+    const isMemberSolo =
+      membershipStatus === "active-member" && attendanceMode === "solo";
+    const isMemberWithCompanion =
+      membershipStatus === "active-member" &&
+      attendanceMode === "with-companion";
+    const isNonMemberPaid = membershipStatus === "non-member-paid";
+    const isNonMemberFreeSolo =
+      membershipStatus === "non-member-free" && attendanceMode === "solo";
+    const isNonMemberFreeWithCompanion =
+      membershipStatus === "non-member-free" &&
+      attendanceMode === "with-companion";
+
+    if (isMemberSolo) {
+      return;
+    }
+
+    if (isMemberWithCompanion) {
+      this.requirePayment(registration);
+      this.requireCompanionData(registration);
+      return;
+    }
+
+    if (isNonMemberPaid) {
+      this.requirePayment(registration);
+      if (attendanceMode === "with-companion") {
+        this.requireCompanionData(registration);
+      }
+      return;
+    }
+
+    if (isNonMemberFreeSolo) {
+      this.requireWaiver(registration);
+      return;
+    }
+
+    if (isNonMemberFreeWithCompanion) {
+      this.requireWaiver(registration);
+      this.requireCompanionData(registration);
+    }
+  }
+
+  private requirePayment(registration: EventRegistrationDocument): void {
+    if (!registration.paymentConfirmed) {
+      throw new BadRequestException(
+        registration.membershipStatus === "active-member"
+          ? "Pago del acompañante pendiente"
+          : "Pago pendiente",
+      );
+    }
+  }
+
+  private requireCompanionData(registration: EventRegistrationDocument): void {
+    if (!registration.companionData) {
+      throw new BadRequestException("Datos del acompañante requeridos");
+    }
+  }
+
+  private requireWaiver(registration: EventRegistrationDocument): void {
+    if (!registration.waiverAccepted) {
+      throw new BadRequestException(
+        "Debes aceptar la exoneración de responsabilidad",
+      );
+    }
   }
 
   async acceptWaiver(
@@ -446,6 +474,7 @@ export class EventsService {
 
     switch (course.format) {
       case "virtual":
+      default:
         return {
           amount: 0,
           tier: "course-member-virtual",
@@ -466,12 +495,6 @@ export class EventsService {
           ),
           tier: "course-member-presencial",
           requiresPayment: basePrice > 0,
-        };
-      default:
-        return {
-          amount: 0,
-          tier: "course-member-virtual",
-          requiresPayment: false,
         };
     }
   }

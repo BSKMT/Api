@@ -15,6 +15,10 @@ import { SessionGuard } from "../auth/session.guard";
 import { UsersService } from "../users/users.service";
 import { EventsService } from "./events.service";
 
+interface AuthenticatedRequest extends Request {
+  user: { userId: string; email?: string };
+}
+
 @Controller("courses")
 @UseGuards()
 export class CoursesController {
@@ -26,7 +30,7 @@ export class CoursesController {
   @Public()
   @Get("available")
   async getAvailableCourses(@Query("limit") limit?: string) {
-    const parsedLimit = limit ? parseInt(limit, 10) : 6;
+    const parsedLimit = limit ? Number.parseInt(limit, 10) : 6;
     return this.eventsService.getAvailableCourses(parsedLimit);
   }
 
@@ -43,14 +47,14 @@ export class CoursesController {
   @UseGuards(SessionGuard)
   @Post("enroll")
   async enrollInCourse(
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Body("courseSlug") courseSlug: string,
   ) {
-    const user = req.user as { userId: string };
-    const fullUser = await this.usersService.findById(user.userId);
+    const { userId } = req.user;
+    const fullUser = await this.usersService.findById(userId);
     const membershipLevel = fullUser?.membershipLevel ?? null;
     const result = await this.eventsService.enrollInCourse(
-      user.userId,
+      userId,
       courseSlug,
       membershipLevel,
     );
@@ -68,23 +72,23 @@ export class CoursesController {
   @UseGuards(SessionGuard)
   @Post("cancel")
   async cancelEnrollment(
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Body("courseSlug") courseSlug: string,
   ) {
-    const user = req.user as { userId: string };
-    return this.eventsService.cancelCourseEnrollment(user.userId, courseSlug);
+    const { userId } = req.user;
+    return this.eventsService.cancelCourseEnrollment(userId, courseSlug);
   }
 
   @UseGuards(SessionGuard)
   @Post("progress")
   async updateProgress(
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Body("courseSlug") courseSlug: string,
     @Body("progress") progress: number,
   ) {
-    const user = req.user as { userId: string };
+    const { userId } = req.user;
     return this.eventsService.updateCourseProgress(
-      user.userId,
+      userId,
       courseSlug,
       Number(progress),
     );
@@ -92,20 +96,23 @@ export class CoursesController {
 
   @UseGuards(SessionGuard)
   @Get("my-enrollments")
-  async getMyEnrollments(@Req() req: Request, @Query("all") all?: string) {
-    const user = req.user as { userId: string };
+  async getMyEnrollments(
+    @Req() req: AuthenticatedRequest,
+    @Query("all") all?: string,
+  ) {
+    const { userId } = req.user;
     const includeCancelled = all === "true" || all === "1";
-    return this.eventsService.getMyEnrollments(user.userId, includeCancelled);
+    return this.eventsService.getMyEnrollments(userId, includeCancelled);
   }
 
   @UseGuards(SessionGuard)
   @Get("my-enrollment/:courseSlug")
   async getMyEnrollment(
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Param("courseSlug") courseSlug: string,
   ) {
-    const user = req.user as { userId: string };
-    const fullUser = await this.usersService.findById(user.userId);
+    const { userId } = req.user;
+    const fullUser = await this.usersService.findById(userId);
     const membershipLevel = fullUser?.membershipLevel ?? null;
     const course = await this.eventsService.getCourseBySlug(courseSlug);
     if (!course) {
@@ -116,7 +123,7 @@ export class CoursesController {
       membershipLevel,
     );
     const enrollment = await this.eventsService.getEnrollmentByUserAndCourse(
-      user.userId,
+      userId,
       courseSlug,
     );
     return { pricing, enrollment };
