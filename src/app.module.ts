@@ -19,6 +19,7 @@ import { UsersModule } from "./users/users.module";
 import { ArphaModule } from "./arpha/arpha.module";
 import { ShopModule } from "./shop/shop.module";
 import { AdminModule } from "./admin/admin.module";
+import { SettingsModule } from "./settings/settings.module";
 import { ZohoMailModule } from "./zoho-mail/zoho-mail.module";
 
 @Module({
@@ -64,6 +65,7 @@ import { ZohoMailModule } from "./zoho-mail/zoho-mail.module";
     ArphaModule,
     ShopModule,
     AdminModule,
+    SettingsModule,
     ZohoMailModule,
     ContactModule,
   ],

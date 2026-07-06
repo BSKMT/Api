@@ -5,11 +5,13 @@ import { AdminCoursesController } from "./controllers/admin-courses.controller";
 import { AdminShopController } from "./controllers/admin-shop.controller";
 import { AdminArphaController } from "./controllers/admin-arpha.controller";
 import { AdminMembershipController } from "./controllers/admin-membership.controller";
+import { AdminSettingsController } from "./controllers/admin-settings.controller";
 import { AdminEventsService } from "./services/admin-events.service";
 import { AdminCoursesService } from "./services/admin-courses.service";
 import { AdminShopService } from "./services/admin-shop.service";
 import { AdminArphaService } from "./services/admin-arpha.service";
 import { AdminMembershipService } from "./services/admin-membership.service";
+import { AdminSettingsService } from "./services/admin-settings.service";
 import { Event, EventSchema } from "../events/schemas/event.schema";
 import {
   EventRegistration,
@@ -67,6 +69,7 @@ import { UsersModule } from "../users/users.module";
     AdminShopController,
     AdminArphaController,
     AdminMembershipController,
+    AdminSettingsController,
   ],
   providers: [
     AdminEventsService,
@@ -74,6 +77,7 @@ import { UsersModule } from "../users/users.module";
     AdminShopService,
     AdminArphaService,
     AdminMembershipService,
+    AdminSettingsService,
   ],
 })
 export class AdminModule {}
