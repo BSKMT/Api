@@ -138,6 +138,15 @@ export class User {
     default: null,
   })
   partialPaymentCredit?: PartialPaymentCredit | null;
+
+  @Prop({ type: Object, default: {} })
+  settings?: Record<string, unknown>;
+
+  @Prop({ default: false })
+  accountDeletionRequested!: boolean;
+
+  @Prop({ type: Date, default: null })
+  accountDeletionRequestedAt?: Date | null;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

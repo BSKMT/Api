@@ -37,6 +37,7 @@ export function setAuthDependencies(
 async function initAuth() {
   const { betterAuth } = await import("better-auth");
   const { mongodbAdapter } = await import("better-auth/adapters/mongodb");
+  const { twoFactor } = await import("better-auth/plugins");
 
   const landingPageUrl =
     injectedLandingPageUrl ??
@@ -44,6 +45,7 @@ async function initAuth() {
     "http://localhost:4321";
 
   return betterAuth({
+    appName: "BSK Motorcycle Team",
     database: mongodbAdapter(mongoDb, {
       client: mongoClient,
     }),
@@ -187,6 +189,24 @@ async function initAuth() {
       "https://bskmt.com",
       "http://localhost:4321",
       "http://localhost:4322",
+    ],
+
+    plugins: [
+      twoFactor({
+        issuer: "BSK Motorcycle Team",
+        skipVerificationOnEnable: false,
+        otpOptions: {
+          async sendOTP({ user, otp }) {
+            if (injectedEmailService) {
+              await injectedEmailService.sendNotificationEmail({
+                to: user.email,
+                title: "Codigo de verificacion BSK 2FA",
+                message: `Tu codigo de verificacion es: ${otp}. Expira en 5 minutos.`,
+              });
+            }
+          },
+        },
+      }),
     ],
 
     databaseHooks: {
