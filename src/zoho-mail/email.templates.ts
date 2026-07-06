@@ -51,9 +51,10 @@ const META_ROW = (label: string, value: string): string =>
  * de contacto de la landing page.
  */
 export function contactAutoReplyTemplate(name: string): string {
+  const heading = HEADING(`Hola ${name}, gracias por escribirnos`);
   return SHELL(
     "Hemos recibido tu mensaje",
-    `${HEADING(`Hola ${name}, gracias por escribirnos`)}
+    `${heading}
     ${PARAGRAPH("Hemos recibido tu mensaje correctamente. Nuestro equipo revisara tu solicitud y te contactara en un maximo de 48 horas habiles.")}
     ${PARAGRAPH("Si tu consulta es urgente, escribenos directamente a nuestros canales oficiales.")}
     <table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0 0;border-collapse:collapse;">
@@ -111,9 +112,10 @@ export function emailVerificationTemplate(data: {
   name: string;
   verificationUrl: string;
 }): string {
+  const heading = HEADING(`Hola ${data.name}, verifica tu correo`);
   return SHELL(
     "Verifica tu correo electronico",
-    `${HEADING(`Hola ${data.name}, verifica tu correo`)}
+    `${heading}
     ${PARAGRAPH("Has creado una cuenta en BSK Motorcycle Team. Confirma tu direccion de correo electronico para activar tu cuenta y acceder al panel de miembro.")}
     <p style="margin:24px 0;">
       <a href="${data.verificationUrl}" style="display:inline-block;background-color:#dc2626;color:#ffffff;font-size:14px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;padding:12px 32px;border-radius:9999px;text-decoration:none;">
@@ -134,9 +136,10 @@ export function passwordResetTemplate(data: {
   name: string;
   resetUrl: string;
 }): string {
+  const heading = HEADING(`Hola ${data.name}`);
   return SHELL(
     "Restablece tu contrasena",
-    `${HEADING(`Hola ${data.name}`)}
+    `${heading}
     ${PARAGRAPH("Has solicitado restablecer tu contrasena de acceso a BSK Motorcycle Team. Haz clic en el siguiente boton para establecer una nueva contrasena:")}
     <p style="margin:24px 0;">
       <a href="${data.resetUrl}" style="display:inline-block;background-color:#dc2626;color:#ffffff;font-size:14px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;padding:12px 32px;border-radius:9999px;text-decoration:none;">

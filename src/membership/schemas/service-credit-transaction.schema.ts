@@ -21,41 +21,41 @@ export enum CreditSource {
 @Schema({ timestamps: true })
 export class ServiceCreditTransaction {
   @Prop({ required: true, index: true })
-  userId: string;
+  userId!: string;
 
   @Prop({ required: true, unique: true, index: true })
-  reference: string;
+  reference!: string;
 
   @Prop({
     required: true,
     enum: Object.values(CreditTransactionType),
   })
-  transactionType: string;
+  transactionType!: string;
 
   @Prop({
     required: true,
     enum: Object.values(CreditSource),
   })
-  creditSource: string;
+  creditSource!: string;
 
   @Prop({ required: true })
-  amount: number;
+  amount!: number;
 
   @Prop()
-  description: string;
+  description!: string;
 
   @Prop()
-  relatedService: string;
+  relatedService!: string;
 
   @Prop()
-  relatedTransactionId: string;
+  relatedTransactionId!: string;
 
   @Prop({ type: Object, default: {} })
-  metadata: Record<string, unknown>;
+  metadata!: Record<string, unknown>;
 
-  createdAt: Date;
+  createdAt!: Date;
 
-  updatedAt: Date;
+  updatedAt!: Date;
 }
 
 export const ServiceCreditTransactionSchema = SchemaFactory.createForClass(

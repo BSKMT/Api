@@ -23,24 +23,28 @@ import {
   OrderStatus,
 } from "../shop/schemas/order.schema";
 
+interface AuthenticatedRequest extends Request {
+  user: { userId: string; email: string };
+}
+
 @Controller("panel")
 @UseGuards(SessionGuard)
 export class PanelController {
   constructor(
     private readonly usersService: UsersService,
     @InjectModel(EventRegistration.name)
-    private eventRegistrationModel: Model<EventRegistrationDocument>,
+    private readonly eventRegistrationModel: Model<EventRegistrationDocument>,
     @InjectModel(CourseEnrollment.name)
-    private courseEnrollmentModel: Model<CourseEnrollmentDocument>,
+    private readonly courseEnrollmentModel: Model<CourseEnrollmentDocument>,
     @InjectModel(ArphaRequest.name)
-    private arphaRequestModel: Model<ArphaRequestDocument>,
+    private readonly arphaRequestModel: Model<ArphaRequestDocument>,
     @InjectModel(Order.name)
-    private orderModel: Model<OrderDocument>,
+    private readonly orderModel: Model<OrderDocument>,
   ) {}
 
   @Get()
-  async getPanel(@Req() req: Request) {
-    const user = req.user as { userId: string; email: string };
+  async getPanel(@Req() req: AuthenticatedRequest) {
+    const user = req.user;
     const fullUser = await this.usersService.findById(user.userId);
 
     if (!fullUser) {

@@ -6,10 +6,10 @@ export type WishlistItemDocument = WishlistItem & Document;
 @Schema({ timestamps: true })
 export class WishlistItem {
   @Prop({ required: true, index: true })
-  userId: string;
+  userId!: string;
 
   @Prop({ required: true })
-  productSlug: string;
+  productSlug!: string;
 }
 
 export const WishlistItemSchema = SchemaFactory.createForClass(WishlistItem);

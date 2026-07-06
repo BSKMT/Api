@@ -12,41 +12,41 @@ export enum ProductStatus {
 @Schema({ timestamps: true })
 export class Product {
   @Prop({ required: true, unique: true, index: true })
-  slug: string;
+  slug!: string;
 
   @Prop({ required: true })
-  name: string;
+  name!: string;
 
   @Prop({ required: true })
-  collection: string;
+  collection!: string;
 
   @Prop({ type: String, default: null })
-  description: string | null;
+  description!: string | null;
 
   @Prop({ type: String, default: null })
-  image: string | null;
+  image!: string | null;
 
   @Prop({ required: true })
-  publicPrice: number;
+  publicPrice!: number;
 
   @Prop({ required: true, default: 20 })
-  memberDiscountPercent: number;
+  memberDiscountPercent!: number;
 
   @Prop({ required: true, default: 0 })
-  stock: number;
+  stock!: number;
 
   @Prop({ default: false })
-  isNew: boolean;
+  isNew!: boolean;
 
   @Prop({ default: true })
-  featured: boolean;
+  featured!: boolean;
 
   @Prop({
     required: true,
     enum: Object.values(ProductStatus),
     default: ProductStatus.PUBLISHED,
   })
-  status: string;
+  status!: string;
 }
 
 export const ProductSchema = SchemaFactory.createForClass(Product);

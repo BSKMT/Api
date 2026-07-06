@@ -38,7 +38,7 @@ export class ShopController {
     @Query("collection") collection?: string,
   ) {
     return this.shopService.getProducts(
-      limit ? parseInt(limit, 10) : 20,
+      limit ? Number.parseInt(limit, 10) : 20,
       featured === "true",
       collection,
     );
@@ -48,7 +48,7 @@ export class ShopController {
   @Get("upcoming")
   async getUpcomingReleases(@Query("limit") limit?: string) {
     return this.shopService.getUpcomingReleases(
-      limit ? parseInt(limit, 10) : 10,
+      limit ? Number.parseInt(limit, 10) : 10,
     );
   }
 

@@ -27,7 +27,7 @@ import { getAuth } from "../auth/better-auth";
 
 function getCurrentToken(req: Request): string {
   const cookies = req.headers.cookie ?? "";
-  const match = cookies.match(/better-auth\.session_token=([^;]+)/);
+  const match = /better-auth\.session_token=([^;]+)/.exec(cookies);
   return match ? match[1] : "";
 }
 

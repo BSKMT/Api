@@ -99,6 +99,36 @@ interface LeanUser {
   updatedAt?: Date;
 }
 
+function parseBrowser(ua: string): string {
+  if (/Edg\//.test(ua)) return "Microsoft Edge";
+  if (/Chrome\//.test(ua) && !/Chromium\//.test(ua)) return "Google Chrome";
+  if (/Firefox\//.test(ua)) return "Mozilla Firefox";
+  if (/Safari\//.test(ua) && !/Chrome\//.test(ua)) return "Safari";
+  if (/OPR\//.test(ua)) return "Opera";
+  return "Desconocido";
+}
+
+function parseOS(ua: string): string {
+  if (/Windows NT 10/.test(ua)) return "Windows 10/11";
+  if (/Windows NT/.test(ua)) return "Windows";
+  if (/Mac OS X/.test(ua)) return "macOS";
+  if (/Android/.test(ua)) return "Android";
+  if (/iPhone|iPad|iPod/.test(ua)) return "iOS";
+  if (/Linux/.test(ua)) return "Linux";
+  return "Desconocido";
+}
+
+function parseDevice(ua: string): string {
+  if (/iPhone/.test(ua)) return "iPhone";
+  if (/iPad/.test(ua)) return "iPad";
+  if (/Android/.test(ua) && /Mobile/.test(ua)) return "Android Phone";
+  if (/Android/.test(ua)) return "Android Tablet";
+  if (/Mac/.test(ua)) return "MacBook";
+  if (/Windows/.test(ua)) return "Windows PC";
+  if (/Linux/.test(ua)) return "Linux PC";
+  return "Dispositivo desconocido";
+}
+
 function parseUserAgent(ua: string | null): {
   browser: string;
   os: string;
@@ -110,46 +140,28 @@ function parseUserAgent(ua: string | null): {
       os: "Desconocido",
       device: "Dispositivo desconocido",
     };
-  let browser = "Desconocido";
-  let os = "Desconocido";
-  const device = "Dispositivo desconocido";
-
-  if (/Edg\//.test(ua)) browser = "Microsoft Edge";
-  else if (/Chrome\//.test(ua) && !/Chromium\//.test(ua))
-    browser = "Google Chrome";
-  else if (/Firefox\//.test(ua)) browser = "Mozilla Firefox";
-  else if (/Safari\//.test(ua) && !/Chrome\//.test(ua)) browser = "Safari";
-  else if (/OPR\//.test(ua)) browser = "Opera";
-
-  if (/Windows NT 10/.test(ua)) os = "Windows 10/11";
-  else if (/Windows NT/.test(ua)) os = "Windows";
-  else if (/Mac OS X/.test(ua)) os = "macOS";
-  else if (/Android/.test(ua)) os = "Android";
-  else if (/iPhone|iPad|iPod/.test(ua)) os = "iOS";
-  else if (/Linux/.test(ua)) os = "Linux";
-
-  if (/iPhone/.test(ua)) return { browser, os, device: "iPhone" };
-  if (/iPad/.test(ua)) return { browser, os, device: "iPad" };
-  if (/Android/.test(ua) && /Mobile/.test(ua))
-    return { browser, os, device: "Android Phone" };
-  if (/Android/.test(ua)) return { browser, os, device: "Android Tablet" };
-  if (/Mac/.test(ua)) return { browser, os, device: "MacBook" };
-  if (/Windows/.test(ua)) return { browser, os, device: "Windows PC" };
-  if (/Linux/.test(ua)) return { browser, os, device: "Linux PC" };
-
-  return { browser, os, device };
+  return {
+    browser: parseBrowser(ua),
+    os: parseOS(ua),
+    device: parseDevice(ua),
+  };
 }
 
 @Injectable()
 export class SettingsService {
   private readonly logger = new Logger(SettingsService.name);
 
-  constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
+  constructor(
+    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+  ) {}
 
   async getSettings(userId: string) {
     const user = await this.userModel.findById(userId).lean();
     if (!user) throw new NotFoundException("Usuario no encontrado");
-    return { ...DEFAULT_SETTINGS, ...(user.settings ?? {}) };
+    return {
+      ...DEFAULT_SETTINGS,
+      ...(user.settings as Record<string, unknown>),
+    };
   }
 
   async updateSettings(userId: string, dto: Record<string, unknown>) {
@@ -160,8 +172,8 @@ export class SettingsService {
     for (const key of ["notifications", "privacy", "appearance", "dashboard"]) {
       if (dto[key]) {
         settings[key] = {
-          ...(settings[key] ?? {}),
-          ...dto[key],
+          ...(settings[key] as Record<string, unknown>),
+          ...(dto[key] as Record<string, unknown>),
         };
       }
     }

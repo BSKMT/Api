@@ -6,16 +6,16 @@ export type TransactionDocument = Transaction & Document;
 @Schema({ _id: false })
 export class CompanionData {
   @Prop({ required: true, trim: true })
-  fullName: string;
+  fullName!: string;
 
   @Prop({ required: true, trim: true })
-  documentId: string;
+  documentId!: string;
 
   @Prop({ required: true, trim: true })
-  phone: string;
+  phone!: string;
 
   @Prop({ required: true, trim: true, lowercase: true })
-  email: string;
+  email!: string;
 }
 
 export const CompanionDataSchema = SchemaFactory.createForClass(CompanionData);
@@ -23,19 +23,19 @@ export const CompanionDataSchema = SchemaFactory.createForClass(CompanionData);
 @Schema({ _id: false })
 export class WebhookEvent {
   @Prop({ required: true })
-  type: string;
+  type!: string;
 
   @Prop({ required: true, type: Date })
-  receivedAt: Date;
+  receivedAt!: Date;
 
   @Prop({ required: true, default: "UNKNOWN" })
-  notificationId: string;
+  notificationId!: string;
 
   @Prop({ required: true, default: "UNKNOWN" })
-  paymentId: string;
+  paymentId!: string;
 
   @Prop({ type: Object })
-  data: Record<string, unknown>;
+  data!: Record<string, unknown>;
 }
 
 export const WebhookEventSchema = SchemaFactory.createForClass(WebhookEvent);
@@ -43,56 +43,56 @@ export const WebhookEventSchema = SchemaFactory.createForClass(WebhookEvent);
 @Schema({ timestamps: true })
 export class Transaction {
   @Prop({ required: true, index: true })
-  userId: string;
+  userId!: string;
 
   @Prop({ required: true })
-  eventSlug: string;
+  eventSlug!: string;
 
   @Prop({ required: true, unique: true, index: true })
-  reference: string;
+  reference!: string;
 
   @Prop()
-  boldPaymentId: string;
+  boldPaymentId!: string;
 
   @Prop({ required: true })
-  amount: number;
+  amount!: number;
 
   @Prop({ required: true })
-  description: string;
+  description!: string;
 
   @Prop({ required: true, default: "PENDING" })
-  status: string;
+  status!: string;
 
   @Prop()
-  paymentMethod: string;
+  paymentMethod!: string;
 
   @Prop()
-  payerEmail: string;
+  payerEmail!: string;
 
   @Prop({ required: true })
-  tier: string;
+  tier!: string;
 
   @Prop({ default: false })
-  hasCompanion: boolean;
+  hasCompanion!: boolean;
 
   @Prop({ type: CompanionDataSchema })
-  companionData: CompanionData;
+  companionData!: CompanionData;
 
   @Prop({ type: [WebhookEventSchema], default: [] })
-  webhookEvents: WebhookEvent[];
+  webhookEvents!: WebhookEvent[];
 
   @Prop({ type: String, default: "event" })
-  purpose: string;
+  purpose!: string;
 
   @Prop({ type: String, default: null })
-  relatedReference: string | null;
+  relatedReference!: string | null;
 
   @Prop({ type: Date, default: null })
-  lastBoldSyncAt: Date | null;
+  lastBoldSyncAt!: Date | null;
 
-  createdAt: Date;
+  createdAt!: Date;
 
-  updatedAt: Date;
+  updatedAt!: Date;
 }
 
 export const TransactionSchema = SchemaFactory.createForClass(Transaction);

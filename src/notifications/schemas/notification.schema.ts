@@ -24,38 +24,39 @@ export enum NotificationPriority {
 @Schema({ timestamps: true, collection: "notifications" })
 export class Notification {
   @Prop({ required: true, index: true })
-  userId: string;
+  userId!: string;
 
   @Prop({
     required: true,
     enum: Object.values(NotificationType),
   })
-  type: string;
+  type!: string;
 
   @Prop({ required: true })
-  title: string;
+  title!: string;
 
   @Prop({ required: true })
-  message: string;
+  message!: string;
 
   @Prop({
     required: true,
     enum: Object.values(NotificationPriority),
     default: NotificationPriority.MEDIUM,
   })
-  priority: string;
+  priority!: string;
 
   @Prop({ default: false })
-  read: boolean;
+  read!: boolean;
 
   @Prop({ type: Object, default: {} })
-  metadata: Record<string, unknown>;
+  metadata!: Record<string, unknown>;
 
   @Prop()
-  relatedReference: string;
+  relatedReference!: string;
 
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt!: Date;
+
+  updatedAt!: Date;
 }
 
 export const NotificationSchema = SchemaFactory.createForClass(Notification);

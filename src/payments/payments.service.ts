@@ -8,7 +8,7 @@ import {
 import { InjectModel } from "@nestjs/mongoose";
 import { ConfigService } from "@nestjs/config";
 import { Model } from "mongoose";
-import * as crypto from "crypto";
+import * as crypto from "node:crypto";
 import {
   Transaction,
   TransactionDocument,
@@ -74,11 +74,11 @@ export class PaymentsService {
 
   constructor(
     @InjectModel(Transaction.name)
-    private transactionModel: Model<TransactionDocument>,
-    private configService: ConfigService<EnvironmentConfig>,
-    private eventsService: EventsService,
-    private shopService: ShopService,
-    private arphaService: ArphaService,
+    private readonly transactionModel: Model<TransactionDocument>,
+    private readonly configService: ConfigService<EnvironmentConfig>,
+    private readonly eventsService: EventsService,
+    private readonly shopService: ShopService,
+    private readonly arphaService: ArphaService,
   ) {}
 
   private generateBoldIntegritySignature(
@@ -292,21 +292,6 @@ export class PaymentsService {
     transaction: TransactionDocument,
     description: string,
   ) {
-    const boldEnvironment = this.configService.get("BOLD_ENVIRONMENT", {
-      infer: true,
-    })!;
-    const boldPublicKey = this.configService.get("BOLD_PUBLIC_KEY", {
-      infer: true,
-    })!;
-    const boldIdentityKey = this.configService.get("BOLD_IDENTITY_KEY", {
-      infer: true,
-    })!;
-
-    const boldBaseUrl =
-      boldEnvironment === "production"
-        ? "https://payments.api.bold.co"
-        : "https://payments-api-test.bold.co";
-
     this.logger.log(
       `Payment intent created: ${transaction.reference} for user ${transaction.userId}, amount: ${transaction.amount} COP`,
     );
@@ -316,21 +301,11 @@ export class PaymentsService {
       amount: transaction.amount,
       status: "PENDING",
       requiresPayment: true,
-      boldConfig: {
-        publicKey: boldPublicKey,
-        identityKey: boldIdentityKey,
-        environment: boldEnvironment,
-        baseUrl: boldBaseUrl,
-        referenceId: transaction.reference,
+      boldConfig: this.buildBoldConfigFor(
+        transaction.reference,
+        transaction.amount,
         description,
-        amount: transaction.amount,
-        currency: "COP",
-        integritySignature: this.generateBoldIntegritySignature(
-          transaction.reference,
-          transaction.amount,
-          "COP",
-        ),
-      },
+      ),
     };
   }
 
@@ -342,8 +317,8 @@ export class PaymentsService {
       );
     }
 
-    const amount = dto.amount ?? parseInt(dto.tier, 10);
-    if (isNaN(amount) || amount < 0) {
+    const amount = dto.amount ?? Number.parseInt(dto.tier, 10);
+    if (Number.isNaN(amount) || amount < 0) {
       throw new BadRequestException("Monto de pago inválido");
     }
 
@@ -384,15 +359,70 @@ export class PaymentsService {
   }
 
   async handleWebhook(rawBody: Buffer, signature: string): Promise<void> {
+    this.verifyBoldWebhookSignature(rawBody, signature);
+
+    const event = JSON.parse(rawBody.toString("utf-8")) as Record<
+      string,
+      unknown
+    >;
+    const parsed = this.parseBoldWebhookEvent(event);
+    if (!parsed.referenceId) {
+      this.logger.warn("Webhook received without reference");
+      return;
+    }
+
+    const transaction = await this.transactionModel.findOne({
+      reference: parsed.referenceId,
+    });
+    if (!transaction) {
+      this.logger.warn(
+        `Webhook received for unknown reference: ${parsed.referenceId}`,
+      );
+      return;
+    }
+
+    if (this.isDuplicateWebhook(transaction, parsed.notificationId)) {
+      this.logger.log(
+        `Duplicate webhook ignored: ${parsed.notificationId ?? parsed.paymentId}, ${parsed.referenceId}`,
+      );
+      return;
+    }
+
+    this.recordWebhookEvent(transaction, event, parsed);
+
+    const statusFromEvent = this.mapBoldStatus(parsed.eventType);
+    if (statusFromEvent) {
+      transaction.status = statusFromEvent;
+      if (statusFromEvent === "APPROVED") {
+        if (parsed.paymentMethod)
+          transaction.paymentMethod = parsed.paymentMethod;
+        if (parsed.payerEmail) transaction.payerEmail = parsed.payerEmail;
+      }
+    } else {
+      this.logger.log(
+        `Unhandled webhook event type: ${parsed.eventType} for reference: ${parsed.referenceId}`,
+      );
+    }
+
+    await transaction.save();
+    this.logger.log(
+      `Webhook processed: ${parsed.eventType} for reference: ${parsed.referenceId}`,
+    );
+
+    if (statusFromEvent === "APPROVED") {
+      await this.linkPaymentByPurpose(transaction);
+    }
+  }
+
+  /** Verify the Bold webhook HMAC signature (throwing on mismatch). */
+  private verifyBoldWebhookSignature(rawBody: Buffer, signature: string): void {
     const boldEnv =
-      this.configService.get<string>("BOLD_ENVIRONMENT", {
-        infer: true,
-      }) ?? "sandbox";
+      this.configService.get<string>("BOLD_ENVIRONMENT", { infer: true }) ??
+      "sandbox";
     const secretKey =
       boldEnv === "sandbox"
         ? ""
         : (this.configService.get("BOLD_SECRET_KEY", { infer: true }) ?? "");
-
     const bodyBase64 = rawBody.toString("base64");
     const expectedSignature = crypto
       .createHmac("sha256", secretKey)
@@ -401,7 +431,6 @@ export class PaymentsService {
 
     const signatureBuffer = Buffer.from(signature);
     const expectedBuffer = Buffer.from(expectedSignature);
-
     if (
       signatureBuffer.length !== expectedBuffer.length ||
       !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)
@@ -409,83 +438,59 @@ export class PaymentsService {
       this.logger.warn("Invalid webhook signature received");
       throw new BadRequestException("Invalid signature");
     }
+  }
 
-    const event = JSON.parse(rawBody.toString("utf-8")) as Record<
-      string,
-      unknown
-    >;
+  /** Parse the relevant fields from a Bold webhook event payload. */
+  private parseBoldWebhookEvent(event: Record<string, unknown>): {
+    notificationId: string | undefined;
+    eventType: string | undefined;
+    paymentId: string | undefined;
+    referenceId: string | undefined;
+    paymentMethod: string | undefined;
+    payerEmail: string | undefined;
+  } {
     const notificationId = event["id"] as string | undefined;
     const eventType = event["type"] as string | undefined;
     const data = (event["data"] ?? {}) as Record<string, unknown>;
     const metadata = (data["metadata"] ?? {}) as Record<string, unknown>;
-    const paymentId = data["payment_id"] as string | undefined;
-    const referenceId = metadata["reference"] as string | undefined;
-    const paymentMethod = data["payment_method"] as string | undefined;
-    const payerEmail = data["payer_email"] as string | undefined;
+    return {
+      notificationId,
+      eventType,
+      paymentId: data["payment_id"] as string | undefined,
+      referenceId: metadata["reference"] as string | undefined,
+      paymentMethod: data["payment_method"] as string | undefined,
+      payerEmail: data["payer_email"] as string | undefined,
+    };
+  }
 
-    if (!referenceId) {
-      this.logger.warn("Webhook received without reference");
-      return;
-    }
+  /** Returns true when the same Bold webhook has already been processed. */
+  private isDuplicateWebhook(
+    transaction: TransactionDocument,
+    notificationId: string | undefined,
+  ): boolean {
+    if (notificationId === undefined) return false;
+    return transaction.webhookEvents.some(
+      (e) =>
+        typeof e["notificationId"] === "string" &&
+        e["notificationId"] === notificationId,
+    );
+  }
 
-    const transaction = await this.transactionModel.findOne({
-      reference: referenceId,
-    });
-
-    if (!transaction) {
-      this.logger.warn(
-        `Webhook received for unknown reference: ${referenceId}`,
-      );
-      return;
-    }
-
-    const alreadyProcessed =
-      notificationId !== undefined &&
-      transaction.webhookEvents.some(
-        (e) =>
-          typeof e["notificationId"] === "string" &&
-          e["notificationId"] === notificationId,
-      );
-
-    if (alreadyProcessed) {
-      this.logger.log(
-        `Duplicate webhook ignored: ${notificationId ?? paymentId}, ${referenceId}`,
-      );
-      return;
-    }
-
+  /** Persist a webhook event slot onto the transaction. */
+  private recordWebhookEvent(
+    transaction: TransactionDocument,
+    event: Record<string, unknown>,
+    parsed: ReturnType<PaymentsService["parseBoldWebhookEvent"]>,
+  ): void {
     const webhookEvent = new WebhookEvent();
-    webhookEvent.notificationId = notificationId ?? "UNKNOWN";
-    webhookEvent.paymentId = paymentId ?? "UNKNOWN";
-    webhookEvent.type = eventType ?? "UNKNOWN";
+    webhookEvent.notificationId = parsed.notificationId ?? "UNKNOWN";
+    webhookEvent.paymentId = parsed.paymentId ?? "UNKNOWN";
+    webhookEvent.type = parsed.eventType ?? "UNKNOWN";
     webhookEvent.receivedAt = new Date();
     webhookEvent.data = event;
     transaction.webhookEvents.push(webhookEvent);
-
-    if (paymentId && !transaction.boldPaymentId) {
-      transaction.boldPaymentId = paymentId;
-    }
-
-    const statusFromEvent = this.mapBoldStatus(eventType);
-    if (statusFromEvent) {
-      transaction.status = statusFromEvent;
-      if (statusFromEvent === "APPROVED") {
-        if (paymentMethod) transaction.paymentMethod = paymentMethod;
-        if (payerEmail) transaction.payerEmail = payerEmail;
-      }
-    } else {
-      this.logger.log(
-        `Unhandled webhook event type: ${eventType} for reference: ${referenceId}`,
-      );
-    }
-
-    await transaction.save();
-    this.logger.log(
-      `Webhook processed: ${eventType} for reference: ${referenceId}`,
-    );
-
-    if (statusFromEvent === "APPROVED") {
-      await this.linkPaymentByPurpose(transaction);
+    if (parsed.paymentId && !transaction.boldPaymentId) {
+      transaction.boldPaymentId = parsed.paymentId;
     }
   }
 
@@ -558,21 +563,10 @@ export class PaymentsService {
   }
 
   private async syncWithBold(transaction: TransactionDocument): Promise<void> {
-    const now = new Date();
-    const minIntervalMs = 10_000;
-
-    if (
-      transaction.lastBoldSyncAt &&
-      now.getTime() - new Date(transaction.lastBoldSyncAt).getTime() <
-        minIntervalMs
-    ) {
+    if (this.isBoldSyncRateLimited(transaction)) {
       return;
     }
 
-    const boldEnv =
-      this.configService.get<string>("BOLD_ENVIRONMENT", {
-        infer: true,
-      }) ?? "sandbox";
     const identityKey =
       this.configService.get<string>("BOLD_IDENTITY_KEY", {
         infer: true,
@@ -585,14 +579,17 @@ export class PaymentsService {
       return;
     }
 
+    const boldEnv =
+      this.configService.get<string>("BOLD_ENVIRONMENT", {
+        infer: true,
+      }) ?? "sandbox";
     const baseUrl =
       boldEnv === "production"
         ? "https://payments.api.bold.co"
         : "https://payments-api-test.bold.co";
-
     const url = `${baseUrl}/v2/payment-voucher/${encodeURIComponent(transaction.reference)}`;
 
-    transaction.lastBoldSyncAt = now;
+    transaction.lastBoldSyncAt = new Date();
     await transaction.save();
 
     try {
@@ -612,46 +609,65 @@ export class PaymentsService {
       }
 
       const body = (await res.json()) as Record<string, unknown>;
-      const boldStatus = body["payment_status"] as string | undefined;
-
-      if (!boldStatus || boldStatus === "NO_TRANSACTION_FOUND") {
-        this.logger.log(
-          `Bold sync: no transaction found yet for reference: ${transaction.reference}`,
-        );
-        return;
-      }
-
-      const mappedStatus = this.mapBoldVoucherStatus(boldStatus);
-      if (!mappedStatus || mappedStatus === transaction.status) {
-        return;
-      }
-
-      this.logger.log(
-        `Bold sync: updating ${transaction.reference} from ${transaction.status} to ${mappedStatus}`,
-      );
-
-      transaction.status = mappedStatus;
-
-      if (mappedStatus === "APPROVED") {
-        const paymentMethod = body["payment_method"] as string | undefined;
-        const payerEmail = body["payer_email"] as string | undefined;
-        const boldPaymentId = body["transaction_id"] as string | undefined;
-        if (paymentMethod) transaction.paymentMethod = paymentMethod;
-        if (payerEmail) transaction.payerEmail = payerEmail;
-        if (boldPaymentId && !transaction.boldPaymentId) {
-          transaction.boldPaymentId = boldPaymentId;
-        }
-      }
-
-      await transaction.save();
-
-      if (mappedStatus === "APPROVED") {
-        await this.linkPaymentByPurpose(transaction);
-      }
+      await this.applyBoldVoucherBody(transaction, body);
     } catch (err: unknown) {
       this.logger.warn(
         `Bold sync failed for ${transaction.reference}: ${err instanceof Error ? err.message : String(err)}`,
       );
+    }
+  }
+
+  /** Returns true when the last Bold sync was too recent (rate limit). */
+  private isBoldSyncRateLimited(transaction: TransactionDocument): boolean {
+    const now = new Date();
+    const minIntervalMs = 10_000;
+    return (
+      !!transaction.lastBoldSyncAt &&
+      now.getTime() - new Date(transaction.lastBoldSyncAt).getTime() <
+        minIntervalMs
+    );
+  }
+
+  /** Map a Bold voucher body to a transaction status update + linking. */
+  private async applyBoldVoucherBody(
+    transaction: TransactionDocument,
+    body: Record<string, unknown>,
+  ): Promise<void> {
+    const boldStatus = body["payment_status"] as string | undefined;
+
+    if (!boldStatus || boldStatus === "NO_TRANSACTION_FOUND") {
+      this.logger.log(
+        `Bold sync: no transaction found yet for reference: ${transaction.reference}`,
+      );
+      return;
+    }
+
+    const mappedStatus = this.mapBoldVoucherStatus(boldStatus);
+    if (!mappedStatus || mappedStatus === transaction.status) {
+      return;
+    }
+
+    this.logger.log(
+      `Bold sync: updating ${transaction.reference} from ${transaction.status} to ${mappedStatus}`,
+    );
+
+    transaction.status = mappedStatus;
+
+    if (mappedStatus === "APPROVED") {
+      const paymentMethod = body["payment_method"] as string | undefined;
+      const payerEmail = body["payer_email"] as string | undefined;
+      const boldPaymentId = body["transaction_id"] as string | undefined;
+      if (paymentMethod) transaction.paymentMethod = paymentMethod;
+      if (payerEmail) transaction.payerEmail = payerEmail;
+      if (boldPaymentId && !transaction.boldPaymentId) {
+        transaction.boldPaymentId = boldPaymentId;
+      }
+    }
+
+    await transaction.save();
+
+    if (mappedStatus === "APPROVED") {
+      await this.linkPaymentByPurpose(transaction);
     }
   }
 
@@ -724,41 +740,63 @@ export class PaymentsService {
     };
 
     if (transaction.status === "PENDING" && transaction.amount > 0) {
-      const boldEnvironment =
-        this.configService.get<string>("BOLD_ENVIRONMENT", {
-          infer: true,
-        }) ?? "sandbox";
-      const boldPublicKey =
-        this.configService.get<string>("BOLD_PUBLIC_KEY", {
-          infer: true,
-        }) ?? "";
-      const boldIdentityKey =
-        this.configService.get<string>("BOLD_IDENTITY_KEY", {
-          infer: true,
-        }) ?? "";
-      const boldBaseUrl =
-        boldEnvironment === "production"
-          ? "https://payments.api.bold.co"
-          : "https://payments-api-test.bold.co";
-
-      result.boldConfig = {
-        publicKey: boldPublicKey,
-        identityKey: boldIdentityKey,
-        environment: boldEnvironment,
-        baseUrl: boldBaseUrl,
-        referenceId: transaction.reference,
-        description: transaction.description,
-        amount: transaction.amount,
-        currency: "COP",
-        integritySignature: this.generateBoldIntegritySignature(
-          transaction.reference,
-          transaction.amount,
-          "COP",
-        ),
-      };
+      result.boldConfig = this.buildBoldConfigFor(
+        transaction.reference,
+        transaction.amount,
+        transaction.description,
+      );
     }
 
     return result;
+  }
+
+  /** Build the Bold public config block returned to the frontend widget. */
+  private buildBoldConfigFor(
+    reference: string,
+    amount: number,
+    description: string,
+  ): {
+    publicKey: string;
+    identityKey: string;
+    environment: string;
+    baseUrl: string;
+    referenceId: string;
+    description: string;
+    amount: number;
+    currency: string;
+    integritySignature: string;
+  } {
+    const boldEnvironment =
+      this.configService.get<string>("BOLD_ENVIRONMENT", {
+        infer: true,
+      }) ?? "sandbox";
+    const boldPublicKey =
+      this.configService.get<string>("BOLD_PUBLIC_KEY", {
+        infer: true,
+      }) ?? "";
+    const boldIdentityKey =
+      this.configService.get<string>("BOLD_IDENTITY_KEY", {
+        infer: true,
+      }) ?? "";
+    const boldBaseUrl =
+      boldEnvironment === "production"
+        ? "https://payments.api.bold.co"
+        : "https://payments-api-test.bold.co";
+    return {
+      publicKey: boldPublicKey,
+      identityKey: boldIdentityKey,
+      environment: boldEnvironment,
+      baseUrl: boldBaseUrl,
+      referenceId: reference,
+      description,
+      amount,
+      currency: "COP",
+      integritySignature: this.generateBoldIntegritySignature(
+        reference,
+        amount,
+        "COP",
+      ),
+    };
   }
 
   async submitCompanionData(

@@ -33,11 +33,11 @@ export class ShopService {
 
   constructor(
     @InjectModel(Product.name)
-    private productModel: Model<ProductDocument>,
+    private readonly productModel: Model<ProductDocument>,
     @InjectModel(Order.name)
-    private orderModel: Model<OrderDocument>,
+    private readonly orderModel: Model<OrderDocument>,
     @InjectModel(WishlistItem.name)
-    private wishlistModel: Model<WishlistItemDocument>,
+    private readonly wishlistModel: Model<WishlistItemDocument>,
   ) {}
 
   async getProducts(

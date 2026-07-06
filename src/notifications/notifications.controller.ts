@@ -14,6 +14,10 @@ import type { Request } from "express";
 import { SessionGuard } from "../auth/session.guard";
 import { NotificationsService } from "./notifications.service";
 
+interface AuthenticatedRequest extends Request {
+  user: { userId: string };
+}
+
 /**
  * NotificationsController - Endpoints REST para notificaciones a nivel de sistema.
  * Todas las rutas requieren JWT y se sirven bajo /api/notifications.
@@ -25,11 +29,11 @@ export class NotificationsController {
   @UseGuards(SessionGuard)
   @Get()
   async listNotifications(
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Query("limit") limit?: string,
     @Query("unread") unread?: string,
   ) {
-    const { userId } = req.user as { userId: string };
+    const { userId } = req.user;
     const onlyUnread = unread === "true" || unread === "1";
     const limitNum = limit ? Number.parseInt(limit, 10) : undefined;
     const items = await this.notificationsService.getByUser(userId, {
@@ -43,8 +47,8 @@ export class NotificationsController {
   @UseGuards(SessionGuard)
   @Post("read-all")
   @HttpCode(HttpStatus.OK)
-  async markAllRead(@Req() req: Request) {
-    const { userId } = req.user as { userId: string };
+  async markAllRead(@Req() req: AuthenticatedRequest) {
+    const { userId } = req.user;
     const result = await this.notificationsService.markAllRead(userId);
     return result;
   }
@@ -52,8 +56,11 @@ export class NotificationsController {
   @UseGuards(SessionGuard)
   @Post(":id/read")
   @HttpCode(HttpStatus.OK)
-  async markAsRead(@Req() req: Request, @Param("id") notificationId: string) {
-    const { userId } = req.user as { userId: string };
+  async markAsRead(
+    @Req() req: AuthenticatedRequest,
+    @Param("id") notificationId: string,
+  ) {
+    const { userId } = req.user;
     return this.notificationsService.markAsRead(userId, notificationId);
   }
 
@@ -61,10 +68,10 @@ export class NotificationsController {
   @Delete(":id")
   @HttpCode(HttpStatus.OK)
   async deleteNotification(
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Param("id") notificationId: string,
   ) {
-    const { userId } = req.user as { userId: string };
+    const { userId } = req.user;
     return this.notificationsService.deleteNotification(userId, notificationId);
   }
 }

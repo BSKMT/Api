@@ -15,15 +15,19 @@ import { UpdateProfileSectionDto } from "./dto/update-profile-section.dto";
 import { DeleteProfileSectionDto } from "./dto/delete-profile-section.dto";
 import { REQUIRED_PROFILE_SECTIONS } from "../users/schemas/user.schema";
 
+interface AuthenticatedRequest extends Request {
+  user: { userId: string };
+}
+
 @Controller("profile")
 @UseGuards(SessionGuard)
 export class ProfileController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  async getProfile(@Req() req: Request) {
-    const user = req.user as { userId: string };
-    const fullUser = await this.usersService.findById(user.userId);
+  async getProfile(@Req() req: AuthenticatedRequest) {
+    const { userId } = req.user;
+    const fullUser = await this.usersService.findById(userId);
     if (!fullUser)
       return {
         profile: {},
@@ -45,20 +49,20 @@ export class ProfileController {
   }
 
   @Post("legal-consent")
-  async acceptLegalConsent(@Req() req: Request) {
-    const user = req.user as { userId: string };
-    const updated = await this.usersService.acceptLegalConsent(user.userId);
+  async acceptLegalConsent(@Req() req: AuthenticatedRequest) {
+    const { userId } = req.user;
+    const updated = await this.usersService.acceptLegalConsent(userId);
     return { legalConsentAccepted: updated.legalConsentAccepted };
   }
 
   @Put()
   async updateSection(
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Body() dto: UpdateProfileSectionDto,
   ) {
-    const user = req.user as { userId: string };
+    const { userId } = req.user;
     const updated = await this.usersService.updateProfileSection(
-      user.userId,
+      userId,
       dto.sectionId,
       dto.data,
     );
@@ -71,12 +75,12 @@ export class ProfileController {
 
   @Delete()
   async deleteSection(
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Body() dto: DeleteProfileSectionDto,
   ) {
-    const user = req.user as { userId: string };
+    const { userId } = req.user;
     const updated = await this.usersService.deleteProfileSection(
-      user.userId,
+      userId,
       dto.sectionId,
     );
     return {

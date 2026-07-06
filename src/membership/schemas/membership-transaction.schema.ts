@@ -6,50 +6,50 @@ export type MembershipTransactionDocument = MembershipTransaction & Document;
 @Schema({ timestamps: true })
 export class MembershipTransaction {
   @Prop({ required: true, index: true })
-  userId: string;
+  userId!: string;
 
   @Prop({ required: true, unique: true, index: true })
-  reference: string;
+  reference!: string;
 
   @Prop({ required: true, enum: ["single", "installment"] })
-  paymentPlan: string;
+  paymentPlan!: string;
 
   @Prop({ required: true })
-  amount: number;
+  amount!: number;
 
   @Prop({ required: true, default: 1 })
-  installmentNumber: number;
+  installmentNumber!: number;
 
   @Prop({ required: true, default: 1 })
-  installmentTotal: number;
+  installmentTotal!: number;
 
   @Prop({ required: true, default: "PENDING" })
-  status: string;
+  status!: string;
 
   @Prop()
-  boldPaymentId: string;
+  boldPaymentId!: string;
 
   @Prop()
-  paymentMethod: string;
+  paymentMethod!: string;
 
   @Prop()
-  payerEmail: string;
+  payerEmail!: string;
 
   @Prop({ default: false })
-  isRenewal: boolean;
+  isRenewal!: boolean;
 
   @Prop({ type: Date, default: null })
-  paidAt: Date | null;
+  paidAt!: Date | null;
 
   @Prop({ type: Object, default: [] })
-  webhookEvents: Record<string, unknown>[];
+  webhookEvents!: Record<string, unknown>[];
 
   @Prop({ type: Date, default: null })
-  lastBoldSyncAt: Date | null;
+  lastBoldSyncAt!: Date | null;
 
-  createdAt: Date;
+  createdAt!: Date;
 
-  updatedAt: Date;
+  updatedAt!: Date;
 }
 
 export const MembershipTransactionSchema = SchemaFactory.createForClass(

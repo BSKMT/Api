@@ -472,14 +472,15 @@ export class EventsService {
       };
     }
 
+    const virtualPricing: CoursePricing = {
+      amount: 0,
+      tier: "course-member-virtual",
+      requiresPayment: false,
+    };
+
     switch (course.format) {
       case "virtual":
-      default:
-        return {
-          amount: 0,
-          tier: "course-member-virtual",
-          requiresPayment: false,
-        };
+        return virtualPricing;
       case "semipresencial":
         return {
           amount: Math.round(
@@ -496,6 +497,8 @@ export class EventsService {
           tier: "course-member-presencial",
           requiresPayment: basePrice > 0,
         };
+      default:
+        return virtualPricing;
     }
   }
 
