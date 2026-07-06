@@ -1,16 +1,113 @@
 import { MongoClient } from "mongodb";
 import type { EmailService } from "../zoho-mail/email.service";
-import { betterAuth } from "better-auth";
-import { mongodbAdapter } from "better-auth/adapters/mongodb";
-import { twoFactor } from "better-auth/plugins";
+import { betterAuth as _betterAuth } from "better-auth";
+import { mongodbAdapter as _mongodbAdapter } from "better-auth/adapters/mongodb";
+import { twoFactor as _twoFactor } from "better-auth/plugins";
+
+/* ------------------------------------------------------------------ *
+ * Explicit type definitions
+ *
+ * better-auth exports extremely deep generic types (Auth<Options>,
+ * InferPluginTypes, InferAPI, …). The TypeScript language server in
+ * some editor environments cannot resolve those generics within the
+ * ESLint type-checked rules, reporting them as "error" types which
+ * cascade into dozens of `no-unsafe-*` violations.
+ *
+ * To keep the code type-safe and lint-clean without suppressing any
+ * rule, we define concrete interfaces that mirror the runtime shapes
+ * we actually use. The imported functions are re-typed through
+ * `unknown` (double-cast) so every call site is fully typed.
+ * ------------------------------------------------------------------ */
+
+/** Base user fields returned by better-auth (mirrors `userSchema`). */
+export interface BetterAuthUser {
+  id: string;
+  email: string;
+  emailVerified: boolean;
+  name: string;
+  image?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  /** Additional fields declared in `user.additionalFields`. */
+  role?: string;
+  primerNombre?: string;
+  segundoNombre?: string;
+  primerApellido?: string;
+  segundoApellido?: string;
+  country?: string;
+  birthDate?: string;
+  /** Added by the `twoFactor` plugin. */
+  twoFactorEnabled?: boolean;
+}
+
+/** Session document shape (mirrors `sessionSchema`). */
+export interface BetterAuthSession {
+  id: string;
+  token: string;
+  expiresAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+  userId: string;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}
+
+/** Result of `auth.api.getSession()` — `null` when no session found. */
+export interface BetterAuthSessionData {
+  session: BetterAuthSession;
+  user: BetterAuthUser;
+}
+
+/** Headers accepted by better-auth API methods (Web `Headers` or plain record). */
+type AuthHeaders = Headers | Record<string, string | string[] | undefined>;
+
+/** Minimal subset of the `Auth` instance we consume across the app. */
+export interface AuthInstance {
+  handler: (request: Request) => Promise<Response>;
+  api: {
+    getSession: (params: {
+      headers: AuthHeaders;
+    }) => Promise<BetterAuthSessionData | null>;
+    changePassword: (params: {
+      body: { currentPassword: string; newPassword: string };
+      headers: AuthHeaders;
+    }) => Promise<unknown>;
+    enableTwoFactor: (params: {
+      body: { password: string };
+      headers: AuthHeaders;
+    }) => Promise<unknown>;
+    verifyTwoFactorOTP: (params: {
+      body: { code: string };
+      headers: AuthHeaders;
+    }) => Promise<unknown>;
+    disableTwoFactor: (params: {
+      body: { password: string };
+      headers: AuthHeaders;
+    }) => Promise<unknown>;
+  };
+  options: unknown;
+  $ERROR_CODES: Record<string, string>;
+  $Infer: {
+    Session: BetterAuthSessionData;
+  };
+}
+
+/** Re-typed better-auth factory — avoids deep generic inference. */
+type BetterAuthFn = (options: Record<string, unknown>) => AuthInstance;
+type MongodbAdapterFn = (db: unknown, opts: Record<string, unknown>) => unknown;
+type TwoFactorFn = (opts: Record<string, unknown>) => unknown;
+
+const betterAuth = _betterAuth as unknown as BetterAuthFn;
+const mongodbAdapter = _mongodbAdapter as unknown as MongodbAdapterFn;
+const twoFactor = _twoFactor as unknown as TwoFactorFn;
 
 const mongoUrl = process.env.MONGODB_URI ?? "mongodb://localhost:27017/bskmt";
 
 const mongoClient = new MongoClient(mongoUrl);
 const mongoDb = mongoClient.db();
 
-let authInstance: Awaited<ReturnType<typeof initAuth>> | null = null;
-let authPromise: Promise<Awaited<ReturnType<typeof initAuth>>> | null = null;
+let authInstance: AuthInstance | null = null;
+let authPromise: Promise<AuthInstance> | null = null;
 let injectedEmailService: EmailService | null = null;
 let injectedLandingPageUrl: string | null = null;
 
@@ -37,7 +134,7 @@ export function setAuthDependencies(
   }
 }
 
-function initAuth() {
+function initAuth(): AuthInstance {
   const landingPageUrl =
     injectedLandingPageUrl ??
     process.env.LANDING_PAGE_URL ??
@@ -62,13 +159,19 @@ function initAuth() {
       autoSignIn: false,
       requireEmailVerification: true,
 
-      sendResetPassword: async ({ user, token }) => {
+      sendResetPassword: async ({
+        user,
+        token,
+      }: {
+        user: BetterAuthUser;
+        token: string;
+      }): Promise<void> => {
         const resetUrl = `${landingPageUrl}/restaurar-contrasena?token=${token}`;
 
         if (injectedEmailService) {
           const ok = await injectedEmailService.sendPasswordResetEmail({
             to: user.email,
-            name: (user as { name?: string }).name ?? user.email,
+            name: user.name ?? user.email,
             resetUrl,
           });
           if (!ok) {
@@ -89,13 +192,19 @@ function initAuth() {
     },
 
     emailVerification: {
-      sendVerificationEmail: async ({ user, token }) => {
+      sendVerificationEmail: async ({
+        user,
+        token,
+      }: {
+        user: BetterAuthUser;
+        token: string;
+      }): Promise<void> => {
         const verificationUrl = `${landingPageUrl}/verificar-correo?token=${token}`;
 
         if (injectedEmailService) {
           const ok = await injectedEmailService.sendVerificationEmail({
             to: user.email,
-            name: (user as { name?: string }).name ?? user.email,
+            name: user.name ?? user.email,
             verificationUrl,
           });
           if (!ok) {
@@ -195,7 +304,13 @@ function initAuth() {
         issuer: "BSK Motorcycle Team",
         skipVerificationOnEnable: false,
         otpOptions: {
-          async sendOTP({ user, otp }) {
+          async sendOTP({
+            user,
+            otp,
+          }: {
+            user: BetterAuthUser;
+            otp: string;
+          }): Promise<void> {
             if (injectedEmailService) {
               await injectedEmailService.sendNotificationEmail({
                 to: user.email,
@@ -211,19 +326,14 @@ function initAuth() {
     databaseHooks: {
       user: {
         create: {
-          after: async (user) => {
+          after: async (user: BetterAuthUser): Promise<void> => {
             try {
-              const primerNombre =
-                (user as { primerNombre?: string }).primerNombre ?? "";
-              const segundoNombre =
-                (user as { segundoNombre?: string }).segundoNombre ?? "";
-              const primerApellido =
-                (user as { primerApellido?: string }).primerApellido ?? "";
-              const segundoApellido =
-                (user as { segundoApellido?: string }).segundoApellido ?? "";
-              const country = (user as { country?: string }).country ?? "";
-              const birthDate =
-                (user as { birthDate?: string }).birthDate ?? "";
+              const primerNombre = user.primerNombre ?? "";
+              const segundoNombre = user.segundoNombre ?? "";
+              const primerApellido = user.primerApellido ?? "";
+              const segundoApellido = user.segundoApellido ?? "";
+              const country = user.country ?? "";
+              const birthDate = user.birthDate ?? "";
 
               const tieneDatosPersonales = primerNombre || primerApellido;
 
@@ -263,7 +373,7 @@ function initAuth() {
           },
         },
         update: {
-          after: async (user) => {
+          after: async (user: BetterAuthUser): Promise<void> => {
             try {
               await mongoDb.collection("users").updateOne(
                 { betterAuthId: user.id },
@@ -287,16 +397,15 @@ function initAuth() {
   });
 }
 
-export function getAuth(): Promise<Awaited<ReturnType<typeof initAuth>>> {
+export function getAuth(): Promise<AuthInstance> {
   if (authInstance) return Promise.resolve(authInstance);
-  authPromise ??= Promise.resolve(initAuth()).then((instance) => {
-    authInstance = instance;
-    return instance;
-  });
+  authPromise ??= Promise.resolve(initAuth()).then(
+    (instance: AuthInstance): AuthInstance => {
+      authInstance = instance;
+      return instance;
+    },
+  );
   return authPromise;
 }
 
-export type InferSession<T> = T extends { $Infer: { Session: infer S } }
-  ? S
-  : never;
-export type Session = InferSession<Awaited<ReturnType<typeof initAuth>>>;
+export type Session = BetterAuthSessionData;

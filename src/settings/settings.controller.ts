@@ -23,6 +23,7 @@ import {
   DisableTwoFactorDto,
 } from "./dto/security.dto";
 import { DeleteAccountDto } from "./dto/delete-account.dto";
+import { getAuth } from "../auth/better-auth";
 
 function getCurrentToken(req: Request): string {
   const cookies = req.headers.cookie ?? "";
@@ -44,12 +45,16 @@ export class SettingsController {
   @Put()
   async updateSettings(@Req() req: Request, @Body() dto: UpdateSettingsDto) {
     const user = (req as Request & { user: { userId: string } }).user;
-    return this.settingsService.updateSettings(user.userId, dto as unknown as Record<string, unknown>);
+    return this.settingsService.updateSettings(
+      user.userId,
+      dto as unknown as Record<string, unknown>,
+    );
   }
 
   @Get("sessions")
   async getSessions(@Req() req: Request) {
-    const user = (req as Request & { user: { userId: string; email: string } }).user;
+    const user = (req as Request & { user: { userId: string; email: string } })
+      .user;
     const token = getCurrentToken(req);
     return this.settingsService.getSessions(user.userId, user.email, token);
   }
@@ -63,7 +68,8 @@ export class SettingsController {
   @Delete("sessions")
   @HttpCode(HttpStatus.OK)
   async revokeAllOtherSessions(@Req() req: Request) {
-    const user = (req as Request & { user: { userId: string; email: string } }).user;
+    const user = (req as Request & { user: { userId: string; email: string } })
+      .user;
     const token = getCurrentToken(req);
     return this.settingsService.revokeAllOtherSessions(user.email, token);
   }
@@ -71,19 +77,21 @@ export class SettingsController {
   @Post("change-password")
   @HttpCode(HttpStatus.OK)
   async changePassword(@Req() req: Request, @Body() dto: ChangePasswordDto) {
-    return this.settingsService.changePassword(req, dto.currentPassword, dto.newPassword);
+    return this.settingsService.changePassword(
+      req,
+      dto.currentPassword,
+      dto.newPassword,
+    );
   }
 
   @Get("2fa-status")
   async getTwoFactorStatus(@Req() req: Request) {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { getAuth } = require("../auth/better-auth") as typeof import("../auth/better-auth");
     const auth = await getAuth();
     const session = await auth.api.getSession({
-      headers: (req.headers as Record<string, string>) ?? {},
+      headers: req.headers,
     });
     return {
-      enabled: Boolean((session?.user as Record<string, unknown>)?.twoFactorEnabled),
+      enabled: Boolean(session?.user?.twoFactorEnabled),
     };
   }
 
@@ -101,7 +109,10 @@ export class SettingsController {
 
   @Post("2fa/disable")
   @HttpCode(HttpStatus.OK)
-  async disableTwoFactor(@Req() req: Request, @Body() dto: DisableTwoFactorDto) {
+  async disableTwoFactor(
+    @Req() req: Request,
+    @Body() dto: DisableTwoFactorDto,
+  ) {
     return this.settingsService.disableTwoFactor(req, dto.password);
   }
 

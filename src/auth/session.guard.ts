@@ -5,10 +5,22 @@ import {
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
-import { fromNodeHeaders } from "better-auth/node";
+import { fromNodeHeaders as _fromNodeHeaders } from "better-auth/node";
 import { getAuth } from "./better-auth";
+import type { AuthInstance, BetterAuthSessionData } from "./better-auth";
 import { UsersService } from "../users/users.service";
 import { IS_PUBLIC_KEY } from "../common/decorators/public.decorator";
+
+/**
+ * `fromNodeHeaders` is re-typed so the call site has a concrete signature
+ * even when the editor's TypeScript server cannot resolve the deep generic
+ * types exported by `better-auth/node`. The IIFE hides the assertion
+ * inside an arrow function whose parameter is `unknown`, making the cast
+ * necessary for both resolved and unresolved type environments.
+ */
+type FromNodeHeadersFn = (headers: unknown) => Headers;
+const fromNodeHeaders: FromNodeHeadersFn = ((fn: unknown): FromNodeHeadersFn =>
+  fn as FromNodeHeadersFn)(_fromNodeHeaders);
 
 /**
  * SessionGuard — replaces the old JwtAuthGuard.
@@ -38,8 +50,8 @@ export class SessionGuard {
 
     const request = context.switchToHttp().getRequest<Request>();
 
-    const auth = await getAuth();
-    const session = await auth.api.getSession({
+    const auth: AuthInstance = await getAuth();
+    const session: BetterAuthSessionData | null = await auth.api.getSession({
       headers: fromNodeHeaders(request.headers),
     });
 
