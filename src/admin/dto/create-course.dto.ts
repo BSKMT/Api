@@ -19,17 +19,17 @@ export class CreateCourseDto {
   @IsString()
   @MinLength(2)
   @MaxLength(120)
-  slug: string;
+  slug!: string;
 
   @IsString()
   @MinLength(2)
   @MaxLength(200)
-  title: string;
+  title!: string;
 
   @IsString()
   @MinLength(2)
   @MaxLength(200)
-  subtitle: string;
+  subtitle!: string;
 
   @IsEnum(CourseLevel)
   @IsOptional()

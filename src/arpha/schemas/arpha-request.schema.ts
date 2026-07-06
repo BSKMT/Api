@@ -27,59 +27,59 @@ export const ARPHA_PRICING: Record<string, number> = {
 @Schema({ timestamps: true })
 export class ArphaRequest {
   @Prop({ required: true, index: true })
-  userId: string;
+  userId!: string;
 
   @Prop({
     required: true,
     enum: Object.values(ArphaRequestType),
   })
-  requestType: ArphaRequestType;
+  requestType!: ArphaRequestType;
 
   @Prop({
     required: true,
     default: ArphaRequestStatus.PENDING,
     enum: Object.values(ArphaRequestStatus),
   })
-  status: ArphaRequestStatus;
+  status!: ArphaRequestStatus;
 
   @Prop({ required: true })
-  location: string;
+  location!: string;
 
   @Prop({ type: String, default: null })
-  description: string | null;
+  description!: string | null;
 
   @Prop({ type: String, default: null })
-  assignedTechnician: string | null;
+  assignedTechnician!: string | null;
 
   @Prop({ type: String, default: null })
-  eta: string | null;
+  eta!: string | null;
 
   @Prop({ type: String, default: null })
-  resolution: string | null;
+  resolution!: string | null;
 
   @Prop({ type: Number, default: null })
-  rating: number | null;
+  rating!: number | null;
 
   @Prop({ type: String, default: null })
-  comment: string | null;
+  comment!: string | null;
 
   @Prop({ type: Date, default: null })
-  resolvedAt: Date | null;
+  resolvedAt!: Date | null;
 
   @Prop({ type: Date, default: null })
-  cancelledAt: Date | null;
+  cancelledAt!: Date | null;
 
   @Prop({ type: String, default: null })
-  transactionReference: string | null;
+  transactionReference!: string | null;
 
   @Prop({ default: false })
-  paymentConfirmed: boolean;
+  paymentConfirmed!: boolean;
 
   @Prop({ default: false })
-  isMember: boolean;
+  isMember!: boolean;
 
   @Prop({ type: Number, default: 0 })
-  amount: number;
+  amount!: number;
 }
 
 export const ArphaRequestSchema = SchemaFactory.createForClass(ArphaRequest);

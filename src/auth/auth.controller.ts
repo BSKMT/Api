@@ -3,6 +3,16 @@ import type { Request } from "express";
 import { UsersService } from "../users/users.service";
 import { SessionGuard } from "./session.guard";
 
+interface AuthenticatedUser {
+  userId: string;
+  email: string;
+  role: string;
+}
+
+interface AuthenticatedRequest extends Request {
+  user: AuthenticatedUser;
+}
+
 /**
  * AuthController — custom business-data endpoint.
  *
@@ -20,8 +30,8 @@ export class AuthController {
 
   @UseGuards(SessionGuard)
   @Get("me")
-  async me(@Req() req: Request) {
-    const user = req.user as { userId: string; email: string };
+  async me(@Req() req: AuthenticatedRequest) {
+    const user = req.user;
     const fullUser = await this.usersService.findById(user.userId);
     return {
       userId: user.userId,

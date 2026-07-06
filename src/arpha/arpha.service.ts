@@ -38,7 +38,7 @@ export class ArphaService {
 
   constructor(
     @InjectModel(ArphaRequest.name)
-    private arphaRequestModel: Model<ArphaRequestDocument>,
+    private readonly arphaRequestModel: Model<ArphaRequestDocument>,
   ) {}
 
   async createRequest(

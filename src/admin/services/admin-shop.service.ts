@@ -27,9 +27,9 @@ export class AdminShopService {
 
   constructor(
     @InjectModel(Product.name)
-    private productModel: Model<ProductDocument>,
+    private readonly productModel: Model<ProductDocument>,
     @InjectModel(Order.name)
-    private orderModel: Model<OrderDocument>,
+    private readonly orderModel: Model<OrderDocument>,
   ) {}
 
   async listProducts(filters: {

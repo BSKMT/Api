@@ -3,11 +3,11 @@ import { IsString, IsIn, IsOptional, MaxLength } from "class-validator";
 export class CreateArphaRequestDto {
   @IsString()
   @IsIn(["tecnica", "emergencia", "juridica", "ruta"])
-  requestType: string;
+  requestType!: string;
 
   @IsString()
   @MaxLength(200)
-  location: string;
+  location!: string;
 
   @IsString()
   @IsOptional()

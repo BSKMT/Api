@@ -25,9 +25,9 @@ export class AdminCoursesService {
 
   constructor(
     @InjectModel(Course.name)
-    private courseModel: Model<CourseDocument>,
+    private readonly courseModel: Model<CourseDocument>,
     @InjectModel(CourseEnrollment.name)
-    private enrollmentModel: Model<CourseEnrollmentDocument>,
+    private readonly enrollmentModel: Model<CourseEnrollmentDocument>,
   ) {}
 
   async listCourses(filters: {

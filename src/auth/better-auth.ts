@@ -1,5 +1,8 @@
 import { MongoClient } from "mongodb";
 import type { EmailService } from "../zoho-mail/email.service";
+import { betterAuth } from "better-auth";
+import { mongodbAdapter } from "better-auth/adapters/mongodb";
+import { twoFactor } from "better-auth/plugins";
 
 const mongoUrl = process.env.MONGODB_URI ?? "mongodb://localhost:27017/bskmt";
 
@@ -34,11 +37,7 @@ export function setAuthDependencies(
   }
 }
 
-async function initAuth() {
-  const { betterAuth } = await import("better-auth");
-  const { mongodbAdapter } = await import("better-auth/adapters/mongodb");
-  const { twoFactor } = await import("better-auth/plugins");
-
+function initAuth() {
   const landingPageUrl =
     injectedLandingPageUrl ??
     process.env.LANDING_PAGE_URL ??
@@ -290,12 +289,10 @@ async function initAuth() {
 
 export function getAuth(): Promise<Awaited<ReturnType<typeof initAuth>>> {
   if (authInstance) return Promise.resolve(authInstance);
-  if (!authPromise) {
-    authPromise = initAuth().then((instance) => {
-      authInstance = instance;
-      return instance;
-    });
-  }
+  authPromise ??= Promise.resolve(initAuth()).then((instance) => {
+    authInstance = instance;
+    return instance;
+  });
   return authPromise;
 }
 

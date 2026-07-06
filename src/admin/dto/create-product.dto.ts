@@ -14,15 +14,15 @@ export class CreateProductDto {
   @IsString()
   @MinLength(2)
   @MaxLength(120)
-  slug: string;
+  slug!: string;
 
   @IsString()
   @MinLength(2)
   @MaxLength(200)
-  name: string;
+  name!: string;
 
   @IsString()
-  collection: string;
+  collection!: string;
 
   @IsString()
   @IsOptional()
@@ -34,7 +34,7 @@ export class CreateProductDto {
 
   @IsNumber()
   @Min(0)
-  publicPrice: number;
+  publicPrice!: number;
 
   @IsNumber()
   @Min(0)
