@@ -1,8 +1,31 @@
 import { MongoClient } from "mongodb";
 import type { EmailService } from "../zoho-mail/email.service";
-import { betterAuth as _betterAuth } from "better-auth";
-import { mongodbAdapter as _mongodbAdapter } from "better-auth/adapters/mongodb";
-import { twoFactor as _twoFactor } from "better-auth/plugins";
+
+/* ------------------------------------------------------------------ *
+ * Dynamic import of ESM-only `better-auth` submodules.
+ *
+ * `better-auth` is published as `"type": "module"` (every deep import is
+ * a `.mjs` file). The project is compiled to CommonJS by `nest build`,
+ * so any top-level `import` of `better-auth/*` becomes a `require()`
+ * call at runtime — and requiring an ES Module throws `ERR_REQUIRE_ESM`.
+ *
+ * To stay CommonJS-compatible we lazily load the required functions via
+ * `await import(...)` and cache the resolved module shape so the
+ * dynamic import only happens once per cold start.
+ * ------------------------------------------------------------------ */
+
+/** Typed shape of `better-auth` core module. */
+interface BetterAuthCoreModule {
+  betterAuth: (options: Record<string, unknown>) => AuthInstance;
+}
+/** Typed shape of `better-auth/adapters/mongodb`. */
+interface BetterAuthMongoModule {
+  mongodbAdapter: (db: unknown, opts: Record<string, unknown>) => unknown;
+}
+/** Typed shape of `better-auth/plugins`. */
+interface BetterAuthPluginsModule {
+  twoFactor: (opts: Record<string, unknown>) => unknown;
+}
 
 /* ------------------------------------------------------------------ *
  * Explicit type definitions
@@ -97,9 +120,39 @@ type BetterAuthFn = (options: Record<string, unknown>) => AuthInstance;
 type MongodbAdapterFn = (db: unknown, opts: Record<string, unknown>) => unknown;
 type TwoFactorFn = (opts: Record<string, unknown>) => unknown;
 
-const betterAuth = _betterAuth as unknown as BetterAuthFn;
-const mongodbAdapter = _mongodbAdapter as unknown as MongodbAdapterFn;
-const twoFactor = _twoFactor as unknown as TwoFactorFn;
+interface BetterAuthDeps {
+  betterAuth: BetterAuthFn;
+  mongodbAdapter: MongodbAdapterFn;
+  twoFactor: TwoFactorFn;
+}
+
+let depsPromise: Promise<BetterAuthDeps> | null = null;
+
+/**
+ * Lazily resolve and cache the ESM-only `better-auth` factory, the
+ * MongoDB adapter and the `twoFactor` plugin. Subsequent calls return
+ * the same promise so the dynamic import only fires once.
+ */
+async function loadBetterAuthDeps(): Promise<BetterAuthDeps> {
+  if (!depsPromise) {
+    depsPromise = (async (): Promise<BetterAuthDeps> => {
+      const [coreRaw, mongoRaw, pluginsRaw] = await Promise.all([
+        import("better-auth"),
+        import("better-auth/adapters/mongodb"),
+        import("better-auth/plugins"),
+      ]);
+      const core = coreRaw as unknown as BetterAuthCoreModule;
+      const mongoMod = mongoRaw as unknown as BetterAuthMongoModule;
+      const pluginsMod = pluginsRaw as unknown as BetterAuthPluginsModule;
+      return {
+        betterAuth: core.betterAuth,
+        mongodbAdapter: mongoMod.mongodbAdapter,
+        twoFactor: pluginsMod.twoFactor,
+      };
+    })();
+  }
+  return depsPromise;
+}
 
 const mongoUrl = process.env.MONGODB_URI ?? "mongodb://localhost:27017/bskmt";
 
@@ -134,7 +187,9 @@ export function setAuthDependencies(
   }
 }
 
-function initAuth(): AuthInstance {
+async function initAuth(): Promise<AuthInstance> {
+  const { betterAuth, mongodbAdapter, twoFactor } = await loadBetterAuthDeps();
+
   const landingPageUrl =
     injectedLandingPageUrl ??
     process.env.LANDING_PAGE_URL ??
@@ -399,12 +454,10 @@ function initAuth(): AuthInstance {
 
 export function getAuth(): Promise<AuthInstance> {
   if (authInstance) return Promise.resolve(authInstance);
-  authPromise ??= Promise.resolve(initAuth()).then(
-    (instance: AuthInstance): AuthInstance => {
-      authInstance = instance;
-      return instance;
-    },
-  );
+  authPromise ??= initAuth().then((instance: AuthInstance): AuthInstance => {
+    authInstance = instance;
+    return instance;
+  });
   return authPromise;
 }
 
