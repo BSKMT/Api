@@ -134,23 +134,21 @@ let depsPromise: Promise<BetterAuthDeps> | null = null;
  * the same promise so the dynamic import only fires once.
  */
 async function loadBetterAuthDeps(): Promise<BetterAuthDeps> {
-  if (!depsPromise) {
-    depsPromise = (async (): Promise<BetterAuthDeps> => {
-      const [coreRaw, mongoRaw, pluginsRaw] = await Promise.all([
-        import("better-auth"),
-        import("better-auth/adapters/mongodb"),
-        import("better-auth/plugins"),
-      ]);
-      const core = coreRaw as unknown as BetterAuthCoreModule;
-      const mongoMod = mongoRaw as unknown as BetterAuthMongoModule;
-      const pluginsMod = pluginsRaw as unknown as BetterAuthPluginsModule;
-      return {
-        betterAuth: core.betterAuth,
-        mongodbAdapter: mongoMod.mongodbAdapter,
-        twoFactor: pluginsMod.twoFactor,
-      };
-    })();
-  }
+  depsPromise ??= (async (): Promise<BetterAuthDeps> => {
+    const [coreRaw, mongoRaw, pluginsRaw] = await Promise.all([
+      import("better-auth"),
+      import("better-auth/adapters/mongodb"),
+      import("better-auth/plugins"),
+    ]);
+    const core = coreRaw as unknown as BetterAuthCoreModule;
+    const mongoMod = mongoRaw as unknown as BetterAuthMongoModule;
+    const pluginsMod = pluginsRaw as unknown as BetterAuthPluginsModule;
+    return {
+      betterAuth: core.betterAuth,
+      mongodbAdapter: mongoMod.mongodbAdapter,
+      twoFactor: pluginsMod.twoFactor,
+    };
+  })();
   return depsPromise;
 }
 

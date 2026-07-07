@@ -25,13 +25,11 @@ interface BetterAuthNodeModule {
 let fromNodeHeadersPromise: Promise<FromNodeHeadersFn> | null = null;
 
 async function loadFromNodeHeaders(): Promise<FromNodeHeadersFn> {
-  if (!fromNodeHeadersPromise) {
-    fromNodeHeadersPromise = (async (): Promise<FromNodeHeadersFn> => {
-      const mod = (await import("better-auth/node")) as BetterAuthNodeModule;
-      const fn: unknown = mod.fromNodeHeaders;
-      return fn as FromNodeHeadersFn;
-    })();
-  }
+  fromNodeHeadersPromise ??= (async (): Promise<FromNodeHeadersFn> => {
+    const mod = (await import("better-auth/node")) as BetterAuthNodeModule;
+    const fn: unknown = mod.fromNodeHeaders;
+    return fn as FromNodeHeadersFn;
+  })();
   return fromNodeHeadersPromise;
 }
 
