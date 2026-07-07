@@ -5,22 +5,35 @@ import {
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
-import { fromNodeHeaders as _fromNodeHeaders } from "better-auth/node";
 import { getAuth } from "./better-auth";
 import type { AuthInstance, BetterAuthSessionData } from "./better-auth";
 import { UsersService } from "../users/users.service";
 import { IS_PUBLIC_KEY } from "../common/decorators/public.decorator";
 
 /**
- * `fromNodeHeaders` is re-typed so the call site has a concrete signature
- * even when the editor's TypeScript server cannot resolve the deep generic
- * types exported by `better-auth/node`. The IIFE hides the assertion
- * inside an arrow function whose parameter is `unknown`, making the cast
- * necessary for both resolved and unresolved type environments.
+ * `better-auth/node` is published as an ES Module (`.mjs`). The project
+ * is compiled to CommonJS, so a top-level `import` would compile to
+ * `require()` and throw `ERR_REQUIRE_ESM` at runtime. We lazily load the
+ * `fromNodeHeaders` function via a cached dynamic `import()` so the
+ * dynamic import only fires once per cold start.
  */
 type FromNodeHeadersFn = (headers: unknown) => Headers;
-const fromNodeHeaders: FromNodeHeadersFn = ((fn: unknown): FromNodeHeadersFn =>
-  fn as FromNodeHeadersFn)(_fromNodeHeaders);
+interface BetterAuthNodeModule {
+  fromNodeHeaders: FromNodeHeadersFn;
+}
+
+let fromNodeHeadersPromise: Promise<FromNodeHeadersFn> | null = null;
+
+async function loadFromNodeHeaders(): Promise<FromNodeHeadersFn> {
+  if (!fromNodeHeadersPromise) {
+    fromNodeHeadersPromise = (async (): Promise<FromNodeHeadersFn> => {
+      const mod = (await import("better-auth/node")) as BetterAuthNodeModule;
+      const fn: unknown = mod.fromNodeHeaders;
+      return fn as FromNodeHeadersFn;
+    })();
+  }
+  return fromNodeHeadersPromise;
+}
 
 /**
  * SessionGuard — replaces the old JwtAuthGuard.
@@ -51,6 +64,7 @@ export class SessionGuard {
     const request = context.switchToHttp().getRequest<Request>();
 
     const auth: AuthInstance = await getAuth();
+    const fromNodeHeaders = await loadFromNodeHeaders();
     const session: BetterAuthSessionData | null = await auth.api.getSession({
       headers: fromNodeHeaders(request.headers),
     });
