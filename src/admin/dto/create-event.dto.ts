@@ -113,4 +113,31 @@ export class CreateEventDto {
   @IsString({ each: true })
   @IsOptional()
   featuresIncluded?: string[];
+
+  @IsString()
+  @IsOptional()
+  memberDetails?: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  memberFeatures?: string[];
+
+  @IsString()
+  @IsOptional()
+  paidUserDetails?: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  paidUserFeatures?: string[];
+
+  @IsString()
+  @IsOptional()
+  autogestionadoDetails?: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  autogestionadoFeatures?: string[];
 }

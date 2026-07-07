@@ -105,6 +105,31 @@ export class Event {
   @Prop({ type: [String], default: [] })
   featuresIncluded!: string[];
 
+  /**
+   * Detalles y beneficios específicos por audiencia.
+   * `memberDetails`/`memberFeatures`: información para miembros y administradores.
+   * `paidUserDetails`/`paidUserFeatures`: información para usuarios no-miembros que pagan (modo `managed`).
+   * `autogestionadoDetails`/`autogestionadoFeatures`: información para usuarios que se registran en modo `self-managed` (autogestionado).
+   * El campo `description` y `featuresIncluded` originales se mantienen como fallback para eventos creados antes de esta segmentación.
+   */
+  @Prop({ type: String, default: null })
+  memberDetails!: string | null;
+
+  @Prop({ type: [String], default: [] })
+  memberFeatures!: string[];
+
+  @Prop({ type: String, default: null })
+  paidUserDetails!: string | null;
+
+  @Prop({ type: [String], default: [] })
+  paidUserFeatures!: string[];
+
+  @Prop({ type: String, default: null })
+  autogestionadoDetails!: string | null;
+
+  @Prop({ type: [String], default: [] })
+  autogestionadoFeatures!: string[];
+
   @Prop({ type: Object, default: {} })
   metadata!: Record<string, unknown>;
 }
