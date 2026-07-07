@@ -26,6 +26,13 @@ import { UsersService } from "../users/users.service";
 import { UserRole, CreditType } from "../users/schemas/user.schema";
 import type { PartialPaymentCredit } from "../users/schemas/user.schema";
 import { NotificationsService } from "../notifications/notifications.service";
+
+/** Shared contextual shape used to keep helper signatures ≤ 7 parameters. */
+interface MembershipPaymentContext {
+  installmentNumber: number;
+  installmentTotal: number;
+  isRenewal: boolean;
+}
 import {
   NotificationType,
   NotificationPriority,
@@ -223,16 +230,15 @@ export class MembershipService {
     dto: CreateMembershipPaymentDto,
     user: { partialPaymentCredit?: PartialPaymentCredit | null },
     totalAmount: number,
-    installmentNumber: number,
-    installmentTotal: number,
-    isRenewal: boolean,
+    ctx: MembershipPaymentContext,
     now: Date,
   ): Promise<{ creditUsedAmount: number; remainingAmount: number }> {
+    const { installmentNumber, installmentTotal, isRenewal } = ctx;
     if (!dto.useCredit || !dto.creditAmount || dto.creditAmount <= 0) {
       return { creditUsedAmount: 0, remainingAmount: totalAmount };
     }
     const credit = user.partialPaymentCredit;
-    if (!credit || credit.type !== CreditType.MEMBERSHIP) {
+    if (credit?.type !== CreditType.MEMBERSHIP) {
       throw new BadRequestException(
         "No tienes crédito de membresía disponible",
       );
@@ -289,11 +295,10 @@ export class MembershipService {
     totalAmount: number,
     remainingAmount: number,
     creditUsedAmount: number,
-    installmentNumber: number,
-    installmentTotal: number,
-    isRenewal: boolean,
+    ctx: MembershipPaymentContext,
     description: string,
   ) {
+    const { installmentNumber, installmentTotal, isRenewal } = ctx;
     return {
       reference,
       amount: remainingAmount,
@@ -397,9 +402,7 @@ export class MembershipService {
         dto,
         user,
         totalAmount,
-        installmentNumber,
-        installmentTotal,
-        isRenewal,
+        { installmentNumber, installmentTotal, isRenewal },
         now,
       );
 
@@ -408,9 +411,7 @@ export class MembershipService {
         userId,
         dto,
         totalAmount,
-        installmentNumber,
-        installmentTotal,
-        isRenewal,
+        { installmentNumber, installmentTotal, isRenewal },
         creditUsedAmount,
         now,
       );
@@ -450,9 +451,7 @@ export class MembershipService {
       totalAmount,
       remainingAmount,
       creditUsedAmount,
-      installmentNumber,
-      installmentTotal,
-      isRenewal,
+      { installmentNumber, installmentTotal, isRenewal },
       description,
     );
   }
@@ -462,12 +461,11 @@ export class MembershipService {
     userId: string,
     dto: CreateMembershipPaymentDto,
     totalAmount: number,
-    installmentNumber: number,
-    installmentTotal: number,
-    isRenewal: boolean,
+    ctx: MembershipPaymentContext,
     creditUsedAmount: number,
     now: Date,
   ) {
+    const { installmentNumber, installmentTotal, isRenewal } = ctx;
     const reference = this.buildMembershipReference(
       dto.paymentPlan,
       isRenewal,
