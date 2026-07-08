@@ -65,7 +65,7 @@ export class AdminSettingsService {
 
     try {
       const mongoUrl =
-        process.env.MONGODB_URI ?? "mongodb://localhost:27017/bskmt";
+        process.env.MONGODB_URI ?? (() => { throw new Error("MONGODB_URI is required"); })();
       const { MongoClient } = await import("mongodb");
       const client = new MongoClient(mongoUrl);
       const db = client.db();
