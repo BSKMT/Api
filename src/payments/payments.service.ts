@@ -90,13 +90,8 @@ export class PaymentsService {
       this.configService.get<string>("BOLD_SECRET_KEY", {
         infer: true,
       }) ?? "";
-    const boldEnv =
-      this.configService.get<string>("BOLD_ENVIRONMENT", {
-        infer: true,
-      }) ?? "sandbox";
-    const effectiveSecretKey = boldEnv === "sandbox" ? "" : secretKey;
-    const concatenated = `${orderId}${amount}${currency}${effectiveSecretKey}`;
-    return crypto.createHash("sha256").update(concatenated).digest("hex");
+    const concatenated = `${orderId}${amount}${currency}`;
+    return crypto.createHmac("sha256", secretKey).update(concatenated).digest("hex");
   }
 
   async createPayment(userId: string, dto: CreatePaymentDto) {
@@ -416,13 +411,8 @@ export class PaymentsService {
 
   /** Verify the Bold webhook HMAC signature (throwing on mismatch). */
   private verifyBoldWebhookSignature(rawBody: Buffer, signature: string): void {
-    const boldEnv =
-      this.configService.get<string>("BOLD_ENVIRONMENT", { infer: true }) ??
-      "sandbox";
     const secretKey =
-      boldEnv === "sandbox"
-        ? ""
-        : (this.configService.get("BOLD_SECRET_KEY", { infer: true }) ?? "");
+      this.configService.get<string>("BOLD_SECRET_KEY", { infer: true }) ?? "";
     const bodyBase64 = rawBody.toString("base64");
     const expectedSignature = crypto
       .createHmac("sha256", secretKey)
