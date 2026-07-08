@@ -38,6 +38,7 @@ import {
   NotificationPriority,
 } from "../notifications/schemas/notification.schema";
 import type { EnvironmentConfig } from "../config/config.interface";
+import { maskAmount, maskReference, maskUserId } from "../common/utils/log-redact.util";
 import {
   SINGLE_PAYMENT_AMOUNT,
   INSTALLMENT_AMOUNT,
@@ -277,7 +278,7 @@ export class MembershipService {
     });
 
     this.logger.log(
-      `Credit applied to membership: user=${userId} creditAmount=${creditUsedAmount} remaining=${remainingAmount}`,
+      `Credit applied to membership: user=${maskUserId(userId)} creditAmount=${maskAmount(creditUsedAmount)} remaining=${maskAmount(remainingAmount)}`,
     );
 
     return { creditUsedAmount, remainingAmount };
@@ -432,7 +433,7 @@ export class MembershipService {
     );
 
     this.logger.log(
-      `Membership payment intent: ${reference} user=${userId} amount=${remainingAmount} (total=${totalAmount}, credit=${creditUsedAmount}) plan=${dto.paymentPlan} installment=${installmentNumber}/${installmentTotal} renewal=${isRenewal}`,
+      `Membership payment intent: ref=${maskReference(reference)} user=${maskUserId(userId)} amount=${maskAmount(remainingAmount)} (total=${maskAmount(totalAmount)}, credit=${maskAmount(creditUsedAmount)}) plan=${dto.paymentPlan} installment=${installmentNumber}/${installmentTotal} renewal=${isRenewal}`,
     );
 
     return this.buildPendingPaymentResponse(
@@ -476,7 +477,7 @@ export class MembershipService {
     await transaction.save();
     await this.processApprovedPayment(transaction);
     this.logger.log(
-      `Membership fully paid with credit: user=${userId} reference=${reference}`,
+      `Membership fully paid with credit: user=${maskUserId(userId)} ref=${maskReference(reference)}`,
     );
     return {
       reference,
@@ -516,7 +517,7 @@ export class MembershipService {
     });
     if (!transaction) {
       this.logger.warn(
-        `Membership webhook for unknown reference: ${parsed.referenceId}`,
+        `Membership webhook for unknown reference: ${maskReference(parsed.referenceId ?? "")}`,
       );
       return;
     }
@@ -537,7 +538,7 @@ export class MembershipService {
 
     await transaction.save();
     this.logger.log(
-      `Membership webhook processed: ${parsed.eventType} for ${parsed.referenceId}`,
+      `Membership webhook processed: ${parsed.eventType} for ${maskReference(parsed.referenceId ?? "")}`,
     );
 
     if (statusFromEvent === "APPROVED") {
@@ -743,7 +744,7 @@ export class MembershipService {
     );
 
     this.logger.log(
-      `Membership renewed: user=${transaction.userId} expiry=${newExpiry.toISOString()}`,
+      `Membership renewed: user=${maskUserId(transaction.userId)} expiry=${newExpiry.toISOString()}`,
     );
 
     await this.notificationsService.create({
@@ -789,7 +790,7 @@ export class MembershipService {
       "single",
     );
     this.logger.log(
-      `Membership activated (single payment): user=${transaction.userId} expiry=${expiry.toISOString()}`,
+      `Membership activated (single payment): user=${maskUserId(transaction.userId)} expiry=${expiry.toISOString()}`,
     );
 
     await this.notificationsService.create({
@@ -813,16 +814,8 @@ export class MembershipService {
     transaction: MembershipTransactionDocument,
     user: { email: string },
   ): Promise<void> {
-    const approvedCount = await this.transactionModel.countDocuments({
-      userId: transaction.userId,
-      paymentPlan: "installment",
-      isRenewal: false,
-      status: "APPROVED",
-    });
-
-    await this.usersService.updateInstallmentsPaid(
+    const approvedCount = await this.usersService.incrementInstallmentsPaid(
       transaction.userId,
-      approvedCount,
     );
 
     if (approvedCount >= INSTALLMENTS_TOTAL) {
@@ -833,7 +826,7 @@ export class MembershipService {
       );
     } else {
       this.logger.log(
-        `Installment ${approvedCount}/${INSTALLMENTS_TOTAL} paid: user=${transaction.userId}`,
+        `Installment ${approvedCount}/${INSTALLMENTS_TOTAL} paid: user=${maskUserId(transaction.userId)}`,
       );
       await this.notificationsService.create({
         userId: transaction.userId,
@@ -867,7 +860,7 @@ export class MembershipService {
       "installments",
     );
     this.logger.log(
-      `Membership activated (12 installments complete): user=${transaction.userId} expiry=${expiry.toISOString()}`,
+      `Membership activated (12 installments complete): user=${maskUserId(transaction.userId)} expiry=${expiry.toISOString()}`,
     );
 
     await this.notificationsService.create({

@@ -135,13 +135,13 @@ export class AdminMembershipService {
     const transactions = await this.transactionModel
       .find({ userId })
       .sort({ createdAt: -1 })
-      .select("-webhookEvents")
+      .select("-webhookEvents -payerEmail -paymentMethod")
       .lean();
 
     return { user, transactions };
   }
 
-  async activateMembership(userId: string) {
+  async activateMembership(userId: string, actorId = "") {
     const user = await this.userModel.findById(userId);
     if (!user) {
       throw new NotFoundException("Usuario no encontrado");
@@ -177,7 +177,7 @@ export class AdminMembershipService {
     });
 
     this.logger.log(
-      `Membership admin-activated: user=${userId} expiry=${expiry.toISOString()}`,
+      `Membership admin-activated: user=${userId} expiry=${expiry.toISOString()} actor=${actorId}`,
     );
     return {
       userId,
@@ -193,6 +193,7 @@ export class AdminMembershipService {
     unit: "days" | "months" | "years",
     amount: number = 1,
     baseDateStr?: string,
+    actorId = "",
   ) {
     const user = await this.userModel.findById(userId);
     if (!user) {
@@ -248,7 +249,7 @@ export class AdminMembershipService {
     });
 
     this.logger.log(
-      `Membership admin-extended: user=${userId} unit=${unit} newExpiry=${expiry.toISOString()}`,
+      `Membership admin-extended: user=${userId} unit=${unit} newExpiry=${expiry.toISOString()} actor=${actorId}`,
     );
     return {
       userId,
@@ -256,7 +257,7 @@ export class AdminMembershipService {
     };
   }
 
-  async revokeMembership(userId: string) {
+  async revokeMembership(userId: string, actorId = "") {
     const user = await this.userModel.findById(userId);
     if (!user) {
       throw new NotFoundException("Usuario no encontrado");
@@ -283,7 +284,7 @@ export class AdminMembershipService {
       metadata: { adminAction: true },
     });
 
-    this.logger.log(`Membership admin-revoked: user=${userId}`);
+    this.logger.log(`Membership admin-revoked: user=${userId} actor=${actorId}`);
     return { userId, role: user.role };
   }
 
@@ -325,7 +326,7 @@ export class AdminMembershipService {
     };
   }
 
-  async approveRefund(userId: string) {
+  async approveRefund(userId: string, actorId = "") {
     const user = await this.userModel.findById(userId);
     if (!user) {
       throw new NotFoundException("Usuario no encontrado");
@@ -381,7 +382,7 @@ export class AdminMembershipService {
     });
 
     this.logger.log(
-      `Refund admin-approved: user=${userId} amount=${credit.amount} ref=${reference}`,
+      `Refund admin-approved: user=${userId} amount=*** ref=${reference} actor=${actorId}`,
     );
     return {
       success: true,
@@ -391,7 +392,7 @@ export class AdminMembershipService {
     };
   }
 
-  async rejectRefund(userId: string, reason?: string) {
+  async rejectRefund(userId: string, reason?: string, actorId = "") {
     const user = await this.userModel.findById(userId);
     if (!user) {
       throw new NotFoundException("Usuario no encontrado");
@@ -446,7 +447,7 @@ export class AdminMembershipService {
     });
 
     this.logger.log(
-      `Refund admin-rejected: user=${userId} reason=${reason ?? ""}`,
+      `Refund admin-rejected: user=${userId} reason=${reason ?? ""} actor=${actorId}`,
     );
     return { success: true, reference, status: "rejected" };
   }

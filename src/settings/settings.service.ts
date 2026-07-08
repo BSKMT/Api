@@ -8,6 +8,7 @@ import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { User, UserDocument } from "../users/schemas/user.schema";
 import { getAuth, getMongoDb } from "../auth/better-auth";
+import { UpdateSettingsDto } from "./dto/update-settings.dto";
 import type { Request } from "express";
 
 const DEFAULT_SETTINGS = {
@@ -171,9 +172,12 @@ export class SettingsService {
     const settings = user.settings ?? {};
     for (const key of ["notifications", "privacy", "appearance", "dashboard"]) {
       if (dto[key]) {
+        const incoming = UpdateSettingsDto.sanitize(
+          dto[key] as Record<string, unknown>,
+        );
         settings[key] = {
           ...(settings[key] as Record<string, unknown>),
-          ...(dto[key] as Record<string, unknown>),
+          ...incoming,
         };
       }
     }
@@ -181,7 +185,7 @@ export class SettingsService {
     user.settings = settings;
     user.markModified("settings");
     await user.save();
-    this.logger.log(`Settings updated for user ${userId}`);
+    this.logger.log(`Settings updated for user ${userId.slice(0, 8)}...`);
     return { ...DEFAULT_SETTINGS, ...settings };
   }
 

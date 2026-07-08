@@ -823,7 +823,7 @@ export class PaymentsService {
     const transactions = await this.transactionModel
       .find({ userId })
       .sort({ createdAt: -1 })
-      .select("-webhookEvents -__v");
+      .select("-webhookEvents -__v -companionData");
 
     return transactions.map((t) => ({
       reference: t.reference,
@@ -835,7 +835,7 @@ export class PaymentsService {
       purpose: t.purpose,
       relatedReference: t.relatedReference,
       hasCompanion: t.hasCompanion,
-      companionData: t.companionData,
+      companionData: undefined,
       paymentMethod: t.paymentMethod,
       createdAt: t.createdAt,
     }));

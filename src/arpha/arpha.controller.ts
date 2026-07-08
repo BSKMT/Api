@@ -8,13 +8,16 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  BadRequestException,
 } from "@nestjs/common";
+import type { Request } from "express";
 import type { Request } from "express";
 import { SessionGuard } from "../auth/session.guard";
 import { UsersService } from "../users/users.service";
 import { ArphaService } from "./arpha.service";
 import { CreateArphaRequestDto } from "./dto/create-arpha-request.dto";
 import { RateArphaRequestDto } from "./dto/rate-arpha-request.dto";
+import { ParseObjectIdPipe } from "../common/pipes/parse-object-id.pipe";
 
 interface AuthenticatedRequest extends Request {
   user: { userId: string; email?: string };
@@ -44,7 +47,7 @@ export class ArphaController {
   @HttpCode(HttpStatus.OK)
   async cancelRequest(
     @Req() req: AuthenticatedRequest,
-    @Param("id") requestId: string,
+    @Param("id", ParseObjectIdPipe) requestId: string,
   ) {
     const { userId } = req.user;
     return this.arphaService.cancelRequest(userId, requestId);
@@ -54,7 +57,7 @@ export class ArphaController {
   @HttpCode(HttpStatus.OK)
   async rateRequest(
     @Req() req: AuthenticatedRequest,
-    @Param("id") requestId: string,
+    @Param("id", ParseObjectIdPipe) requestId: string,
     @Body() dto: RateArphaRequestDto,
   ) {
     const { userId } = req.user;

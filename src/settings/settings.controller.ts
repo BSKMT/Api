@@ -12,6 +12,7 @@ import {
   HttpStatus,
   Res,
 } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import type { Request, Response } from "express";
 import { SettingsService } from "./settings.service";
 import { SessionGuard } from "../auth/session.guard";
@@ -75,6 +76,7 @@ export class SettingsController {
   }
 
   @Post("change-password")
+  @Throttle({ medium: { ttl: 60000, limit: 3 } })
   @HttpCode(HttpStatus.OK)
   async changePassword(@Req() req: Request, @Body() dto: ChangePasswordDto) {
     return this.settingsService.changePassword(
@@ -96,18 +98,21 @@ export class SettingsController {
   }
 
   @Post("2fa/enable")
+  @Throttle({ medium: { ttl: 60000, limit: 5 } })
   @HttpCode(HttpStatus.OK)
   async enableTwoFactor(@Req() req: Request, @Body() dto: EnableTwoFactorDto) {
     return this.settingsService.enableTwoFactor(req, dto.password);
   }
 
   @Post("2fa/verify")
+  @Throttle({ medium: { ttl: 60000, limit: 5 } })
   @HttpCode(HttpStatus.OK)
   async verifyTwoFactor(@Req() req: Request, @Body() dto: VerifyTwoFactorDto) {
     return this.settingsService.verifyTwoFactor(req, dto.code);
   }
 
   @Post("2fa/disable")
+  @Throttle({ medium: { ttl: 60000, limit: 5 } })
   @HttpCode(HttpStatus.OK)
   async disableTwoFactor(
     @Req() req: Request,
@@ -117,6 +122,7 @@ export class SettingsController {
   }
 
   @Post("delete-account")
+  @Throttle({ medium: { ttl: 60000, limit: 3 } })
   @HttpCode(HttpStatus.OK)
   async requestDeletion(@Req() req: Request, @Body() dto: DeleteAccountDto) {
     const user = (req as Request & { user: { userId: string } }).user;
