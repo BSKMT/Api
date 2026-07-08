@@ -111,7 +111,9 @@ export class AdminSettingsService {
       // notifications may fail if user has no notification schema
     }
 
-    this.logger.log(`Account deletion rejected by admin: userId=${userId} actor=${actorId}`);
+    this.logger.log(
+      `Account deletion rejected by admin: userId=${userId} actor=${actorId}`,
+    );
     return { success: true, message: "Solicitud rechazada, cuenta reactivada" };
   }
 }

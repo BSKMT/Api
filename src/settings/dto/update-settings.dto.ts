@@ -1,5 +1,4 @@
-import { IsObject, IsOptional, validate } from "class-validator";
-import { BadRequestException } from "@nestjs/common";
+import { IsObject, IsOptional } from "class-validator";
 
 const FORBIDDEN_KEYS = ["__proto__", "constructor", "prototype"];
 

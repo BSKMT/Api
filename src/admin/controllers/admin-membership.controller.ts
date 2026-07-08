@@ -75,8 +75,14 @@ export class AdminMembershipController {
   @Post("members/:userId/activate")
   @Throttle({ medium: { ttl: 60000, limit: 10 } })
   @HttpCode(HttpStatus.OK)
-  async activate(@Req() req: AuthenticatedRequest, @Param("userId", ParseObjectIdPipe) userId: string) {
-    return this.adminMembershipService.activateMembership(userId, req.user.userId);
+  async activate(
+    @Req() req: AuthenticatedRequest,
+    @Param("userId", ParseObjectIdPipe) userId: string,
+  ) {
+    return this.adminMembershipService.activateMembership(
+      userId,
+      req.user.userId,
+    );
   }
 
   @Post("members/:userId/extend")
@@ -99,8 +105,14 @@ export class AdminMembershipController {
   @Post("members/:userId/revoke")
   @Throttle({ medium: { ttl: 60000, limit: 10 } })
   @HttpCode(HttpStatus.OK)
-  async revoke(@Req() req: AuthenticatedRequest, @Param("userId", ParseObjectIdPipe) userId: string) {
-    return this.adminMembershipService.revokeMembership(userId, req.user.userId);
+  async revoke(
+    @Req() req: AuthenticatedRequest,
+    @Param("userId", ParseObjectIdPipe) userId: string,
+  ) {
+    return this.adminMembershipService.revokeMembership(
+      userId,
+      req.user.userId,
+    );
   }
 
   @Get("refunds")
@@ -111,7 +123,10 @@ export class AdminMembershipController {
   @Post("refunds/:userId/approve")
   @Throttle({ medium: { ttl: 60000, limit: 10 } })
   @HttpCode(HttpStatus.OK)
-  async approveRefund(@Req() req: AuthenticatedRequest, @Param("userId", ParseObjectIdPipe) userId: string) {
+  async approveRefund(
+    @Req() req: AuthenticatedRequest,
+    @Param("userId", ParseObjectIdPipe) userId: string,
+  ) {
     return this.adminMembershipService.approveRefund(userId, req.user.userId);
   }
 
@@ -123,6 +138,10 @@ export class AdminMembershipController {
     @Param("userId", ParseObjectIdPipe) userId: string,
     @Body() dto: RejectRefundDto,
   ) {
-    return this.adminMembershipService.rejectRefund(userId, dto.reason, req.user.userId);
+    return this.adminMembershipService.rejectRefund(
+      userId,
+      dto.reason,
+      req.user.userId,
+    );
   }
 }

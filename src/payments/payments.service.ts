@@ -91,7 +91,10 @@ export class PaymentsService {
         infer: true,
       }) ?? "";
     const concatenated = `${orderId}${amount}${currency}`;
-    return crypto.createHmac("sha256", secretKey).update(concatenated).digest("hex");
+    return crypto
+      .createHmac("sha256", secretKey)
+      .update(concatenated)
+      .digest("hex");
   }
 
   async createPayment(userId: string, dto: CreatePaymentDto) {

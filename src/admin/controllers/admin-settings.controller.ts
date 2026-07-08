@@ -34,14 +34,20 @@ export class AdminSettingsController {
   @Post("deletions/:userId/approve")
   @Throttle({ medium: { ttl: 60000, limit: 10 } })
   @HttpCode(HttpStatus.OK)
-  async approveDeletion(@Req() req: AuthenticatedRequest, @Param("userId", ParseObjectIdPipe) userId: string) {
+  async approveDeletion(
+    @Req() req: AuthenticatedRequest,
+    @Param("userId", ParseObjectIdPipe) userId: string,
+  ) {
     return this.adminSettingsService.approveDeletion(userId, req.user.userId);
   }
 
   @Post("deletions/:userId/reject")
   @Throttle({ medium: { ttl: 60000, limit: 10 } })
   @HttpCode(HttpStatus.OK)
-  async rejectDeletion(@Req() req: AuthenticatedRequest, @Param("userId", ParseObjectIdPipe) userId: string) {
+  async rejectDeletion(
+    @Req() req: AuthenticatedRequest,
+    @Param("userId", ParseObjectIdPipe) userId: string,
+  ) {
     return this.adminSettingsService.rejectDeletion(userId, req.user.userId);
   }
 }
