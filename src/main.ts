@@ -33,12 +33,6 @@ async function bootstrap() {
       crossOriginOpenerPolicy: { policy: "same-origin" },
       crossOriginEmbedderPolicy: { policy: "unsafe-none" },
       crossOriginResourcePolicy: { policy: "same-origin" },
-      permissionsPolicy: {
-        camera: [],
-        microphone: [],
-        geolocation: [],
-        payment: [],
-      },
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
@@ -55,6 +49,14 @@ async function bootstrap() {
       },
     }),
   );
+
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    res.setHeader(
+      "Permissions-Policy",
+      "camera=(), microphone=(), geolocation=(), payment=()",
+    );
+    next();
+  });
 
   const emailService = app.get(EmailService);
   const landingPageUrl =
@@ -91,7 +93,12 @@ async function bootstrap() {
 
     // Simple rate-limit for sensitive Better Auth endpoints (M-3).
     // The ThrottlerGuard does not cover these raw Express routes.
-    const sensitivePaths = ["/sign-in/email", "/sign-up/email", "/reset-password", "/request-password-reset"];
+    const sensitivePaths = [
+      "/sign-in/email",
+      "/sign-up/email",
+      "/reset-password",
+      "/request-password-reset",
+    ];
     if (sensitivePaths.includes(path)) {
       const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
       const key = `${ip}:${path}`;
@@ -100,7 +107,9 @@ async function bootstrap() {
       const maxRequests = 10;
       const entry = authRateLimit.get(key);
       if (entry && entry.count >= maxRequests && now < entry.resetAt) {
-        res.status(429).json({ message: "Too many requests. Please try again later." });
+        res
+          .status(429)
+          .json({ message: "Too many requests. Please try again later." });
         return;
       }
       if (!entry || now >= entry.resetAt) {

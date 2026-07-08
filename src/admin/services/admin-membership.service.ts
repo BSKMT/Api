@@ -284,7 +284,9 @@ export class AdminMembershipService {
       metadata: { adminAction: true },
     });
 
-    this.logger.log(`Membership admin-revoked: user=${userId} actor=${actorId}`);
+    this.logger.log(
+      `Membership admin-revoked: user=${userId} actor=${actorId}`,
+    );
     return { userId, role: user.role };
   }
 

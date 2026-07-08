@@ -221,9 +221,7 @@ async function initAuth(): Promise<AuthInstance> {
     secret:
       process.env.BETTER_AUTH_SECRET ??
       (() => {
-        throw new Error(
-          "BETTER_AUTH_SECRET environment variable is required",
-        );
+        throw new Error("BETTER_AUTH_SECRET environment variable is required");
       })(),
 
     emailAndPassword: {
@@ -352,26 +350,26 @@ async function initAuth(): Promise<AuthInstance> {
       },
     },
 
-advanced: {
-/**
-         * useSecureCookies is false because the Astro proxy (BFF pattern)
-         * handles the `Secure` flag on cookies using `isSecure` (based on
-         * the request protocol). Setting this to `true` causes better-auth
-         * to prepend `__Secure-` to cookie names, which breaks all cookie
-         * lookups in the landing page (middleware, AuthButton, me.ts).
-         *
-         * SECURITY: The API must NEVER be called directly by browsers.
-         * All browser traffic must go through the Astro BFF which adds
-         * the Secure flag. If the API were exposed directly, cookies
-         * would lack the Secure attribute and could leak over HTTP.
-         */
+    advanced: {
+      /**
+       * useSecureCookies is false because the Astro proxy (BFF pattern)
+       * handles the `Secure` flag on cookies using `isSecure` (based on
+       * the request protocol). Setting this to `true` causes better-auth
+       * to prepend `__Secure-` to cookie names, which breaks all cookie
+       * lookups in the landing page (middleware, AuthButton, me.ts).
+       *
+       * SECURITY: The API must NEVER be called directly by browsers.
+       * All browser traffic must go through the Astro BFF which adds
+       * the Secure flag. If the API were exposed directly, cookies
+       * would lack the Secure attribute and could leak over HTTP.
+       */
       useSecureCookies: false,
       /**
-        * SameSite=strict prevents the session cookie from being sent on
-        * any cross-site request, effectively blocking CSRF attacks on
-        * all cookie-authenticated endpoints (including JSON APIs that
-        * are not covered by Astro's checkOrigin).
-        */
+       * SameSite=strict prevents the session cookie from being sent on
+       * any cross-site request, effectively blocking CSRF attacks on
+       * all cookie-authenticated endpoints (including JSON APIs that
+       * are not covered by Astro's checkOrigin).
+       */
       defaultCookieAttributes: {
         sameSite: "strict",
       },
@@ -380,7 +378,11 @@ advanced: {
     trustedOrigins:
       process.env.NODE_ENV === "production"
         ? ["https://bskmt.com"]
-        : ["https://bskmt.com", "http://localhost:4321", "http://localhost:4322"],
+        : [
+            "https://bskmt.com",
+            "http://localhost:4321",
+            "http://localhost:4322",
+          ],
 
     plugins: [
       twoFactor({

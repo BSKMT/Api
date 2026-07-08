@@ -1,4 +1,4 @@
-export function maskAmount(amount: number | string): string {
+export function maskAmount(_amount: number | string): string {
   return "***";
 }
 

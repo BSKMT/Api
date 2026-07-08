@@ -8,9 +8,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
-  BadRequestException,
 } from "@nestjs/common";
-import type { Request } from "express";
 import type { Request } from "express";
 import { SessionGuard } from "../auth/session.guard";
 import { UsersService } from "../users/users.service";

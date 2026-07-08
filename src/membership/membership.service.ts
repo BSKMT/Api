@@ -38,7 +38,11 @@ import {
   NotificationPriority,
 } from "../notifications/schemas/notification.schema";
 import type { EnvironmentConfig } from "../config/config.interface";
-import { maskAmount, maskReference, maskUserId } from "../common/utils/log-redact.util";
+import {
+  maskAmount,
+  maskReference,
+  maskUserId,
+} from "../common/utils/log-redact.util";
 import {
   SINGLE_PAYMENT_AMOUNT,
   INSTALLMENT_AMOUNT,
@@ -347,7 +351,10 @@ export class MembershipService {
         infer: true,
       }) ?? "";
     const concatenated = `${orderId}${amount}${currency}`;
-    return crypto.createHmac("sha256", secretKey).update(concatenated).digest("hex");
+    return crypto
+      .createHmac("sha256", secretKey)
+      .update(concatenated)
+      .digest("hex");
   }
 
   async createMembershipPayment(
