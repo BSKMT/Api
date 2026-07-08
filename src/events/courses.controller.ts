@@ -20,7 +20,6 @@ interface AuthenticatedRequest extends Request {
 }
 
 @Controller("courses")
-@UseGuards()
 export class CoursesController {
   constructor(
     private readonly eventsService: EventsService,
