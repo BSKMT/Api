@@ -160,6 +160,15 @@ if (!mongoUrl) {
 const mongoClient = new MongoClient(mongoUrl);
 const mongoDb = mongoClient.db();
 
+/**
+ * Returns the shared MongoClient Db instance (singleton).
+ * Use this instead of creating ad-hoc MongoClient instances to avoid
+ * connection pool exhaustion in serverless environments.
+ */
+export function getMongoDb() {
+  return mongoDb;
+}
+
 let authInstance: AuthInstance | null = null;
 let authPromise: Promise<AuthInstance> | null = null;
 let injectedEmailService: EmailService | null = null;
@@ -226,7 +235,7 @@ async function initAuth(): Promise<AuthInstance> {
         user: BetterAuthUser;
         token: string;
       }): Promise<void> => {
-        const resetUrl = `${landingPageUrl}/restaurar-contrasena?token=${token}`;
+        const resetUrl = `${landingPageUrl}/restaurar-contrasena#token=${token}`;
 
         if (injectedEmailService) {
           const ok = await injectedEmailService.sendPasswordResetEmail({
@@ -258,7 +267,7 @@ async function initAuth(): Promise<AuthInstance> {
         user: BetterAuthUser;
         token: string;
       }): Promise<void> => {
-        const verificationUrl = `${landingPageUrl}/verificar-correo?token=${token}`;
+        const verificationUrl = `${landingPageUrl}/verificar-correo#token=${token}`;
 
         if (injectedEmailService) {
           const ok = await injectedEmailService.sendVerificationEmail({
@@ -338,21 +347,28 @@ async function initAuth(): Promise<AuthInstance> {
       },
     },
 
-    advanced: {
+advanced: {
       /**
-       * useSecureCookies is false because the Astro proxy (BFF pattern)
-       * handles the `Secure` flag on cookies using `isSecure` (based on
-       * the request protocol). Setting this to `true` causes better-auth
-       * to prepend `__Secure-` to cookie names, which breaks all cookie
-       * lookups in the landing page (middleware, AuthButton, me.ts).
-       */
+        * useSecureCookies is false because the Astro proxy (BFF pattern)
+        * handles the `Secure` flag on cookies using `isSecure` (based on
+        * the request protocol). Setting this to `true` causes better-auth
+        * to prepend `__Secure-` to cookie names, which breaks all cookie
+        * lookups in the landing page (middleware, AuthButton, me.ts).
+        */
       useSecureCookies: false,
+      /**
+        * SameSite=strict prevents the session cookie from being sent on
+        * any cross-site request, effectively blocking CSRF attacks on
+        * all cookie-authenticated endpoints (including JSON APIs that
+        * are not covered by Astro's checkOrigin).
+        */
+      defaultCookieAttributes: {
+        sameSite: "strict",
+      },
     },
 
     trustedOrigins: [
       "https://bskmt.com",
-      "http://localhost:4321",
-      "http://localhost:4322",
     ],
 
     plugins: [
