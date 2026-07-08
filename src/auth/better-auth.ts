@@ -238,11 +238,10 @@ async function initAuth(): Promise<AuthInstance> {
             console.warn(
               `[Password Reset] No se pudo enviar el correo a ${user.email} (Zoho no configurado o fallo)`,
             );
-            console.log(`[Password Reset] Fallback link: ${resetUrl}`);
           }
         } else {
-          console.log(
-            `[Password Reset] Reset link for ${user.email}: ${resetUrl}`,
+          console.warn(
+            `[Password Reset] Email service not configured — reset email NOT sent to ${user.email}`,
           );
         }
       },
@@ -271,13 +270,10 @@ async function initAuth(): Promise<AuthInstance> {
             console.warn(
               `[Email Verification] No se pudo enviar el correo a ${user.email} (Zoho no configurado o fallo)`,
             );
-            console.log(
-              `[Email Verification] Fallback link: ${verificationUrl}`,
-            );
           }
         } else {
-          console.log(
-            `[Email Verification] Verification link for ${user.email}: ${verificationUrl}`,
+          console.warn(
+            `[Email Verification] Email service not configured — verification email NOT sent to ${user.email}`,
           );
         }
       },
