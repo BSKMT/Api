@@ -191,7 +191,7 @@ export class SettingsService {
     currentToken: string,
   ) {
     const mongoUrl =
-      process.env.MONGODB_URI ?? "mongodb://localhost:27017/bskmt";
+      process.env.MONGODB_URI ?? (() => { throw new Error("MONGODB_URI is required"); })();
     const { MongoClient } = await import("mongodb");
     const client = new MongoClient(mongoUrl);
     try {
@@ -224,7 +224,7 @@ export class SettingsService {
 
   async revokeSession(token: string) {
     const mongoUrl =
-      process.env.MONGODB_URI ?? "mongodb://localhost:27017/bskmt";
+      process.env.MONGODB_URI ?? (() => { throw new Error("MONGODB_URI is required"); })();
     const { MongoClient } = await import("mongodb");
     const client = new MongoClient(mongoUrl);
     try {
@@ -242,7 +242,7 @@ export class SettingsService {
 
   async revokeAllOtherSessions(betterAuthId: string, currentToken: string) {
     const mongoUrl =
-      process.env.MONGODB_URI ?? "mongodb://localhost:27017/bskmt";
+      process.env.MONGODB_URI ?? (() => { throw new Error("MONGODB_URI is required"); })();
     const { MongoClient } = await import("mongodb");
     const client = new MongoClient(mongoUrl);
     try {
@@ -313,7 +313,7 @@ export class SettingsService {
     let authData: Record<string, unknown> | null = null;
     try {
       const mongoUrl =
-        process.env.MONGODB_URI ?? "mongodb://localhost:27017/bskmt";
+        process.env.MONGODB_URI ?? (() => { throw new Error("MONGODB_URI is required"); })();
       const { MongoClient } = await import("mongodb");
       const client = new MongoClient(mongoUrl);
       try {

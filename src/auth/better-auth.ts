@@ -152,7 +152,10 @@ async function loadBetterAuthDeps(): Promise<BetterAuthDeps> {
   return depsPromise;
 }
 
-const mongoUrl = process.env.MONGODB_URI ?? "mongodb://localhost:27017/bskmt";
+const mongoUrl = process.env.MONGODB_URI;
+if (!mongoUrl) {
+  throw new Error("MONGODB_URI environment variable is required");
+}
 
 const mongoClient = new MongoClient(mongoUrl);
 const mongoDb = mongoClient.db();
@@ -203,7 +206,11 @@ async function initAuth(): Promise<AuthInstance> {
     secret:
       process.env.BETTER_AUTH_SECRET ??
       process.env.JWT_SECRET ??
-      "fallback-secret-change-me",
+      (() => {
+        throw new Error(
+          "BETTER_AUTH_SECRET (or JWT_SECRET) environment variable is required",
+        );
+      })(),
 
     emailAndPassword: {
       enabled: true,
