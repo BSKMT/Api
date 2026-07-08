@@ -717,7 +717,6 @@ export class PaymentsService {
       requiresPayment: boolean;
       boldConfig?: {
         publicKey: string;
-        identityKey: string;
         environment: string;
         baseUrl: string;
         referenceId: string;
@@ -757,7 +756,6 @@ export class PaymentsService {
     description: string,
   ): {
     publicKey: string;
-    identityKey: string;
     environment: string;
     baseUrl: string;
     referenceId: string;
@@ -774,17 +772,12 @@ export class PaymentsService {
       this.configService.get<string>("BOLD_PUBLIC_KEY", {
         infer: true,
       }) ?? "";
-    const boldIdentityKey =
-      this.configService.get<string>("BOLD_IDENTITY_KEY", {
-        infer: true,
-      }) ?? "";
     const boldBaseUrl =
       boldEnvironment === "production"
         ? "https://payments.api.bold.co"
         : "https://payments-api-test.bold.co";
     return {
       publicKey: boldPublicKey,
-      identityKey: boldIdentityKey,
       environment: boldEnvironment,
       baseUrl: boldBaseUrl,
       referenceId: reference,
