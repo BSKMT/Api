@@ -59,10 +59,10 @@ export class SettingsController {
     return this.settingsService.getSessions(user.userId, user.email, token);
   }
 
-  @Delete("sessions/:token")
+  @Delete("sessions/:id")
   @HttpCode(HttpStatus.OK)
-  async revokeSession(@Param("token") token: string) {
-    return this.settingsService.revokeSession(token);
+  async revokeSession(@Param("id") id: string) {
+    return this.settingsService.revokeSession(id);
   }
 
   @Delete("sessions")

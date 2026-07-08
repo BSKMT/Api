@@ -206,7 +206,6 @@ export class SettingsService {
         const ua = parseUserAgent(s.userAgent);
         return {
           id: s.id,
-          token: s.token,
           browser: ua.browser,
           os: ua.os,
           device: ua.device,
@@ -222,18 +221,18 @@ export class SettingsService {
     }
   }
 
-  async revokeSession(token: string) {
+  async revokeSession(sessionId: string) {
     const mongoUrl =
       process.env.MONGODB_URI ?? (() => { throw new Error("MONGODB_URI is required"); })();
     const { MongoClient } = await import("mongodb");
     const client = new MongoClient(mongoUrl);
     try {
       const db = client.db();
-      const result = await db.collection("session").deleteOne({ token });
+      const result = await db.collection("session").deleteOne({ id: sessionId });
       if (result.deletedCount === 0) {
         throw new BadRequestException("Sesion no encontrada");
       }
-      this.logger.log(`Session revoked: token=${token.substring(0, 10)}...`);
+      this.logger.log(`Session revoked: id=${sessionId.substring(0, 10)}...`);
       return { success: true };
     } finally {
       await client.close();
