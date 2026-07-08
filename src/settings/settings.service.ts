@@ -7,7 +7,7 @@ import {
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { User, UserDocument } from "../users/schemas/user.schema";
-import { getAuth } from "../auth/better-auth";
+import { getAuth, getMongoDb } from "../auth/better-auth";
 import type { Request } from "express";
 
 const DEFAULT_SETTINGS = {
@@ -190,72 +190,48 @@ export class SettingsService {
     betterAuthId: string,
     currentToken: string,
   ) {
-    const mongoUrl =
-      process.env.MONGODB_URI ?? (() => { throw new Error("MONGODB_URI is required"); })();
-    const { MongoClient } = await import("mongodb");
-    const client = new MongoClient(mongoUrl);
-    try {
-      const db = client.db();
-      const sessions = (await db
-        .collection("session")
-        .find({ userId: betterAuthId })
-        .sort({ createdAt: -1 })
-        .toArray()) as unknown as SessionRow[];
+    const db = getMongoDb();
+    const sessions = (await db
+      .collection("session")
+      .find({ userId: betterAuthId })
+      .sort({ createdAt: -1 })
+      .toArray()) as unknown as SessionRow[];
 
-      return sessions.map((s) => {
-        const ua = parseUserAgent(s.userAgent);
-        return {
-          id: s.id,
-          browser: ua.browser,
-          os: ua.os,
-          device: ua.device,
-          ipAddress: s.ipAddress ?? "—",
-          isCurrent: s.token === currentToken,
-          createdAt: s.createdAt,
-          expiresAt: s.expiresAt,
-          lastActive: s.updatedAt,
-        };
-      });
-    } finally {
-      await client.close();
-    }
+    return sessions.map((s) => {
+      const ua = parseUserAgent(s.userAgent);
+      return {
+        id: s.id,
+        browser: ua.browser,
+        os: ua.os,
+        device: ua.device,
+        ipAddress: s.ipAddress ?? "—",
+        isCurrent: s.token === currentToken,
+        createdAt: s.createdAt,
+        expiresAt: s.expiresAt,
+        lastActive: s.updatedAt,
+      };
+    });
   }
 
   async revokeSession(sessionId: string) {
-    const mongoUrl =
-      process.env.MONGODB_URI ?? (() => { throw new Error("MONGODB_URI is required"); })();
-    const { MongoClient } = await import("mongodb");
-    const client = new MongoClient(mongoUrl);
-    try {
-      const db = client.db();
-      const result = await db.collection("session").deleteOne({ id: sessionId });
-      if (result.deletedCount === 0) {
-        throw new BadRequestException("Sesion no encontrada");
-      }
-      this.logger.log(`Session revoked: id=${sessionId.substring(0, 10)}...`);
-      return { success: true };
-    } finally {
-      await client.close();
+    const db = getMongoDb();
+    const result = await db.collection("session").deleteOne({ id: sessionId });
+    if (result.deletedCount === 0) {
+      throw new BadRequestException("Sesion no encontrada");
     }
+    this.logger.log(`Session revoked: id=${sessionId.substring(0, 10)}...`);
+    return { success: true };
   }
 
   async revokeAllOtherSessions(betterAuthId: string, currentToken: string) {
-    const mongoUrl =
-      process.env.MONGODB_URI ?? (() => { throw new Error("MONGODB_URI is required"); })();
-    const { MongoClient } = await import("mongodb");
-    const client = new MongoClient(mongoUrl);
-    try {
-      const db = client.db();
-      const result = await db
-        .collection("session")
-        .deleteMany({ userId: betterAuthId, token: { $ne: currentToken } });
-      this.logger.log(
-        `Revoked ${result.deletedCount} other sessions for user ${betterAuthId}`,
-      );
-      return { revoked: result.deletedCount };
-    } finally {
-      await client.close();
-    }
+    const db = getMongoDb();
+    const result = await db
+      .collection("session")
+      .deleteMany({ userId: betterAuthId, token: { $ne: currentToken } });
+    this.logger.log(
+      `Revoked ${result.deletedCount} other sessions for user ${betterAuthId}`,
+    );
+    return { revoked: result.deletedCount };
   }
 
   async requestAccountDeletion(userId: string, reason?: string) {
@@ -311,27 +287,19 @@ export class SettingsService {
 
     let authData: Record<string, unknown> | null = null;
     try {
-      const mongoUrl =
-        process.env.MONGODB_URI ?? (() => { throw new Error("MONGODB_URI is required"); })();
-      const { MongoClient } = await import("mongodb");
-      const client = new MongoClient(mongoUrl);
-      try {
-        const db = client.db();
-        const betterAuthUser = await db
-          .collection("user")
-          .findOne({ id: user.betterAuthId });
-        if (betterAuthUser) {
-          authData = {
-            id: betterAuthUser.id,
-            email: betterAuthUser.email,
-            emailVerified: betterAuthUser.emailVerified,
-            name: betterAuthUser.name,
-            createdAt: betterAuthUser.createdAt,
-            twoFactorEnabled: betterAuthUser.twoFactorEnabled ?? false,
-          };
-        }
-      } finally {
-        await client.close();
+      const db = getMongoDb();
+      const betterAuthUser = await db
+        .collection("user")
+        .findOne({ id: user.betterAuthId });
+      if (betterAuthUser) {
+        authData = {
+          id: betterAuthUser.id,
+          email: betterAuthUser.email,
+          emailVerified: betterAuthUser.emailVerified,
+          name: betterAuthUser.name,
+          createdAt: betterAuthUser.createdAt,
+          twoFactorEnabled: betterAuthUser.twoFactorEnabled ?? false,
+        };
       }
     } catch {
       // ignore

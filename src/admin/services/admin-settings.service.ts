@@ -12,6 +12,7 @@ import {
   NotificationType,
   NotificationPriority,
 } from "../../notifications/schemas/notification.schema";
+import { getMongoDb } from "../../auth/better-auth";
 @Injectable()
 export class AdminSettingsService {
   private readonly logger = new Logger(AdminSettingsService.name);
@@ -64,19 +65,13 @@ export class AdminSettingsService {
     }
 
     try {
-      const mongoUrl =
-        process.env.MONGODB_URI ?? (() => { throw new Error("MONGODB_URI is required"); })();
-      const { MongoClient } = await import("mongodb");
-      const client = new MongoClient(mongoUrl);
-      const db = client.db();
+      const db = getMongoDb();
 
       await db.collection("user").deleteOne({ id: user.betterAuthId });
       await db.collection("session").deleteMany({ userId: user.betterAuthId });
       await db
         .collection("twoFactor")
         .deleteMany({ userId: user.betterAuthId });
-
-      await client.close();
     } catch (err) {
       this.logger.error(`Failed to delete better-auth data: ${err}`);
     }
