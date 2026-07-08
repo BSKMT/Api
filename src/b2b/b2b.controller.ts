@@ -1,4 +1,5 @@
 import { Controller, Post, Body, HttpCode, HttpStatus } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import { B2bService } from "./b2b.service";
 import { B2bContactDto } from "./dto/b2b-contact.dto";
 import { Public } from "../common/decorators";
@@ -8,6 +9,7 @@ export class B2bController {
   constructor(private readonly b2bService: B2bService) {}
 
   @Public()
+  @Throttle({ medium: { ttl: 60000, limit: 5 } })
   @Post("contact")
   @HttpCode(HttpStatus.CREATED)
   async submitContact(@Body() dto: B2bContactDto) {

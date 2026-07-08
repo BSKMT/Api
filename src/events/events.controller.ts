@@ -11,6 +11,7 @@ import {
   HttpStatus,
   BadRequestException,
 } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import type { Request } from "express";
 import { SessionGuard } from "../auth/session.guard";
 import { Public } from "../common/decorators";
@@ -33,6 +34,7 @@ export class EventsController {
   ) {}
 
   @Public()
+  @Throttle({ long: { ttl: 60000, limit: 30 } })
   @Get("upcoming")
   async getUpcomingEvents(@Query("limit") limit?: string) {
     const parsedLimit = limit ? Number.parseInt(limit, 10) : 6;
@@ -40,6 +42,7 @@ export class EventsController {
   }
 
   @Public()
+  @Throttle({ long: { ttl: 60000, limit: 30 } })
   @Get("featured")
   async getFeaturedEvents(@Query("limit") limit?: string) {
     const parsedLimit = limit ? Number.parseInt(limit, 10) : 3;
@@ -47,6 +50,7 @@ export class EventsController {
   }
 
   @Public()
+  @Throttle({ long: { ttl: 60000, limit: 20 } })
   @Get("stats")
   async getEventStats() {
     return this.eventsService.getEventStats();

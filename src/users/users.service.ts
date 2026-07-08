@@ -2,6 +2,7 @@ import {
   Injectable,
   ConflictException,
   NotFoundException,
+  BadRequestException,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
@@ -13,6 +14,7 @@ import {
   PartialPaymentCredit,
   REQUIRED_PROFILE_SECTIONS,
 } from "./schemas/user.schema";
+import { UpdateProfileSectionDto } from "../profile/dto/update-profile-section.dto";
 
 function getColombiaDate(): string {
   const now = new Date();
@@ -88,13 +90,17 @@ export class UsersService {
     sectionId: string,
     sectionData: Record<string, unknown>,
   ): Promise<UserDocument> {
+    if (!UpdateProfileSectionDto.isValidSectionId(sectionId)) {
+      throw new BadRequestException(`Sección inválida: ${sectionId}`);
+    }
+    const sanitizedData = UpdateProfileSectionDto.sanitize(sectionData);
     const user = await this.userModel.findById(userId);
     if (!user) {
       throw new NotFoundException("Usuario no encontrado");
     }
 
     const profile = user.profile ?? {};
-    profile[sectionId] = sectionData;
+    profile[sectionId] = sanitizedData;
 
     const completedSections = [...(user.completedSections ?? [])];
     if (!completedSections.includes(sectionId)) {
@@ -190,6 +196,15 @@ export class UsersService {
       { _id: userId },
       { installmentsPaid: count },
     );
+  }
+
+  async incrementInstallmentsPaid(userId: string): Promise<number> {
+    const updated = await this.userModel.findOneAndUpdate(
+      { _id: userId },
+      { $inc: { installmentsPaid: 1 } },
+      { new: true },
+    );
+    return updated?.installmentsPaid ?? 0;
   }
 
   async updateMembershipRenewal(

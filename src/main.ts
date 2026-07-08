@@ -16,6 +16,9 @@ interface BetterAuthNodeModule {
   toNodeHandler: (auth: AuthInstance) => (req: Request, res: Response) => void;
 }
 
+/** Simple in-memory rate limit store for Better Auth raw handler (M-3). */
+const authRateLimit = new Map<string, { count: number; resetAt: number }>();
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     cors: false,
@@ -25,7 +28,33 @@ async function bootstrap() {
 
   const configService = app.get(ConfigService<EnvironmentConfig>);
 
-  app.use(helmet.default());
+  app.use(
+    helmet.default({
+      crossOriginOpenerPolicy: { policy: "same-origin" },
+      crossOriginEmbedderPolicy: { policy: "unsafe-none" },
+      crossOriginResourcePolicy: { policy: "same-origin" },
+      permissionsPolicy: {
+        camera: [],
+        microphone: [],
+        geolocation: [],
+        payment: [],
+      },
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", "data:", "https:"],
+          fontSrc: ["'self'", "data:"],
+          connectSrc: ["'self'"],
+          objectSrc: ["'none'"],
+          baseUri: ["'self'"],
+          formAction: ["'self'"],
+          frameAncestors: ["'none'"],
+        },
+      },
+    }),
+  );
 
   const emailService = app.get(EmailService);
   const landingPageUrl =
@@ -36,7 +65,7 @@ async function bootstrap() {
   const corsOrigin =
     configService.get("CORS_ORIGIN", { infer: true }) ?? "https://bskmt.com";
   app.enableCors({
-    origin: [corsOrigin, "https://bskmt.com"],
+    origin: corsOrigin,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     credentials: true,
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -59,6 +88,28 @@ async function bootstrap() {
     if (path === "/me" || path === "/me/") {
       return next();
     }
+
+    // Simple rate-limit for sensitive Better Auth endpoints (M-3).
+    // The ThrottlerGuard does not cover these raw Express routes.
+    const sensitivePaths = ["/sign-in/email", "/sign-up/email", "/reset-password", "/request-password-reset"];
+    if (sensitivePaths.includes(path)) {
+      const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
+      const key = `${ip}:${path}`;
+      const now = Date.now();
+      const windowMs = 60000;
+      const maxRequests = 10;
+      const entry = authRateLimit.get(key);
+      if (entry && entry.count >= maxRequests && now < entry.resetAt) {
+        res.status(429).json({ message: "Too many requests. Please try again later." });
+        return;
+      }
+      if (!entry || now >= entry.resetAt) {
+        authRateLimit.set(key, { count: 1, resetAt: now + windowMs });
+      } else {
+        entry.count++;
+      }
+    }
+
     return authHandler(req, res);
   });
 

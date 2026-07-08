@@ -203,7 +203,9 @@ async function initAuth(): Promise<AuthInstance> {
   const landingPageUrl =
     injectedLandingPageUrl ??
     process.env.LANDING_PAGE_URL ??
-    "http://localhost:4321";
+    (process.env.NODE_ENV === "production"
+      ? "https://bskmt.com"
+      : "http://localhost:4321");
 
   return betterAuth({
     appName: "BSK Motorcycle Team",
@@ -211,13 +213,16 @@ async function initAuth(): Promise<AuthInstance> {
       client: mongoClient,
     }),
 
-    baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:3000",
+    baseURL:
+      process.env.BETTER_AUTH_URL ??
+      (process.env.NODE_ENV === "production"
+        ? "https://api.bskmt.com"
+        : "http://localhost:3000"),
     secret:
       process.env.BETTER_AUTH_SECRET ??
-      process.env.JWT_SECRET ??
       (() => {
         throw new Error(
-          "BETTER_AUTH_SECRET (or JWT_SECRET) environment variable is required",
+          "BETTER_AUTH_SECRET environment variable is required",
         );
       })(),
 
@@ -348,13 +353,18 @@ async function initAuth(): Promise<AuthInstance> {
     },
 
 advanced: {
-      /**
-        * useSecureCookies is false because the Astro proxy (BFF pattern)
-        * handles the `Secure` flag on cookies using `isSecure` (based on
-        * the request protocol). Setting this to `true` causes better-auth
-        * to prepend `__Secure-` to cookie names, which breaks all cookie
-        * lookups in the landing page (middleware, AuthButton, me.ts).
-        */
+/**
+         * useSecureCookies is false because the Astro proxy (BFF pattern)
+         * handles the `Secure` flag on cookies using `isSecure` (based on
+         * the request protocol). Setting this to `true` causes better-auth
+         * to prepend `__Secure-` to cookie names, which breaks all cookie
+         * lookups in the landing page (middleware, AuthButton, me.ts).
+         *
+         * SECURITY: The API must NEVER be called directly by browsers.
+         * All browser traffic must go through the Astro BFF which adds
+         * the Secure flag. If the API were exposed directly, cookies
+         * would lack the Secure attribute and could leak over HTTP.
+         */
       useSecureCookies: false,
       /**
         * SameSite=strict prevents the session cookie from being sent on
@@ -367,9 +377,10 @@ advanced: {
       },
     },
 
-    trustedOrigins: [
-      "https://bskmt.com",
-    ],
+    trustedOrigins:
+      process.env.NODE_ENV === "production"
+        ? ["https://bskmt.com"]
+        : ["https://bskmt.com", "http://localhost:4321", "http://localhost:4322"],
 
     plugins: [
       twoFactor({

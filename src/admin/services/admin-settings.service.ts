@@ -55,7 +55,7 @@ export class AdminSettingsService {
     };
   }
 
-  async approveDeletion(userId: string) {
+  async approveDeletion(userId: string, actorId: string) {
     const user = await this.userModel.findById(userId).lean();
     if (!user) throw new NotFoundException("Usuario no encontrado");
     if (!user.accountDeletionRequested) {
@@ -79,12 +79,12 @@ export class AdminSettingsService {
     await this.userModel.deleteOne({ _id: userId });
 
     this.logger.log(
-      `Account permanently deleted by admin: userId=${userId} email=${user.email}`,
+      `Account permanently deleted by admin: userId=${userId} email=${user.email} actor=${actorId}`,
     );
     return { success: true, message: "Cuenta eliminada permanentemente" };
   }
 
-  async rejectDeletion(userId: string) {
+  async rejectDeletion(userId: string, actorId = "") {
     const user = await this.userModel.findById(userId);
     if (!user) throw new NotFoundException("Usuario no encontrado");
     if (!user.accountDeletionRequested) {
@@ -111,7 +111,7 @@ export class AdminSettingsService {
       // notifications may fail if user has no notification schema
     }
 
-    this.logger.log(`Account deletion rejected by admin: userId=${userId}`);
+    this.logger.log(`Account deletion rejected by admin: userId=${userId} actor=${actorId}`);
     return { success: true, message: "Solicitud rechazada, cuenta reactivada" };
   }
 }

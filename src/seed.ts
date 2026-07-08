@@ -505,6 +505,11 @@ const productsSeed = [
 ];
 
 async function seed() {
+  if (process.env.NODE_ENV === "production") {
+    logger.error("Seed script cannot run in production environment");
+    process.exit(1);
+  }
+
   logger.log("Starting database seed...");
 
   const app = await NestFactory.createApplicationContext(AppModule);
