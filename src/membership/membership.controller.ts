@@ -39,7 +39,7 @@ export class MembershipController {
 
   @Post("webhook")
   @HttpCode(HttpStatus.OK)
-  handleWebhook(
+  async handleWebhook(
     @Req() req: Request,
     @Headers("x-bold-signature") signature: string,
   ) {
@@ -52,11 +52,7 @@ export class MembershipController {
       throw new BadRequestException("Invalid request body");
     }
 
-    void this.membershipService
-      .handleWebhook(rawBody, signature)
-      .catch((err: Error) => {
-        console.error("Membership webhook error:", err.message);
-      });
+    await this.membershipService.handleWebhook(rawBody, signature);
 
     return { received: true };
   }

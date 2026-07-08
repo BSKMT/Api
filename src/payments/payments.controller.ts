@@ -38,7 +38,7 @@ export class PaymentsController {
 
   @Post("webhook")
   @HttpCode(HttpStatus.OK)
-  handleWebhook(
+  async handleWebhook(
     @Req() req: Request,
     @Headers("x-bold-signature") signature: string,
   ) {
@@ -51,11 +51,7 @@ export class PaymentsController {
       throw new BadRequestException("Invalid request body");
     }
 
-    void this.paymentsService
-      .handleWebhook(rawBody, signature)
-      .catch((err: Error) => {
-        console.error("Webhook processing error:", err.message);
-      });
+    await this.paymentsService.handleWebhook(rawBody, signature);
 
     return { received: true };
   }
