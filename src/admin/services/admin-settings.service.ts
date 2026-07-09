@@ -64,9 +64,9 @@ export class AdminSettingsService {
       );
     }
 
-    try {
-      const db = getMongoDb();
+    const db = getMongoDb();
 
+    try {
       await db.collection("user").deleteOne({ id: user.betterAuthId });
       await db.collection("session").deleteMany({ userId: user.betterAuthId });
       await db
@@ -74,6 +74,9 @@ export class AdminSettingsService {
         .deleteMany({ userId: user.betterAuthId });
     } catch (err) {
       this.logger.error(`Failed to delete better-auth data: ${err}`);
+      throw new BadRequestException(
+        "No se pudo eliminar completamente la cuenta de autenticación. Intenta de nuevo.",
+      );
     }
 
     await this.userModel.deleteOne({ _id: userId });
@@ -100,7 +103,7 @@ export class AdminSettingsService {
     try {
       await this.notificationsService.create({
         userId,
-        type: NotificationType.MEMBERSHIP_ACTIVATED,
+        type: NotificationType.ACCOUNT_DELETION_REJECTED,
         title: "Solicitud de eliminacion rechazada",
         message:
           "Un administrador ha revisado tu solicitud de eliminacion de cuenta y no se ha aprobado. Tu cuenta sigue activa.",
