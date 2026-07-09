@@ -74,6 +74,49 @@ async function bootstrap() {
     maxAge: 86400,
   });
 
+  // M-1: CSRF protection — verify Origin/Referer for state-changing requests
+  const allowedOrigins = new Set([
+    corsOrigin,
+    "https://www.bskmt.com",
+    "https://bskmt.com",
+  ]);
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
+      return next();
+    }
+    // Exempt external webhook endpoints
+    if (
+      req.path === "/api/payments/webhook" ||
+      req.path === "/api/membership/webhook"
+    ) {
+      return next();
+    }
+    const origin = req.headers.origin;
+    const referer = req.headers.referer;
+    if (origin) {
+      if (!allowedOrigins.has(origin)) {
+        return res
+          .status(403)
+          .json({ message: "Origin not allowed" });
+      }
+      return next();
+    }
+    if (referer) {
+      try {
+        const refererOrigin = new URL(referer).origin;
+        if (!allowedOrigins.has(refererOrigin)) {
+          return res
+            .status(403)
+            .json({ message: "Referer origin not allowed" });
+        }
+      } catch {
+        // Invalid referer, allow (defense-in-depth, not primary)
+      }
+    }
+    // No Origin and no Referer — allow (non-browser clients, server-to-server)
+    return next();
+  });
+
   /**
    * Mount Better Auth handler at /api/auth/*
    *

@@ -42,7 +42,7 @@ export class AdminCoursesService {
     if (filters.level) filter.level = filters.level;
     if (filters.format) filter.format = filters.format;
 
-    const limit = filters.limit ?? 50;
+    const limit = Math.min(Math.max(filters.limit ?? 50, 1), 100);
     const page = filters.page ?? 1;
     const skip = (page - 1) * limit;
 
@@ -93,9 +93,12 @@ export class AdminCoursesService {
     slug: string,
     dto: UpdateCourseDto,
   ): Promise<CourseDocument> {
+    // A-7: Defense-in-depth — never allow slug change on update
+    const updateFields = { ...dto };
+    delete updateFields.slug;
     const updated = await this.courseModel.findOneAndUpdate(
       { slug },
-      { $set: { ...dto } },
+      { $set: updateFields },
       { new: true },
     );
     if (!updated) {

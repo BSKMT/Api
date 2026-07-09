@@ -40,7 +40,7 @@ export class AdminEventsService {
     if (filters.status) filter.status = filters.status;
     if (filters.category) filter.category = filters.category;
 
-    const limit = filters.limit ?? 50;
+    const limit = Math.min(Math.max(filters.limit ?? 50, 1), 100);
     const page = filters.page ?? 1;
     const skip = (page - 1) * limit;
 
@@ -96,6 +96,8 @@ export class AdminEventsService {
     }
 
     const update: Record<string, unknown> = { ...dto };
+    // A-7: Defense-in-depth — never allow slug change on update
+    delete update.slug;
     if (dto.date) update.date = new Date(dto.date);
     if (dto.endDate) update.endDate = new Date(dto.endDate);
     else if (dto.endDate === undefined) delete update.endDate;
