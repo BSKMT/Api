@@ -10,9 +10,11 @@ import {
   HttpCode,
   HttpStatus,
 } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import type { Request } from "express";
 import { SessionGuard } from "../auth/session.guard";
 import { NotificationsService } from "./notifications.service";
+import { ParseObjectIdPipe } from "../common/pipes/parse-object-id.pipe";
 
 interface AuthenticatedRequest extends Request {
   user: { userId: string };
@@ -20,13 +22,13 @@ interface AuthenticatedRequest extends Request {
 
 /**
  * NotificationsController - Endpoints REST para notificaciones a nivel de sistema.
- * Todas las rutas requieren JWT y se sirven bajo /api/notifications.
+ * Todas las rutas requieren sesión y se sirven bajo /api/notifications.
  */
 @Controller("notifications")
+@UseGuards(SessionGuard)
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
-  @UseGuards(SessionGuard)
   @Get()
   async listNotifications(
     @Req() req: AuthenticatedRequest,
@@ -44,32 +46,33 @@ export class NotificationsController {
     return { items, unreadCount };
   }
 
-  @UseGuards(SessionGuard)
   @Post("read-all")
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   async markAllRead(@Req() req: AuthenticatedRequest) {
     const { userId } = req.user;
     const result = await this.notificationsService.markAllRead(userId);
     return result;
   }
 
-  @UseGuards(SessionGuard)
   @Post(":id/read")
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  // B-9: Validate notificationId is a valid ObjectId
   async markAsRead(
     @Req() req: AuthenticatedRequest,
-    @Param("id") notificationId: string,
+    @Param("id", ParseObjectIdPipe) notificationId: string,
   ) {
     const { userId } = req.user;
     return this.notificationsService.markAsRead(userId, notificationId);
   }
 
-  @UseGuards(SessionGuard)
   @Delete(":id")
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
   async deleteNotification(
     @Req() req: AuthenticatedRequest,
-    @Param("id") notificationId: string,
+    @Param("id", ParseObjectIdPipe) notificationId: string,
   ) {
     const { userId } = req.user;
     return this.notificationsService.deleteNotification(userId, notificationId);

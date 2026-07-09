@@ -8,6 +8,7 @@ import {
   Req,
   UseGuards,
 } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import type { Request } from "express";
 import { SessionGuard } from "../auth/session.guard";
 import { UsersService } from "../users/users.service";
@@ -49,6 +50,7 @@ export class ProfileController {
   }
 
   @Post("legal-consent")
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   async acceptLegalConsent(@Req() req: AuthenticatedRequest) {
     const { userId } = req.user;
     const updated = await this.usersService.acceptLegalConsent(userId);

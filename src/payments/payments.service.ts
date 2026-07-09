@@ -400,6 +400,19 @@ export class PaymentsService {
     this.recordWebhookEvent(transaction, event, parsed);
 
     const statusFromEvent = this.mapBoldStatus(parsed.eventType);
+    // A-13: Validate webhook amount against transaction amount before approval
+    if (
+      statusFromEvent === "APPROVED" &&
+      parsed.amount !== undefined &&
+      transaction.amount > 0 &&
+      parsed.amount !== transaction.amount
+    ) {
+      this.logger.warn(
+        `Amount mismatch in webhook for reference ${parsed.referenceId}: expected ${transaction.amount}, received ${parsed.amount}. Skipping approval.`,
+      );
+      await transaction.save();
+      return;
+    }
     if (statusFromEvent) {
       transaction.status = statusFromEvent;
       if (statusFromEvent === "APPROVED") {
@@ -452,6 +465,7 @@ export class PaymentsService {
     referenceId: string | undefined;
     paymentMethod: string | undefined;
     payerEmail: string | undefined;
+    amount: number | undefined;
   } {
     const notificationId = event["id"] as string | undefined;
     const eventType = event["type"] as string | undefined;
@@ -464,6 +478,7 @@ export class PaymentsService {
       referenceId: metadata["reference"] as string | undefined,
       paymentMethod: data["payment_method"] as string | undefined,
       payerEmail: data["payer_email"] as string | undefined,
+      amount: typeof data["amount"] === "number" ? data["amount"] : undefined,
     };
   }
 

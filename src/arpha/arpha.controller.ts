@@ -9,6 +9,7 @@ import {
   HttpCode,
   HttpStatus,
 } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import type { Request } from "express";
 import { SessionGuard } from "../auth/session.guard";
 import { UsersService } from "../users/users.service";
@@ -31,6 +32,7 @@ export class ArphaController {
 
   @Post("request")
   @HttpCode(HttpStatus.CREATED)
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   async createRequest(
     @Req() req: AuthenticatedRequest,
     @Body() dto: CreateArphaRequestDto,
@@ -43,6 +45,7 @@ export class ArphaController {
 
   @Post("cancel/:id")
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   async cancelRequest(
     @Req() req: AuthenticatedRequest,
     @Param("id", ParseObjectIdPipe) requestId: string,
@@ -53,6 +56,7 @@ export class ArphaController {
 
   @Post("rate/:id")
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
   async rateRequest(
     @Req() req: AuthenticatedRequest,
     @Param("id", ParseObjectIdPipe) requestId: string,
