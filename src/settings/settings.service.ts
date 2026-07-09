@@ -217,9 +217,11 @@ export class SettingsService {
     });
   }
 
-  async revokeSession(sessionId: string) {
+  async revokeSession(sessionId: string, betterAuthId: string) {
     const db = getMongoDb();
-    const result = await db.collection("session").deleteOne({ id: sessionId });
+    const result = await db
+      .collection("session")
+      .deleteOne({ id: sessionId, userId: betterAuthId });
     if (result.deletedCount === 0) {
       throw new BadRequestException("Sesion no encontrada");
     }
@@ -339,6 +341,11 @@ export class SettingsService {
     currentPassword: string,
     newPassword: string,
   ) {
+    if (newPassword === currentPassword) {
+      throw new BadRequestException(
+        "La nueva contraseña debe ser diferente a la actual",
+      );
+    }
     const auth = await getAuth();
     try {
       await auth.api.changePassword({
@@ -346,8 +353,16 @@ export class SettingsService {
         headers: req.headers,
       });
       return { success: true, message: "Contraseña actualizada correctamente" };
-    } catch {
-      throw new BadRequestException("La contrasena actual es incorrecta");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "";
+      if (/password/i.test(msg)) {
+        throw new BadRequestException(
+          "No se pudo cambiar la contraseña. Verifica que la contraseña actual sea correcta.",
+        );
+      }
+      throw new BadRequestException(
+        "No se pudo cambiar la contraseña. Inténtalo de nuevo.",
+      );
     }
   }
 
@@ -359,9 +374,12 @@ export class SettingsService {
         headers: req.headers,
       });
       return result;
-    } catch {
+    } catch (err: unknown) {
+      this.logger.warn(
+        `Failed to enable 2FA: ${err instanceof Error ? err.message : String(err)}`,
+      );
       throw new BadRequestException(
-        "No se pudo activar 2FA. Verifica tu contrasena.",
+        "No se pudo activar 2FA. Verifica tu contraseña.",
       );
     }
   }
@@ -374,8 +392,11 @@ export class SettingsService {
         headers: req.headers,
       });
       return result;
-    } catch {
-      throw new BadRequestException("Codigo de verificacion incorrecto");
+    } catch (err: unknown) {
+      this.logger.warn(
+        `Failed to verify 2FA code: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw new BadRequestException("Código de verificación incorrecto");
     }
   }
 
@@ -387,9 +408,12 @@ export class SettingsService {
         headers: req.headers,
       });
       return { success: true, message: "2FA desactivado" };
-    } catch {
+    } catch (err: unknown) {
+      this.logger.warn(
+        `Failed to disable 2FA: ${err instanceof Error ? err.message : String(err)}`,
+      );
       throw new BadRequestException(
-        "No se pudo desactivar 2FA. Verifica tu contrasena.",
+        "No se pudo desactivar 2FA. Verifica tu contraseña.",
       );
     }
   }

@@ -54,25 +54,29 @@ export class SettingsController {
 
   @Get("sessions")
   async getSessions(@Req() req: Request) {
-    const user = (req as Request & { user: { userId: string; email: string } })
+    const user = (req as Request & { user: { userId: string; email: string; betterAuthId: string } })
       .user;
     const token = getCurrentToken(req);
-    return this.settingsService.getSessions(user.userId, user.email, token);
+    return this.settingsService.getSessions(user.userId, user.betterAuthId, token);
   }
 
   @Delete("sessions/:id")
   @HttpCode(HttpStatus.OK)
-  async revokeSession(@Param("id") id: string) {
-    return this.settingsService.revokeSession(id);
+  async revokeSession(
+    @Req() req: Request,
+    @Param("id") id: string,
+  ) {
+    const user = (req as Request & { user: { betterAuthId: string } }).user;
+    return this.settingsService.revokeSession(id, user.betterAuthId);
   }
 
   @Delete("sessions")
   @HttpCode(HttpStatus.OK)
   async revokeAllOtherSessions(@Req() req: Request) {
-    const user = (req as Request & { user: { userId: string; email: string } })
+    const user = (req as Request & { user: { betterAuthId: string } })
       .user;
     const token = getCurrentToken(req);
-    return this.settingsService.revokeAllOtherSessions(user.email, token);
+    return this.settingsService.revokeAllOtherSessions(user.betterAuthId, token);
   }
 
   @Post("change-password")
@@ -142,6 +146,7 @@ export class SettingsController {
   }
 
   @Get("data-export")
+  @Throttle({ medium: { ttl: 60000, limit: 3 } })
   async exportData(@Req() req: Request, @Res() res: Response) {
     const user = (req as Request & { user: { userId: string } }).user;
     const data = await this.settingsService.exportUserData(user.userId);
