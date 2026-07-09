@@ -17,6 +17,7 @@ import { SessionGuard } from "../auth/session.guard";
 import { Public } from "../common/decorators";
 import { UsersService } from "../users/users.service";
 import { EventsService } from "./events.service";
+import { MEMBER_LEVELS } from "./events.service";
 import { RegisterEventDto } from "./dto/register-event.dto";
 import { AcceptWaiverDto } from "./dto/accept-waiver.dto";
 import { SubmitCompanionDto } from "./dto/submit-companion.dto";
@@ -147,27 +148,28 @@ export class EventsController {
     );
     const basePrice = event.nonMemberPrice ?? 0;
     const companionPrice = event.companionPrice ?? Math.round(basePrice * 0.5);
-    const isLegend = membershipLevel === "Legend";
-    return {
-      event: {
-        slug: event.slug,
-        title: event.title,
-        date: event.date,
-        location: event.location,
-        nonMemberPrice: basePrice,
-        membersFree: event.membersFree,
-        maxCapacity: event.maxCapacity,
-        registeredCount: event.registeredCount,
-      },
-      pricing: {
-        memberSolo: 0,
-        memberCompanion: companionPrice,
-        nonMemberSolo: basePrice,
-        nonMemberCompanion: basePrice + companionPrice,
-      },
-      isLegend,
-      registration,
-    };
+const isMember = MEMBER_LEVELS.has(membershipLevel ?? "");
+      return {
+        event: {
+          slug: event.slug,
+          title: event.title,
+          date: event.date,
+          location: event.location,
+          nonMemberPrice: basePrice,
+          membersFree: event.membersFree,
+          maxCapacity: event.maxCapacity,
+          registeredCount: event.registeredCount,
+        },
+        pricing: {
+          memberSolo: 0,
+          memberCompanion: companionPrice,
+          nonMemberSolo: basePrice,
+          nonMemberCompanion: basePrice + companionPrice,
+        },
+        isLegend: membershipLevel === "Legend",
+        isMember,
+        registration,
+      };
   }
 
   @Get("my-registrations")
