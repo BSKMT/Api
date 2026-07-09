@@ -13,12 +13,7 @@ import {
 import { EventCategory, EventStatus } from "../../events/schemas/event.schema";
 
 export class UpdateEventDto {
-  @IsString()
-  @MinLength(2)
-  @MaxLength(120)
-  @IsOptional()
-  slug?: string;
-
+  // A-7: slug removed — slug is the identifier, cannot be changed via update
   @IsString()
   @MinLength(2)
   @MaxLength(200)

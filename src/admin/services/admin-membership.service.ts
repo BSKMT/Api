@@ -55,7 +55,7 @@ export class AdminMembershipService {
     if (filters.userId) filter.userId = filters.userId;
     if (filters.isRenewal !== undefined) filter.isRenewal = filters.isRenewal;
 
-    const limit = filters.limit ?? 50;
+    const limit = Math.min(Math.max(filters.limit ?? 50, 1), 100);
     const page = filters.page ?? 1;
     const skip = (page - 1) * limit;
 
@@ -99,7 +99,7 @@ export class AdminMembershipService {
       filter.membershipExpired = true;
     }
 
-    const limit = filters.limit ?? 50;
+    const limit = Math.min(Math.max(filters.limit ?? 50, 1), 100);
     const page = filters.page ?? 1;
     const skip = (page - 1) * limit;
 

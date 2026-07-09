@@ -82,7 +82,8 @@ export class NotificationsService {
   ): Promise<NotificationDocument[]> {
     const filter: Record<string, unknown> = { userId };
     if (opts.onlyUnread) filter["read"] = false;
-    const limit = Math.min(opts.limit ?? 50, 100);
+    // M-6: Clamp limit to [1, 100] to prevent limit=-1 (no-limit Mongo)
+    const limit = Math.min(Math.max(opts.limit ?? 50, 1), 100);
     return this.notificationModel
       .find(filter)
       .sort({ createdAt: -1 })

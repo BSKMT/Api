@@ -16,12 +16,7 @@ import {
 } from "../../events/schemas/course.schema";
 
 export class UpdateCourseDto {
-  @IsString()
-  @MinLength(2)
-  @MaxLength(120)
-  @IsOptional()
-  slug?: string;
-
+  // A-7: slug removed — slug is the identifier, cannot be changed via update
   @IsString()
   @MinLength(2)
   @MaxLength(200)

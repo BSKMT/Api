@@ -40,7 +40,9 @@ export class EventsController {
   @Throttle({ long: { ttl: 60000, limit: 30 } })
   @Get("upcoming")
   async getUpcomingEvents(@Query("limit") limit?: string) {
-    const parsedLimit = limit ? Number.parseInt(limit, 10) : 6;
+    // M-2: Clamp pagination to prevent DoS via massive limit values
+    const raw = limit ? Number.parseInt(limit, 10) : 6;
+    const parsedLimit = Math.min(Math.max(Number.isFinite(raw) ? raw : 6, 1), 100);
     return this.eventsService.getUpcomingEvents(parsedLimit);
   }
 
@@ -48,7 +50,8 @@ export class EventsController {
   @Throttle({ long: { ttl: 60000, limit: 30 } })
   @Get("featured")
   async getFeaturedEvents(@Query("limit") limit?: string) {
-    const parsedLimit = limit ? Number.parseInt(limit, 10) : 3;
+    const raw = limit ? Number.parseInt(limit, 10) : 3;
+    const parsedLimit = Math.min(Math.max(Number.isFinite(raw) ? raw : 3, 1), 100);
     return this.eventsService.getFeaturedEvents(parsedLimit);
   }
 
