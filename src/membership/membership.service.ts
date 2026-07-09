@@ -258,11 +258,18 @@ export class MembershipService {
       totalAmount,
     );
     const remainingAmount = totalAmount - creditUsedAmount;
-    const newUsedAmount = credit.usedAmount + creditUsedAmount;
-    await this.usersService.updatePartialPaymentCredit(userId, {
-      ...credit,
-      usedAmount: newUsedAmount,
-    });
+
+    // A-3: Use atomic $inc with optimistic locking on expectedUsedAmount
+    const updated = await this.usersService.incrementPartialPaymentCreditUsedAmount(
+      userId,
+      creditUsedAmount,
+      credit.usedAmount,
+    );
+    if (!updated) {
+      throw new ConflictException(
+        "Conflicto al aplicar crédito: tu saldo fue modificado. Intenta de nuevo.",
+      );
+    }
 
     const timestamp = Date.now();
     const shortUserId = userId.slice(-8);
@@ -1228,7 +1235,7 @@ export class MembershipService {
     });
 
     this.logger.log(
-      `Credit choice processed: user=${userId} choice=${dto.choice} amount=${availableAmount}`,
+      `Credit choice processed: user=${maskUserId(userId)} choice=${dto.choice} amount=${maskAmount(availableAmount)}`,
     );
 
     return {
@@ -1280,11 +1287,17 @@ export class MembershipService {
       );
     }
 
-    const newUsedAmount = credit.usedAmount + dto.amount;
-    await this.usersService.updatePartialPaymentCredit(userId, {
-      ...credit,
-      usedAmount: newUsedAmount,
-    });
+    // A-3/A-4: Use atomic $inc with optimistic locking on expectedUsedAmount
+    const updated = await this.usersService.incrementPartialPaymentCreditUsedAmount(
+      userId,
+      dto.amount,
+      credit.usedAmount,
+    );
+    if (!updated) {
+      throw new ConflictException(
+        "Conflicto al usar crédito: tu saldo fue modificado. Intenta de nuevo.",
+      );
+    }
 
     const timestamp = Date.now();
     const shortUserId = userId.slice(-8);
@@ -1299,7 +1312,7 @@ export class MembershipService {
     });
 
     this.logger.log(
-      `Credit used: user=${userId} amount=${dto.amount} source=${dto.creditSource} remaining=${availableAmount - dto.amount}`,
+      `Credit used: user=${maskUserId(userId)} amount=${maskAmount(dto.amount)} source=${dto.creditSource} remaining=${maskAmount(availableAmount - dto.amount)}`,
     );
 
     return {
@@ -1399,7 +1412,7 @@ export class MembershipService {
     });
 
     this.logger.log(
-      `Refund requested: user=${userId} amount=${credit.amount} ref=${reference}`,
+      `Refund requested: user=${maskUserId(userId)} amount=${maskAmount(credit.amount)} ref=${maskReference(reference)}`,
     );
 
     return {

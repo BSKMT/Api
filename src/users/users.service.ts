@@ -227,6 +227,26 @@ export class UsersService {
     );
   }
 
+  /**
+   * Atomically increment partialPaymentCredit.usedAmount by `increment`,
+   * only if the current usedAmount matches `expectedUsedAmount` (optimistic lock).
+   * Returns the updated document or null if the precondition failed.
+   */
+  async incrementPartialPaymentCreditUsedAmount(
+    userId: string,
+    increment: number,
+    expectedUsedAmount: number,
+  ): Promise<UserDocument | null> {
+    return this.userModel.findOneAndUpdate(
+      {
+        _id: userId,
+        "partialPaymentCredit.usedAmount": expectedUsedAmount,
+      },
+      { $inc: { "partialPaymentCredit.usedAmount": increment } },
+      { new: true },
+    );
+  }
+
   async createPartialPaymentCredit(
     userId: string,
     amount: number,

@@ -1,4 +1,4 @@
-import { IsString, IsIn, IsNumber, Min } from "class-validator";
+import { IsString, IsIn, IsNumber, Min, MaxLength, IsOptional } from "class-validator";
 
 export class UseCreditDto {
   @IsString()
@@ -10,5 +10,7 @@ export class UseCreditDto {
   amount!: number;
 
   @IsString()
+  @IsOptional()
+  @MaxLength(500)
   description?: string;
 }
