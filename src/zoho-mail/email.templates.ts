@@ -4,12 +4,21 @@
  * alineado con la identidad visual de BSK Motorcycle Team.
  */
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;");
+}
+
 const SHELL = (title: string, body: string): string => `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${title}</title>
+  <title>${escapeHtml(title)}</title>
 </head>
 <body style="margin:0;padding:0;background-color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8fafc;padding:32px 0;">
@@ -40,11 +49,11 @@ const SHELL = (title: string, body: string): string => `<!DOCTYPE html>
 </html>`;
 
 const HEADING = (text: string): string =>
-  `<h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#0f172a;">${text}</h1>`;
+  `<h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#0f172a;">${escapeHtml(text)}</h1>`;
 const PARAGRAPH = (text: string): string =>
-  `<p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#334155;">${text}</p>`;
+  `<p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#334155;">${escapeHtml(text)}</p>`;
 const META_ROW = (label: string, value: string): string =>
-  `<tr><td style="padding:6px 12px;font-size:13px;font-weight:600;color:#0f172a;background:#f1f5f9;border:1px solid #e2e8f0;white-space:nowrap;">${label}</td><td style="padding:6px 12px;font-size:13px;color:#334155;border:1px solid #e2e8f0;">${value}</td></tr>`;
+  `<tr><td style="padding:6px 12px;font-size:13px;font-weight:600;color:#0f172a;background:#f1f5f9;border:1px solid #e2e8f0;white-space:nowrap;">${escapeHtml(label)}</td><td style="padding:6px 12px;font-size:13px;color:#334155;border:1px solid #e2e8f0;">${escapeHtml(value)}</td></tr>`;
 
 /**
  * Correo de confirmacion (auto-respuesta) para quien envia el formulario
@@ -89,7 +98,7 @@ export function contactInternalTemplate(data: {
       ${rows}
     </table>
     <p style="margin:8px 0 6px;font-size:13px;font-weight:600;color:#0f172a;">Mensaje</p>
-    <blockquote style="margin:0;padding:12px 16px;background:#f8fafc;border-left:3px solid #dc2626;font-size:14px;line-height:1.6;color:#334155;white-space:pre-wrap;">${data.message}</blockquote>`,
+    <blockquote style="margin:0;padding:12px 16px;background:#f8fafc;border-left:3px solid #dc2626;font-size:14px;line-height:1.6;color:#334155;white-space:pre-wrap;">${escapeHtml(data.message)}</blockquote>`,
   );
 }
 
@@ -113,17 +122,18 @@ export function emailVerificationTemplate(data: {
   verificationUrl: string;
 }): string {
   const heading = HEADING(`Hola ${data.name}, verifica tu correo`);
+  const safeUrl = escapeHtml(data.verificationUrl);
   return SHELL(
     "Verifica tu correo electronico",
     `${heading}
     ${PARAGRAPH("Has creado una cuenta en BSK Motorcycle Team. Confirma tu direccion de correo electronico para activar tu cuenta y acceder al panel de miembro.")}
     <p style="margin:24px 0;">
-      <a href="${data.verificationUrl}" style="display:inline-block;background-color:#dc2626;color:#ffffff;font-size:14px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;padding:12px 32px;border-radius:9999px;text-decoration:none;">
+      <a href="${safeUrl}" style="display:inline-block;background-color:#dc2626;color:#ffffff;font-size:14px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;padding:12px 32px;border-radius:9999px;text-decoration:none;">
         Verificar correo
       </a>
     </p>
     ${PARAGRAPH("Si no puedes ver el boton, copia y pega el siguiente enlace en tu navegador:")}
-    <p style="margin:8px 0 0;font-size:13px;line-height:1.5;color:#64748b;word-break:break-all;">${data.verificationUrl}</p>
+    <p style="margin:8px 0 0;font-size:13px;line-height:1.5;color:#64748b;word-break:break-all;">${safeUrl}</p>
     ${PARAGRAPH("Si no creaste una cuenta en BSK Motorcycle Team, puedes ignorar este correo de forma segura.")}`,
   );
 }
@@ -137,17 +147,18 @@ export function passwordResetTemplate(data: {
   resetUrl: string;
 }): string {
   const heading = HEADING(`Hola ${data.name}`);
+  const safeUrl = escapeHtml(data.resetUrl);
   return SHELL(
     "Restablece tu contrasena",
     `${heading}
     ${PARAGRAPH("Has solicitado restablecer tu contrasena de acceso a BSK Motorcycle Team. Haz clic en el siguiente boton para establecer una nueva contrasena:")}
     <p style="margin:24px 0;">
-      <a href="${data.resetUrl}" style="display:inline-block;background-color:#dc2626;color:#ffffff;font-size:14px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;padding:12px 32px;border-radius:9999px;text-decoration:none;">
+      <a href="${safeUrl}" style="display:inline-block;background-color:#dc2626;color:#ffffff;font-size:14px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;padding:12px 32px;border-radius:9999px;text-decoration:none;">
         Restablecer contrasena
       </a>
     </p>
     ${PARAGRAPH("Si no puedes ver el boton, copia y pega el siguiente enlace en tu navegador:")}
-    <p style="margin:8px 0 0;font-size:13px;line-height:1.5;color:#64748b;word-break:break-all;">${data.resetUrl}</p>
+    <p style="margin:8px 0 0;font-size:13px;line-height:1.5;color:#64748b;word-break:break-all;">${safeUrl}</p>
     ${PARAGRAPH("Este enlace expirara en 1 hora por razones de seguridad. Si no solicitaste este cambio, puedes ignorar este correo de forma segura.")}`,
   );
 }
