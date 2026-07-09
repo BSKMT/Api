@@ -4,10 +4,15 @@ import {
   IsOptional,
   MinLength,
   MaxLength,
+  Matches,
 } from "class-validator";
 
 export class SubmitCompanionDto {
   @IsString()
+  @Matches(/^[a-z0-9-]+$/, {
+    message: "eventSlug contiene caracteres no válidos",
+  })
+  @MaxLength(200)
   eventSlug!: string;
 
   @IsString()

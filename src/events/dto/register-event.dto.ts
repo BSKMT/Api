@@ -1,7 +1,11 @@
-import { IsString, IsIn } from "class-validator";
+import { IsString, IsIn, Matches, MaxLength } from "class-validator";
 
 export class RegisterEventDto {
   @IsString()
+  @Matches(/^[a-z0-9-]+$/, {
+    message: "eventSlug contiene caracteres no válidos",
+  })
+  @MaxLength(200)
   eventSlug!: string;
 
   @IsString()

@@ -20,6 +20,8 @@ import { EventsService } from "./events.service";
 import { RegisterEventDto } from "./dto/register-event.dto";
 import { AcceptWaiverDto } from "./dto/accept-waiver.dto";
 import { SubmitCompanionDto } from "./dto/submit-companion.dto";
+import { ConfirmEventDto } from "./dto/confirm-event.dto";
+import { CancelEventDto } from "./dto/cancel-event.dto";
 
 interface AuthenticatedRequest extends Request {
   user: { userId: string; email?: string };
@@ -84,18 +86,19 @@ export class EventsController {
   }
 
   @Post("confirm")
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   async confirmRegistration(
     @Req() req: AuthenticatedRequest,
-    @Body("eventSlug") eventSlug: string,
+    @Body() dto: ConfirmEventDto,
   ) {
     const { userId } = req.user;
-    return this.eventsService.confirmRegistration(userId, eventSlug);
+    return this.eventsService.confirmRegistration(userId, dto.eventSlug);
   }
 
   @Post("waiver")
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   async acceptWaiver(
     @Req() req: AuthenticatedRequest,
-    @Body("eventSlug") eventSlug: string,
     @Body() dto: AcceptWaiverDto,
   ) {
     if (!dto.waiverAccepted) {
@@ -104,17 +107,17 @@ export class EventsController {
       );
     }
     const { userId } = req.user;
-    return this.eventsService.acceptWaiver(userId, eventSlug);
+    return this.eventsService.acceptWaiver(userId, dto.eventSlug);
   }
 
   @Post("companion")
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   async submitCompanion(
     @Req() req: AuthenticatedRequest,
-    @Body("eventSlug") eventSlug: string,
     @Body() dto: SubmitCompanionDto,
   ) {
     const { userId } = req.user;
-    return this.eventsService.submitCompanionData(userId, eventSlug, dto);
+    return this.eventsService.submitCompanionData(userId, dto.eventSlug, dto);
   }
 
   @Get("registration/:eventSlug")
@@ -174,11 +177,12 @@ export class EventsController {
   }
 
   @Post("cancel")
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   async cancelRegistration(
     @Req() req: AuthenticatedRequest,
-    @Body("eventSlug") eventSlug: string,
+    @Body() dto: CancelEventDto,
   ) {
     const { userId } = req.user;
-    return this.eventsService.cancelRegistration(userId, eventSlug);
+    return this.eventsService.cancelRegistration(userId, dto.eventSlug);
   }
 }

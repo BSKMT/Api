@@ -9,11 +9,15 @@ import {
   UseGuards,
   BadRequestException,
 } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import type { Request } from "express";
 import { Public } from "../common/decorators";
 import { SessionGuard } from "../auth/session.guard";
 import { UsersService } from "../users/users.service";
 import { EventsService } from "./events.service";
+import { EnrollCourseDto } from "./dto/enroll-course.dto";
+import { CancelCourseDto } from "./dto/cancel-course.dto";
+import { UpdateProgressDto } from "./dto/update-progress.dto";
 
 interface AuthenticatedRequest extends Request {
   user: { userId: string; email?: string };
@@ -45,16 +49,17 @@ export class CoursesController {
 
   @UseGuards(SessionGuard)
   @Post("enroll")
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   async enrollInCourse(
     @Req() req: AuthenticatedRequest,
-    @Body("courseSlug") courseSlug: string,
+    @Body() dto: EnrollCourseDto,
   ) {
     const { userId } = req.user;
     const fullUser = await this.usersService.findById(userId);
     const membershipLevel = fullUser?.membershipLevel ?? null;
     const result = await this.eventsService.enrollInCourse(
       userId,
-      courseSlug,
+      dto.courseSlug,
       membershipLevel,
     );
     return {
@@ -70,26 +75,27 @@ export class CoursesController {
 
   @UseGuards(SessionGuard)
   @Post("cancel")
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   async cancelEnrollment(
     @Req() req: AuthenticatedRequest,
-    @Body("courseSlug") courseSlug: string,
+    @Body() dto: CancelCourseDto,
   ) {
     const { userId } = req.user;
-    return this.eventsService.cancelCourseEnrollment(userId, courseSlug);
+    return this.eventsService.cancelCourseEnrollment(userId, dto.courseSlug);
   }
 
   @UseGuards(SessionGuard)
   @Post("progress")
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
   async updateProgress(
     @Req() req: AuthenticatedRequest,
-    @Body("courseSlug") courseSlug: string,
-    @Body("progress") progress: number,
+    @Body() dto: UpdateProgressDto,
   ) {
     const { userId } = req.user;
     return this.eventsService.updateCourseProgress(
       userId,
-      courseSlug,
-      Number(progress),
+      dto.courseSlug,
+      dto.progress,
     );
   }
 
