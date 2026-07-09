@@ -42,10 +42,24 @@ export class MembershipExpirationService {
       gracePeriodEnd.setMonth(gracePeriodEnd.getMonth() + 1);
 
       for (const member of expiredMembers) {
-        await this.userModel.updateOne(
-          { _id: member._id },
+        // M-8: Atomic precondition check — only start grace period if
+        //       not renewed/refreshed between find() and updateOne()
+        const updateResult = await this.userModel.findOneAndUpdate(
+          {
+            _id: member._id,
+            membershipExpired: false,
+            membershipGracePeriodEnd: null,
+            membershipExpiryDate: { $lt: now },
+          },
           { membershipGracePeriodEnd: gracePeriodEnd },
+          { new: true },
         );
+        if (!updateResult) {
+          this.logger.log(
+            `Skipping grace period for ${String(member._id)} — membership state changed between find and update.`,
+          );
+          continue;
+        }
 
         this.logger.log(
           `Grace period started for user ${String(member._id)}. Ends: ${gracePeriodEnd.toISOString()}`,
@@ -84,8 +98,14 @@ export class MembershipExpirationService {
         if (hasPartialRenewal) {
           const creditAmount = partialRenewalCount * INSTALLMENT_AMOUNT;
 
-          await this.userModel.updateOne(
-            { _id: member._id },
+          // M-8: Atomic precondition check — only revoke if not refreshed between
+          //       find() and updateOne (prevents cron from destroying active renewal)
+          const updateResult = await this.userModel.findOneAndUpdate(
+            {
+              _id: member._id,
+              membershipExpired: false,
+              membershipGracePeriodEnd: { $lt: now },
+            },
             {
               role: UserRole.USER,
               membershipLevel: null,
@@ -109,7 +129,14 @@ export class MembershipExpirationService {
                 notes: `Crédito generado por ${partialRenewalCount} cuotas de renovación no completadas. El usuario debe elegir: crédito para membresía, crédito para servicios, o reembolso.`,
               },
             },
+            { new: true },
           );
+          if (!updateResult) {
+            this.logger.log(
+              `Skipping expiration for ${String(member._id)} — membership was renewed between find and update.`,
+            );
+            continue;
+          }
 
           this.logger.log(
             `User ${String(member._id)} reverted to user role. ${partialRenewalCount} renewal installments converted to pending credit (${creditAmount} COP). User must choose: membership credit, service credit, or refund.`,
@@ -128,8 +155,13 @@ export class MembershipExpirationService {
             emailTo: member.email,
           });
         } else {
-          await this.userModel.updateOne(
-            { _id: member._id },
+          // M-8: Same atomic precondition guard
+          const updateResult = await this.userModel.findOneAndUpdate(
+            {
+              _id: member._id,
+              membershipExpired: false,
+              membershipGracePeriodEnd: { $lt: now },
+            },
             {
               role: UserRole.USER,
               membershipLevel: null,
@@ -141,7 +173,14 @@ export class MembershipExpirationService {
               membershipExpired: true,
               renewalInstallmentsPaid: 0,
             },
+            { new: true },
           );
+          if (!updateResult) {
+            this.logger.log(
+              `Skipping expiration for ${String(member._id)} — membership was renewed between find and update.`,
+            );
+            continue;
+          }
 
           this.logger.log(
             `User ${String(member._id)} reverted to user role after grace period expiration`,
