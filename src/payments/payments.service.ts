@@ -315,7 +315,18 @@ export class PaymentsService {
       );
     }
 
-    const amount = dto.amount ?? Number.parseInt(dto.tier, 10);
+    const order = await this.shopService.getOrderByOrderNumber(
+      orderNumber,
+      userId,
+      true,
+    );
+    if (!order) {
+      throw new NotFoundException(
+        "Orden no encontrada, no te pertenece, o ya fue pagada",
+      );
+    }
+
+    const amount = order.total;
     if (Number.isNaN(amount) || amount < 0) {
       throw new BadRequestException("Monto de pago inválido");
     }

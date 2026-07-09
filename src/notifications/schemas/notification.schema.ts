@@ -13,6 +13,7 @@ export enum NotificationType {
   MEMBERSHIP_REVOKED = "membership_revoked",
   PAYMENT_APPROVED = "payment_approved",
   PAYMENT_REJECTED = "payment_rejected",
+  ACCOUNT_DELETION_REJECTED = "account_deletion_rejected",
 }
 
 export enum NotificationPriority {

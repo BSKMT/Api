@@ -192,6 +192,17 @@ export class ShopService {
     return this.orderModel.find({ userId }).sort({ createdAt: -1 }).lean();
   }
 
+  async getOrderByOrderNumber(
+    orderNumber: string,
+  userId?: string,
+  mustBePending = false,
+  ): Promise<OrderDocument | null> {
+    const filter: Record<string, unknown> = { orderNumber };
+    if (userId) filter.userId = userId;
+    if (mustBePending) filter.status = OrderStatus.PENDING;
+    return this.orderModel.findOne(filter).lean();
+  }
+
   async cancelOrder(
     userId: string,
     orderNumber: string,
