@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
+import * as crypto from "node:crypto";
 import {
   EventRegistration,
   EventRegistrationDocument,
@@ -279,7 +280,7 @@ export class EventsService {
         `Auto-confirmed after payment: user=${userId} event=${eventSlug}`,
       );
     } catch {
-      this.logger.log(
+      this.logger.warn(
         `Auto-confirm skipped (prerequisites pending): user=${userId} event=${eventSlug}`,
       );
     }
@@ -555,9 +556,14 @@ export class EventsService {
     enrollment.progress = Math.min(100, Math.max(0, progress));
 
     if (enrollment.progress === 100 && !enrollment.completedAt) {
+      if (!enrollment.paymentConfirmed) {
+        throw new BadRequestException(
+          "No puedes completar el curso sin un pago confirmado",
+        );
+      }
       enrollment.status = "COMPLETED";
       enrollment.completedAt = new Date();
-      enrollment.certificateId = `BSK-${courseSlug.toUpperCase().slice(0, 3)}-${Date.now().toString(36)}`;
+      enrollment.certificateId = `BSK-${courseSlug.toUpperCase().slice(0, 3)}-${crypto.randomUUID()}`;
     }
 
     return enrollment.save();
