@@ -27,6 +27,14 @@ export interface CoursePricing {
   requiresPayment: boolean;
 }
 
+export const MEMBER_LEVELS = new Set([
+  "Legend",
+  "Friend",
+  "Rider",
+  "Expert",
+  "Master",
+]);
+
 @Injectable()
 export class EventsService {
   private readonly logger = new Logger(EventsService.name);
@@ -47,6 +55,17 @@ export class EventsService {
     dto: RegisterEventDto,
     membershipLevel: string | null,
   ): Promise<EventRegistrationDocument> {
+    // A-2: Verify the event exists and is PUBLISHED
+    const event = await this.eventModel.findOne({ slug: dto.eventSlug });
+    if (!event) {
+      throw new NotFoundException("Evento no encontrado");
+    }
+    if (event.status !== EventStatus.PUBLISHED) {
+      throw new BadRequestException(
+        "El evento no está disponible para registro",
+      );
+    }
+
     const existing = await this.eventRegistrationModel.findOne({
       userId,
       eventSlug: dto.eventSlug,
@@ -58,11 +77,12 @@ export class EventsService {
 
     let membershipStatus: string;
 
-    if (membershipLevel === "Legend" && dto.registrationType === "managed") {
+    // A-16: Use MEMBER_LEVELS consistently with courses
+    if (MEMBER_LEVELS.has(membershipLevel ?? "") && dto.registrationType === "managed") {
       membershipStatus = "active-member";
     } else if (
       dto.registrationType === "managed" &&
-      membershipLevel !== "Legend"
+      !MEMBER_LEVELS.has(membershipLevel ?? "")
     ) {
       membershipStatus = "non-member-paid";
     } else {
@@ -87,10 +107,8 @@ export class EventsService {
       existing.transactionReference = null;
       existing.companionData = null;
       const saved = await existing.save();
-      await this.eventModel.updateOne(
-        { slug: dto.eventSlug },
-        { $inc: { registeredCount: 1 } },
-      );
+      // A-10: Atomic counter increment with capacity check
+      await this.incrementEventRegisteredCount(dto.eventSlug, event);
       this.logger.log(
         `Event re-registration after cancellation: user=${userId} event=${dto.eventSlug} status=${status}`,
       );
@@ -108,14 +126,54 @@ export class EventsService {
     });
 
     const saved = await registration.save();
-    await this.eventModel.updateOne(
-      { slug: dto.eventSlug },
-      { $inc: { registeredCount: 1 } },
-    );
+    // A-10/A-1: Atomic counter increment with capacity check
+    try {
+      await this.incrementEventRegisteredCount(dto.eventSlug, event);
+    } catch (err) {
+      // Race condition: capacity was reached between our check and the increment.
+      // Rollback the registration to maintain consistency.
+      await this.eventRegistrationModel.deleteOne({ _id: saved._id }).exec();
+      throw err;
+    }
     this.logger.log(
       `Event registration: user=${userId} event=${dto.eventSlug} status=${status}`,
     );
     return saved;
+  }
+
+  /**
+   * Atomically increment registeredCount if capacity allows.
+   * Throws BadRequestException if capacity is exceeded.
+   */
+  private async incrementEventRegisteredCount(
+    eventSlug: string,
+    event: { maxCapacity?: number | null },
+  ): Promise<void> {
+    const maxCap = event.maxCapacity;
+    let updateResult;
+
+    if (maxCap != null && maxCap > 0) {
+      updateResult = await this.eventModel.findOneAndUpdate(
+        {
+          slug: eventSlug,
+          $expr: {
+            $lt: [{ $ifNull: ["$registeredCount", 0] }, maxCap],
+          },
+        },
+        { $inc: { registeredCount: 1 } },
+        { new: true },
+      );
+      if (!updateResult) {
+        throw new BadRequestException(
+          "El evento ha alcanzado su capacidad máxima",
+        );
+      }
+    } else {
+      await this.eventModel.updateOne(
+        { slug: eventSlug },
+        { $inc: { registeredCount: 1 } },
+      );
+    }
   }
 
   async confirmRegistration(
@@ -370,25 +428,29 @@ export class EventsService {
     userId: string,
     eventSlug: string,
   ): Promise<{ message: string }> {
-    const registration = await this.eventRegistrationModel.findOne({
-      userId,
-      eventSlug,
-    });
+    // A-10: Use atomic findOneAndUpdate with status guard to prevent
+    //       double-decrement race conditions.
+    const registration = await this.eventRegistrationModel.findOneAndUpdate(
+      { userId, eventSlug, status: { $ne: "CANCELLED" } },
+      { status: "CANCELLED", confirmedAt: null },
+      { new: true },
+    );
 
     if (!registration) {
-      throw new NotFoundException("Registro no encontrado");
-    }
-
-    if (registration.status === "CANCELLED") {
+      // Could be not found, or already cancelled. Distinguish:
+      const exists = await this.eventRegistrationModel.findOne({
+        userId,
+        eventSlug,
+      });
+      if (!exists) {
+        throw new NotFoundException("Registro no encontrado");
+      }
       throw new BadRequestException("El registro ya está cancelado");
     }
 
-    registration.status = "CANCELLED";
-    registration.confirmedAt = null;
-    await registration.save();
-
-    await this.eventModel.updateOne(
-      { slug: eventSlug },
+    // A-10: Atomic decrement guard prevents going below 0
+    await this.eventModel.findOneAndUpdate(
+      { slug: eventSlug, registeredCount: { $gt: 0 } },
       { $inc: { registeredCount: -1 } },
     );
 
@@ -456,12 +518,7 @@ export class EventsService {
     },
     membershipLevel: string | null,
   ): CoursePricing {
-    const isMember =
-      membershipLevel === "Legend" ||
-      membershipLevel === "Friend" ||
-      membershipLevel === "Rider" ||
-      membershipLevel === "Expert" ||
-      membershipLevel === "Master";
+    const isMember = MEMBER_LEVELS.has(membershipLevel ?? "");
 
     const basePrice = course.nonMemberPrice ?? 0;
 
@@ -507,24 +564,27 @@ export class EventsService {
     userId: string,
     courseSlug: string,
   ): Promise<{ message: string }> {
-    const enrollment = await this.courseEnrollmentModel.findOne({
-      userId,
-      courseSlug,
-    });
+    // A-10: Atomic findOneAndUpdate with status guard
+    const enrollment = await this.courseEnrollmentModel.findOneAndUpdate(
+      { userId, courseSlug, status: { $ne: "CANCELLED" } },
+      { status: "CANCELLED" },
+      { new: true },
+    );
 
     if (!enrollment) {
-      throw new NotFoundException("Inscripción no encontrada");
-    }
-
-    if (enrollment.status === "CANCELLED") {
+      const exists = await this.courseEnrollmentModel.findOne({
+        userId,
+        courseSlug,
+      });
+      if (!exists) {
+        throw new NotFoundException("Inscripción no encontrada");
+      }
       throw new BadRequestException("La inscripción ya está cancelada");
     }
 
-    enrollment.status = "CANCELLED";
-    await enrollment.save();
-
-    await this.courseModel.updateOne(
-      { slug: courseSlug },
+    // A-10: Atomic decrement guard prevents going below 0
+    await this.courseModel.findOneAndUpdate(
+      { slug: courseSlug, enrolledCount: { $gt: 0 } },
       { $inc: { enrolledCount: -1 } },
     );
 
