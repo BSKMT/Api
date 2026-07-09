@@ -93,14 +93,21 @@ export class UsersService {
     if (!UpdateProfileSectionDto.isValidSectionId(sectionId)) {
       throw new BadRequestException(`Sección inválida: ${sectionId}`);
     }
-    const sanitizedData = UpdateProfileSectionDto.sanitize(sectionData);
+    // A-12: pass sectionId to apply per-section forbidden keys (e.g., numeroMiembro)
+    const sanitizedData = UpdateProfileSectionDto.sanitize(sectionData, sectionId);
     const user = await this.userModel.findById(userId);
     if (!user) {
       throw new NotFoundException("Usuario no encontrado");
     }
 
     const profile = user.profile ?? {};
-    profile[sectionId] = sanitizedData;
+    // A-12: For membresia-ecosistema, merge with existing data to preserve numeroMiembro
+    if (sectionId === "membresia-ecosistema") {
+      const existing = (profile[sectionId] as Record<string, unknown> | undefined) ?? {};
+      profile[sectionId] = { ...existing, ...sanitizedData };
+    } else {
+      profile[sectionId] = sanitizedData;
+    }
 
     const completedSections = [...(user.completedSections ?? [])];
     if (!completedSections.includes(sectionId)) {

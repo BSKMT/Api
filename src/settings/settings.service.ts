@@ -172,8 +172,10 @@ export class SettingsService {
     const settings = user.settings ?? {};
     for (const key of ["notifications", "privacy", "appearance", "dashboard"]) {
       if (dto[key]) {
+        // M-12: pass section name to apply per-section whitelist
         const incoming = UpdateSettingsDto.sanitize(
           dto[key] as Record<string, unknown>,
+          key,
         );
         settings[key] = {
           ...(settings[key] as Record<string, unknown>),
