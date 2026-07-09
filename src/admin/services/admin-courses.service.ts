@@ -93,9 +93,7 @@ export class AdminCoursesService {
     slug: string,
     dto: UpdateCourseDto,
   ): Promise<CourseDocument> {
-    // A-7: Defense-in-depth — never allow slug change on update
     const updateFields = { ...dto };
-    delete updateFields.slug;
     const updated = await this.courseModel.findOneAndUpdate(
       { slug },
       { $set: updateFields },
