@@ -110,11 +110,44 @@ export class LoginOtpService {
         ? "https://api.bskmt.com"
         : "http://localhost:3000");
 
+    /**
+     * Origin confiable para la petición server-to-server a Better Auth.
+     *
+     * Node.js `fetch` (undici) añade automáticamente `Sec-Fetch-Mode: cors`
+     * a toda petición saliente. Better Auth interpreta la presencia de
+     * cualquier cabecera Sec-Fetch-* como indicador de una petición
+     * iniciada por el navegador y, en consecuencia, fuerza la validación
+     * del Origin (`validateOrigin(ctx, true)` en `origin-check.mjs`).
+     * Si el Origin falta, Better Auth devuelve `403 MISSING_OR_NULL_ORIGIN`,
+     * que el LoginOtpService convierte en el 401 genérico
+     * "No se pudo iniciar sesión. Verifica tus credenciales."
+     *
+     * Este Origin debe ser:
+     *   1. Confiable para el middleware CSRF de NestJS (`allowedOrigins`
+     *      en `main.ts`, que incluye `CORS_ORIGIN`).
+     *   2. Confiable para Better Auth (`trustedOrigins` en `better-auth.ts`,
+     *      que lista explícitamente `https://bskmt.com`).
+     *
+     * Usamos `CORS_ORIGIN` (con `LANDING_PAGE_URL` como respaldo) porque
+     * ambas capas de seguridad ya lo aceptan. No usamos `baseUrl` (la
+     * propia URL de la API) porque el middleware CSRF de NestJS no lo
+     * incluye en `allowedOrigins`.
+     */
+    const trustedOrigin =
+      process.env.CORS_ORIGIN ??
+      process.env.LANDING_PAGE_URL ??
+      (process.env.NODE_ENV === "production"
+        ? "https://bskmt.com"
+        : "http://localhost:4321");
+
     let apiResponse: Response;
     try {
       apiResponse = await fetch(`${baseUrl}/api/auth/sign-in/email`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Origin: trustedOrigin,
+        },
         body: JSON.stringify({ email, password, rememberMe }),
       });
     } catch {
@@ -127,9 +160,16 @@ export class LoginOtpService {
     }
 
     if (!apiResponse.ok) {
-      const errorBody = (await apiResponse
-        .json()
-        .catch((): Record<string, unknown> => ({}))) as Record<string, unknown>;
+      const rawBody = await apiResponse.text().catch(() => "");
+      this.logger.warn(
+        `Better Auth /sign-in/email returned ${apiResponse.status} — body: ${rawBody.slice(0, 300)}`,
+      );
+      let errorBody: Record<string, unknown> = {};
+      try {
+        errorBody = JSON.parse(rawBody) as Record<string, unknown>;
+      } catch {
+        // rawBody is not JSON (e.g., Cloudflare block page) — leave errorBody empty
+      }
       const errorCode = errorBody["code"] as string | undefined;
       const message = errorBody["message"] as string | undefined;
 
