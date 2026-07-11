@@ -1,6 +1,7 @@
 import { Logger, ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
+import { NestExpressApplication } from "@nestjs/platform-express";
 import express, { urlencoded } from "express";
 import type { Request, Response, NextFunction } from "express";
 import * as helmet from "helmet";
@@ -20,11 +21,23 @@ interface BetterAuthNodeModule {
 const authRateLimit = new Map<string, { count: number; resetAt: number }>();
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     cors: false,
     rawBody: true,
     bodyParser: false,
   });
+
+  /**
+   * trust proxy — Necesario porque el API corre detras de Cloudflare.
+   * Sin esta configuracion, `req.ip` devuelve la IP del proxy (CF),
+   * no la IP real del cliente, lo que hace inefectivo el rate limiting
+   * del ThrottlerGuard y del rate limit interno del Better Auth handler.
+   *
+   * Valor `1` = confiar en 1 hop de proxy (Cloudflare -> origin).
+   * Ref: https://expressjs.com/en/guide/behind-proxies.html
+   *     NestJS docs: security/rate-limiting.md lines 108-153
+   */
+  app.set("trust proxy", 1);
 
   const configService = app.get(ConfigService<EnvironmentConfig>);
 
