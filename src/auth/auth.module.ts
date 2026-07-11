@@ -1,7 +1,9 @@
 import { Module, Global } from "@nestjs/common";
 import { UsersModule } from "../users/users.module";
+import { ZohoMailModule } from "../zoho-mail/zoho-mail.module";
 import { AuthController } from "./auth.controller";
 import { SessionGuard } from "./session.guard";
+import { LoginOtpModule } from "./login-otp.module";
 
 /**
  * AuthModule — Better Auth integration for NestJS.
@@ -11,7 +13,7 @@ import { SessionGuard } from "./session.guard";
  */
 @Global()
 @Module({
-  imports: [UsersModule],
+  imports: [UsersModule, ZohoMailModule, LoginOtpModule],
   controllers: [AuthController],
   providers: [SessionGuard],
   exports: [SessionGuard],

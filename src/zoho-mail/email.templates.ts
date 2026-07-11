@@ -162,3 +162,26 @@ export function passwordResetTemplate(data: {
     ${PARAGRAPH("Este enlace expirara en 1 hora por razones de seguridad. Si no solicitaste este cambio, puedes ignorar este correo de forma segura.")}`,
   );
 }
+
+/**
+ * Correo con el codigo OTP de login (verificacion por correo obligatoria).
+ * El codigo es alfanumerico de 6 caracteres y expira en 5 minutos.
+ */
+export function loginOtpTemplate(data: {
+  name: string;
+  code: string;
+  expiresInMinutes: number;
+}): string {
+  const heading = HEADING(`Hola ${data.name}`);
+  const codeHtml = escapeHtml(data.code);
+  return SHELL(
+    "Codigo de verificacion de inicio de sesion",
+    `${heading}
+    ${PARAGRAPH("Has solicitado iniciar sesion en BSK Motorcycle Team. Usa el siguiente codigo de verificacion para completar el inicio de sesion:")}
+    <div style="margin:24px 0;text-align:center;">
+      <span style="display:inline-block;font-size:32px;font-weight:700;letter-spacing:0.3em;color:#dc2626;background:#fef2f2;border:2px solid #fecaca;border-radius:12px;padding:16px 40px;font-family:'Courier New',Courier,monospace;">${codeHtml}</span>
+    </div>
+    ${PARAGRAPH(`Este codigo expirara en ${data.expiresInMinutes} minutos por razones de seguridad.`)}
+    ${PARAGRAPH("Si no solicitaste iniciar sesion, puedes ignorar este correo de forma segura. Tu cuenta esta protegida.")}`,
+  );
+}

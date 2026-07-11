@@ -22,10 +22,6 @@ interface BetterAuthCoreModule {
 interface BetterAuthMongoModule {
   mongodbAdapter: (db: unknown, opts: Record<string, unknown>) => unknown;
 }
-/** Typed shape of `better-auth/plugins`. */
-interface BetterAuthPluginsModule {
-  twoFactor: (opts: Record<string, unknown>) => unknown;
-}
 
 /* ------------------------------------------------------------------ *
  * Explicit type definitions
@@ -59,8 +55,6 @@ export interface BetterAuthUser {
   segundoApellido?: string;
   country?: string;
   birthDate?: string;
-  /** Added by the `twoFactor` plugin. */
-  twoFactorEnabled?: boolean;
 }
 
 /** Session document shape (mirrors `sessionSchema`). */
@@ -95,18 +89,6 @@ export interface AuthInstance {
       body: { currentPassword: string; newPassword: string };
       headers: AuthHeaders;
     }) => Promise<unknown>;
-    enableTwoFactor: (params: {
-      body: { password: string };
-      headers: AuthHeaders;
-    }) => Promise<unknown>;
-    verifyTwoFactorOTP: (params: {
-      body: { code: string };
-      headers: AuthHeaders;
-    }) => Promise<unknown>;
-    disableTwoFactor: (params: {
-      body: { password: string };
-      headers: AuthHeaders;
-    }) => Promise<unknown>;
   };
   options: unknown;
   $ERROR_CODES: Record<string, string>;
@@ -118,35 +100,29 @@ export interface AuthInstance {
 /** Re-typed better-auth factory — avoids deep generic inference. */
 type BetterAuthFn = (options: Record<string, unknown>) => AuthInstance;
 type MongodbAdapterFn = (db: unknown, opts: Record<string, unknown>) => unknown;
-type TwoFactorFn = (opts: Record<string, unknown>) => unknown;
-
 interface BetterAuthDeps {
   betterAuth: BetterAuthFn;
   mongodbAdapter: MongodbAdapterFn;
-  twoFactor: TwoFactorFn;
 }
 
 let depsPromise: Promise<BetterAuthDeps> | null = null;
 
 /**
- * Lazily resolve and cache the ESM-only `better-auth` factory, the
- * MongoDB adapter and the `twoFactor` plugin. Subsequent calls return
- * the same promise so the dynamic import only fires once.
+ * Lazily resolve and cache the ESM-only `better-auth` factory and the
+ * MongoDB adapter. Subsequent calls return the same promise so the
+ * dynamic import only fires once.
  */
 async function loadBetterAuthDeps(): Promise<BetterAuthDeps> {
   depsPromise ??= (async (): Promise<BetterAuthDeps> => {
-    const [coreRaw, mongoRaw, pluginsRaw] = await Promise.all([
+    const [coreRaw, mongoRaw] = await Promise.all([
       import("better-auth"),
       import("better-auth/adapters/mongodb"),
-      import("better-auth/plugins"),
     ]);
     const core = coreRaw as unknown as BetterAuthCoreModule;
     const mongoMod = mongoRaw as unknown as BetterAuthMongoModule;
-    const pluginsMod = pluginsRaw as unknown as BetterAuthPluginsModule;
     return {
       betterAuth: core.betterAuth,
       mongodbAdapter: mongoMod.mongodbAdapter,
-      twoFactor: pluginsMod.twoFactor,
     };
   })();
   return depsPromise;
@@ -198,7 +174,7 @@ export function setAuthDependencies(
 }
 
 async function initAuth(): Promise<AuthInstance> {
-  const { betterAuth, mongodbAdapter, twoFactor } = await loadBetterAuthDeps();
+  const { betterAuth, mongodbAdapter } = await loadBetterAuthDeps();
 
   const landingPageUrl =
     injectedLandingPageUrl ??
@@ -384,33 +360,30 @@ async function initAuth(): Promise<AuthInstance> {
             "http://localhost:4322",
           ],
 
-    plugins: [
-      twoFactor({
-        issuer: "BSK Motorcycle Team",
-        skipVerificationOnEnable: false,
-        otpOptions: {
-          async sendOTP({
-            user,
-            otp,
-          }: {
-            user: BetterAuthUser;
-            otp: string;
-          }): Promise<void> {
-            if (injectedEmailService) {
-              await injectedEmailService.sendNotificationEmail({
-                to: user.email,
-                title: "Codigo de verificacion BSK 2FA",
-                message: `Tu codigo de verificacion es: ${otp}. Expira en 5 minutos.`,
-              });
-            }
-          },
-        },
-      }),
-    ],
-
     databaseHooks: {
       user: {
         create: {
+          before: (user: BetterAuthUser): BetterAuthUser => {
+            const ALLOWED_DOMAINS = [
+              "outlook.com",
+              "hotmail.com",
+              "live.com",
+              "gmail.com",
+              "icloud.com",
+              "me.com",
+              "mac.com",
+              "yahoo.com",
+              "yahoo.es",
+            ];
+            const email = (user.email ?? "").toLowerCase();
+            const domain = email.split("@")[1] ?? "";
+            if (!ALLOWED_DOMAINS.includes(domain)) {
+              throw new Error(
+                "El dominio del correo no esta permitido. Usa Microsoft (outlook, hotmail, live), Google (gmail), Apple (icloud, me, mac) o Yahoo.",
+              );
+            }
+            return user;
+          },
           after: async (user: BetterAuthUser): Promise<void> => {
             try {
               const primerNombre = user.primerNombre ?? "";

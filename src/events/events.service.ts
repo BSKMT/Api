@@ -78,7 +78,10 @@ export class EventsService {
     let membershipStatus: string;
 
     // A-16: Use MEMBER_LEVELS consistently with courses
-    if (MEMBER_LEVELS.has(membershipLevel ?? "") && dto.registrationType === "managed") {
+    if (
+      MEMBER_LEVELS.has(membershipLevel ?? "") &&
+      dto.registrationType === "managed"
+    ) {
       membershipStatus = "active-member";
     } else if (
       dto.registrationType === "managed" &&

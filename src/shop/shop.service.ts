@@ -194,8 +194,8 @@ export class ShopService {
 
   async getOrderByOrderNumber(
     orderNumber: string,
-  userId?: string,
-  mustBePending = false,
+    userId?: string,
+    mustBePending = false,
   ): Promise<OrderDocument | null> {
     const filter: Record<string, unknown> = { orderNumber };
     if (userId) filter.userId = userId;

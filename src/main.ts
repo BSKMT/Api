@@ -95,9 +95,7 @@ async function bootstrap() {
     const referer = req.headers.referer;
     if (origin) {
       if (!allowedOrigins.has(origin)) {
-        return res
-          .status(403)
-          .json({ message: "Origin not allowed" });
+        return res.status(403).json({ message: "Origin not allowed" });
       }
       return next();
     }
@@ -130,7 +128,7 @@ async function bootstrap() {
   const authHandler = toNodeHandler(auth);
   app.use("/api/auth", (req: Request, res: Response, next: NextFunction) => {
     const path = req.path;
-    if (path === "/me" || path === "/me/") {
+    if (path === "/me" || path === "/me/" || path.startsWith("/login-otp/")) {
       return next();
     }
 

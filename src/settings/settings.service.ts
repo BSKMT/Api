@@ -306,7 +306,6 @@ export class SettingsService {
           emailVerified: betterAuthUser.emailVerified,
           name: betterAuthUser.name,
           createdAt: betterAuthUser.createdAt,
-          twoFactorEnabled: betterAuthUser.twoFactorEnabled ?? false,
         };
       }
     } catch {
@@ -364,58 +363,6 @@ export class SettingsService {
       }
       throw new BadRequestException(
         "No se pudo cambiar la contraseña. Inténtalo de nuevo.",
-      );
-    }
-  }
-
-  async enableTwoFactor(req: Request, password: string) {
-    const auth = await getAuth();
-    try {
-      const result = await auth.api.enableTwoFactor({
-        body: { password },
-        headers: req.headers,
-      });
-      return result;
-    } catch (err: unknown) {
-      this.logger.warn(
-        `Failed to enable 2FA: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      throw new BadRequestException(
-        "No se pudo activar 2FA. Verifica tu contraseña.",
-      );
-    }
-  }
-
-  async verifyTwoFactor(req: Request, code: string) {
-    const auth = await getAuth();
-    try {
-      const result = await auth.api.verifyTwoFactorOTP({
-        body: { code },
-        headers: req.headers,
-      });
-      return result;
-    } catch (err: unknown) {
-      this.logger.warn(
-        `Failed to verify 2FA code: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      throw new BadRequestException("Código de verificación incorrecto");
-    }
-  }
-
-  async disableTwoFactor(req: Request, password: string) {
-    const auth = await getAuth();
-    try {
-      await auth.api.disableTwoFactor({
-        body: { password },
-        headers: req.headers,
-      });
-      return { success: true, message: "2FA desactivado" };
-    } catch (err: unknown) {
-      this.logger.warn(
-        `Failed to disable 2FA: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      throw new BadRequestException(
-        "No se pudo desactivar 2FA. Verifica tu contraseña.",
       );
     }
   }

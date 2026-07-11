@@ -17,14 +17,8 @@ import type { Request, Response } from "express";
 import { SettingsService } from "./settings.service";
 import { SessionGuard } from "../auth/session.guard";
 import { UpdateSettingsDto } from "./dto/update-settings.dto";
-import {
-  ChangePasswordDto,
-  EnableTwoFactorDto,
-  VerifyTwoFactorDto,
-  DisableTwoFactorDto,
-} from "./dto/security.dto";
+import { ChangePasswordDto } from "./dto/security.dto";
 import { DeleteAccountDto } from "./dto/delete-account.dto";
-import { getAuth } from "../auth/better-auth";
 
 function getCurrentToken(req: Request): string {
   const cookies = req.headers.cookie ?? "";
@@ -54,18 +48,22 @@ export class SettingsController {
 
   @Get("sessions")
   async getSessions(@Req() req: Request) {
-    const user = (req as Request & { user: { userId: string; email: string; betterAuthId: string } })
-      .user;
+    const user = (
+      req as Request & {
+        user: { userId: string; email: string; betterAuthId: string };
+      }
+    ).user;
     const token = getCurrentToken(req);
-    return this.settingsService.getSessions(user.userId, user.betterAuthId, token);
+    return this.settingsService.getSessions(
+      user.userId,
+      user.betterAuthId,
+      token,
+    );
   }
 
   @Delete("sessions/:id")
   @HttpCode(HttpStatus.OK)
-  async revokeSession(
-    @Req() req: Request,
-    @Param("id") id: string,
-  ) {
+  async revokeSession(@Req() req: Request, @Param("id") id: string) {
     const user = (req as Request & { user: { betterAuthId: string } }).user;
     return this.settingsService.revokeSession(id, user.betterAuthId);
   }
@@ -73,10 +71,12 @@ export class SettingsController {
   @Delete("sessions")
   @HttpCode(HttpStatus.OK)
   async revokeAllOtherSessions(@Req() req: Request) {
-    const user = (req as Request & { user: { betterAuthId: string } })
-      .user;
+    const user = (req as Request & { user: { betterAuthId: string } }).user;
     const token = getCurrentToken(req);
-    return this.settingsService.revokeAllOtherSessions(user.betterAuthId, token);
+    return this.settingsService.revokeAllOtherSessions(
+      user.betterAuthId,
+      token,
+    );
   }
 
   @Post("change-password")
@@ -88,41 +88,6 @@ export class SettingsController {
       dto.currentPassword,
       dto.newPassword,
     );
-  }
-
-  @Get("2fa-status")
-  async getTwoFactorStatus(@Req() req: Request) {
-    const auth = await getAuth();
-    const session = await auth.api.getSession({
-      headers: req.headers,
-    });
-    return {
-      enabled: Boolean(session?.user?.twoFactorEnabled),
-    };
-  }
-
-  @Post("2fa/enable")
-  @Throttle({ medium: { ttl: 60000, limit: 5 } })
-  @HttpCode(HttpStatus.OK)
-  async enableTwoFactor(@Req() req: Request, @Body() dto: EnableTwoFactorDto) {
-    return this.settingsService.enableTwoFactor(req, dto.password);
-  }
-
-  @Post("2fa/verify")
-  @Throttle({ medium: { ttl: 60000, limit: 5 } })
-  @HttpCode(HttpStatus.OK)
-  async verifyTwoFactor(@Req() req: Request, @Body() dto: VerifyTwoFactorDto) {
-    return this.settingsService.verifyTwoFactor(req, dto.code);
-  }
-
-  @Post("2fa/disable")
-  @Throttle({ medium: { ttl: 60000, limit: 5 } })
-  @HttpCode(HttpStatus.OK)
-  async disableTwoFactor(
-    @Req() req: Request,
-    @Body() dto: DisableTwoFactorDto,
-  ) {
-    return this.settingsService.disableTwoFactor(req, dto.password);
   }
 
   @Post("delete-account")
