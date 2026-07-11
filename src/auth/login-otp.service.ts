@@ -9,17 +9,19 @@ import { Model } from "mongoose";
 import { randomBytes, createHash } from "crypto";
 import { LoginOtp, LoginOtpDocument } from "./schemas/login-otp.schema";
 import { EmailService } from "../zoho-mail/email.service";
+import { getAuth } from "./better-auth";
 
 /**
  * LoginOtpService — Implementa el flujo de verificación por correo obligatorio.
  *
  * Flujo:
- *  1. `initiateLogin()` — Valida las credenciales del usuario haciendo una
- *     petición server-to-server a Better Auth `/sign-in/email`. Si la
- *     autenticacion es exitosa, captura las cookies de sesion de la respuesta, las
- * almacena junto con un código alfanumérico de 6 caracteres (hasheado),
- * y envia el codigo por correo electronico. La sesion NO se entrega al
- * cliente en este punto.
+ *  1. `initiateLogin()` — Valida las credenciales del usuario llamando
+ *     **en proceso** a Better Auth `auth.api.signInEmail()` (sin HTTP
+ *     roundtrip). Si la autenticacion es exitosa, captura las cookies de
+ *     sesion de la respuesta, las almacena junto con un código
+ *     alfanumérico de 6 caracteres (hasheado), y envia el codigo por
+ *     correo electronico. La sesion NO se entrega al cliente en este
+ *     punto.
  *  2. `verifyOtp()` — Verifica el código ingresado por el usuario. Si es
  *     correcto, devuelve las cookies de sesión para que el proxy las
  *     establezca en el navegador del cliente.
@@ -75,7 +77,7 @@ export class LoginOtpService {
   }
 
   /**
-   * Captura las cookies Set-Cookie de la respuesta HTTP de Better Auth.
+   * Captura las cookies Set-Cookie de la respuesta de Better Auth.
    * Extrae `name=value` de cada Set-Cookie, descartando atributos (Path,
    * HttpOnly, etc.), para poder reconstruir las cookies en el proxy.
    */
@@ -104,71 +106,46 @@ export class LoginOtpService {
   ): Promise<{ requestId: string }> {
     const rememberMe = rememberMeStr === "true" || rememberMeStr === "1";
 
-    const baseUrl =
-      process.env.BETTER_AUTH_URL ??
-      (process.env.NODE_ENV === "production"
-        ? "https://api.bskmt.com"
-        : "http://localhost:3000");
-
     /**
-     * Origin confiable para la petición server-to-server a Better Auth.
+     * Llama a Better Auth **en proceso** (sin HTTP roundtrip) para
+     * validar credenciales y obtener las cookies de sesión.
      *
-     * Node.js `fetch` (undici) añade automáticamente `Sec-Fetch-Mode: cors`
-     * a toda petición saliente. Better Auth interpreta la presencia de
-     * cualquier cabecera Sec-Fetch-* como indicador de una petición
-     * iniciada por el navegador y, en consecuencia, fuerza la validación
-     * del Origin (`validateOrigin(ctx, true)` en `origin-check.mjs`).
-     * Si el Origin falta, Better Auth devuelve `403 MISSING_OR_NULL_ORIGIN`,
-     * que el LoginOtpService convierte en el 401 genérico
-     * "No se pudo iniciar sesión. Verifica tus credenciales."
+     * Antes se usaba `fetch(${baseUrl}/api/auth/sign-in/email)`, pero en
+     * producción esa petición salía por el proxy de Cloudflare que la
+     * bloqueaba con un challenge ("Just a moment..."), devolviendo un
+     * 403 con HTML en lugar del JSON esperado.
      *
-     * Este Origin debe ser:
-     *   1. Confiable para el middleware CSRF de NestJS (`allowedOrigins`
-     *      en `main.ts`, que incluye `CORS_ORIGIN`).
-     *   2. Confiable para Better Auth (`trustedOrigins` en `better-auth.ts`,
-     *      que lista explícitamente `https://bskmt.com`).
-     *
-     * Usamos `CORS_ORIGIN` (con `LANDING_PAGE_URL` como respaldo) porque
-     * ambas capas de seguridad ya lo aceptan. No usamos `baseUrl` (la
-     * propia URL de la API) porque el middleware CSRF de NestJS no lo
-     * incluye en `allowedOrigins`.
+     * La API en proceso `auth.api.signInEmail({ asResponse: true })`
+     * ejecuta el mismo handler pero sin red, evitando Cloudflare, el
+     * middleware CSRF (que se omite cuando no hay `request`) y los
+     * problemas con undici (`Sec-Fetch-Mode: cors`).
      */
-    const trustedOrigin =
-      process.env.CORS_ORIGIN ??
-      process.env.LANDING_PAGE_URL ??
-      (process.env.NODE_ENV === "production"
-        ? "https://bskmt.com"
-        : "http://localhost:4321");
-
-    let apiResponse: Response;
+    let authResponse: Response;
     try {
-      apiResponse = await fetch(`${baseUrl}/api/auth/sign-in/email`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Origin: trustedOrigin,
-        },
-        body: JSON.stringify({ email, password, rememberMe }),
+      const auth = await getAuth();
+      authResponse = await auth.api.signInEmail({
+        body: { email, password, rememberMe },
+        asResponse: true,
       });
-    } catch {
+    } catch (err) {
       this.logger.error(
-        "No se pudo conectar con Better Auth para validar credenciales",
+        `Better Auth signInEmail threw: ${err instanceof Error ? err.message : String(err)}`,
       );
       throw new BadRequestException(
         "Error al procesar la solicitud de inicio de sesión.",
       );
     }
 
-    if (!apiResponse.ok) {
-      const rawBody = await apiResponse.text().catch(() => "");
+    if (!authResponse.ok) {
+      const rawBody = await authResponse.text().catch(() => "");
       this.logger.warn(
-        `Better Auth /sign-in/email returned ${apiResponse.status} — body: ${rawBody.slice(0, 300)}`,
+        `Better Auth signInEmail returned ${authResponse.status} — body: ${rawBody.slice(0, 300)}`,
       );
       let errorBody: Record<string, unknown> = {};
       try {
         errorBody = JSON.parse(rawBody) as Record<string, unknown>;
       } catch {
-        // rawBody is not JSON (e.g., Cloudflare block page) — leave errorBody empty
+        // Body is not JSON — leave errorBody empty
       }
       const errorCode = errorBody["code"] as string | undefined;
       const message = errorBody["message"] as string | undefined;
@@ -176,6 +153,8 @@ export class LoginOtpService {
       if (
         errorCode === "INVALID_PASSWORD" ||
         errorCode === "INVALID_EMAIL_OR_PASSWORD" ||
+        errorCode === "USER_NOT_FOUND" ||
+        errorCode === "CREDENTIAL_ACCOUNT_NOT_FOUND" ||
         (message && /invalid|incorrect|not found/i.test(message))
       ) {
         throw new UnauthorizedException(
@@ -194,12 +173,12 @@ export class LoginOtpService {
       );
     }
 
-    const setCookieHeaders = apiResponse.headers.getSetCookie();
+    const setCookieHeaders = authResponse.headers.getSetCookie();
     const sessionCookies = JSON.stringify(
       this.extractCookies(setCookieHeaders),
     );
 
-    const body = (await apiResponse.json().catch(() => ({}))) as {
+    const body = (await authResponse.json().catch(() => ({}))) as {
       user?: { id?: string; email?: string; name?: string };
     };
     const betterAuthId = body.user?.id ?? "";
