@@ -89,6 +89,11 @@ export interface AuthInstance {
       body: { currentPassword: string; newPassword: string };
       headers: AuthHeaders;
     }) => Promise<unknown>;
+    signInEmail: (params: {
+      body: { email: string; password: string; rememberMe?: boolean };
+      asResponse?: boolean;
+      headers?: AuthHeaders;
+    }) => Promise<Response>;
   };
   options: unknown;
   $ERROR_CODES: Record<string, string>;
