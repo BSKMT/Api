@@ -97,7 +97,7 @@ export class Event {
     enum: Object.values(EventStatus),
     default: EventStatus.PUBLISHED,
   })
-  status!: string;
+  status!: EventStatus;
 
   @Prop({ default: false })
   featured!: boolean;

@@ -1,4 +1,10 @@
-import { IsString, IsOptional, IsBoolean, MaxLength, Equals } from "class-validator";
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  MaxLength,
+  Equals,
+} from "class-validator";
 
 export class DeleteAccountDto {
   @IsString()

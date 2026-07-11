@@ -35,7 +35,10 @@ export class CoursesController {
   async getAvailableCourses(@Query("limit") limit?: string) {
     // M-2: Clamp pagination
     const raw = limit ? Number.parseInt(limit, 10) : 6;
-    const parsedLimit = Math.min(Math.max(Number.isFinite(raw) ? raw : 6, 1), 100);
+    const parsedLimit = Math.min(
+      Math.max(Number.isFinite(raw) ? raw : 6, 1),
+      100,
+    );
     return this.eventsService.getAvailableCourses(parsedLimit);
   }
 

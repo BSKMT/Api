@@ -86,7 +86,12 @@ export class SessionGuard {
 
     (
       request as Request & {
-        user: { userId: string; email: string; role: string; betterAuthId: string };
+        user: {
+          userId: string;
+          email: string;
+          role: string;
+          betterAuthId: string;
+        };
       }
     ).user = {
       userId: String(mongooseUser._id),

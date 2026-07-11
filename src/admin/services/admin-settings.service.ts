@@ -69,9 +69,6 @@ export class AdminSettingsService {
     try {
       await db.collection("user").deleteOne({ id: user.betterAuthId });
       await db.collection("session").deleteMany({ userId: user.betterAuthId });
-      await db
-        .collection("twoFactor")
-        .deleteMany({ userId: user.betterAuthId });
     } catch (err) {
       this.logger.error(`Failed to delete better-auth data: ${err}`);
       throw new BadRequestException(

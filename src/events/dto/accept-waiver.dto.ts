@@ -1,4 +1,10 @@
-import { IsBoolean, Equals, IsString, Matches, MaxLength } from "class-validator";
+import {
+  IsBoolean,
+  Equals,
+  IsString,
+  Matches,
+  MaxLength,
+} from "class-validator";
 
 export class AcceptWaiverDto {
   @IsString()

@@ -37,6 +37,11 @@ import { ZohoMailModule } from "./zoho-mail/zoho-mail.module";
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([
       {
+        name: "default",
+        ttl: 60000,
+        limit: 20,
+      },
+      {
         name: "short",
         ttl: 1000,
         limit: 3,

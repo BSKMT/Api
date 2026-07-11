@@ -42,7 +42,10 @@ export class EventsController {
   async getUpcomingEvents(@Query("limit") limit?: string) {
     // M-2: Clamp pagination to prevent DoS via massive limit values
     const raw = limit ? Number.parseInt(limit, 10) : 6;
-    const parsedLimit = Math.min(Math.max(Number.isFinite(raw) ? raw : 6, 1), 100);
+    const parsedLimit = Math.min(
+      Math.max(Number.isFinite(raw) ? raw : 6, 1),
+      100,
+    );
     return this.eventsService.getUpcomingEvents(parsedLimit);
   }
 
@@ -51,7 +54,10 @@ export class EventsController {
   @Get("featured")
   async getFeaturedEvents(@Query("limit") limit?: string) {
     const raw = limit ? Number.parseInt(limit, 10) : 3;
-    const parsedLimit = Math.min(Math.max(Number.isFinite(raw) ? raw : 3, 1), 100);
+    const parsedLimit = Math.min(
+      Math.max(Number.isFinite(raw) ? raw : 3, 1),
+      100,
+    );
     return this.eventsService.getFeaturedEvents(parsedLimit);
   }
 
@@ -151,28 +157,28 @@ export class EventsController {
     );
     const basePrice = event.nonMemberPrice ?? 0;
     const companionPrice = event.companionPrice ?? Math.round(basePrice * 0.5);
-const isMember = MEMBER_LEVELS.has(membershipLevel ?? "");
-      return {
-        event: {
-          slug: event.slug,
-          title: event.title,
-          date: event.date,
-          location: event.location,
-          nonMemberPrice: basePrice,
-          membersFree: event.membersFree,
-          maxCapacity: event.maxCapacity,
-          registeredCount: event.registeredCount,
-        },
-        pricing: {
-          memberSolo: 0,
-          memberCompanion: companionPrice,
-          nonMemberSolo: basePrice,
-          nonMemberCompanion: basePrice + companionPrice,
-        },
-        isLegend: membershipLevel === "Legend",
-        isMember,
-        registration,
-      };
+    const isMember = MEMBER_LEVELS.has(membershipLevel ?? "");
+    return {
+      event: {
+        slug: event.slug,
+        title: event.title,
+        date: event.date,
+        location: event.location,
+        nonMemberPrice: basePrice,
+        membersFree: event.membersFree,
+        maxCapacity: event.maxCapacity,
+        registeredCount: event.registeredCount,
+      },
+      pricing: {
+        memberSolo: 0,
+        memberCompanion: companionPrice,
+        nonMemberSolo: basePrice,
+        nonMemberCompanion: basePrice + companionPrice,
+      },
+      isLegend: membershipLevel === "Legend",
+      isMember,
+      registration,
+    };
   }
 
   @Get("my-registrations")

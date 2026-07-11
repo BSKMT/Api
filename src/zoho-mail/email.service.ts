@@ -6,6 +6,7 @@ import {
   contactAutoReplyTemplate,
   contactInternalTemplate,
   emailVerificationTemplate,
+  loginOtpTemplate,
   notificationTemplate,
   passwordResetTemplate,
 } from "./email.templates";
@@ -154,6 +155,30 @@ export class EmailService {
       content: passwordResetTemplate({
         name: data.name,
         resetUrl: data.resetUrl,
+      }),
+    });
+    return result.ok;
+  }
+
+  async sendLoginOtpEmail(data: {
+    to: string;
+    name: string;
+    code: string;
+    expiresInMinutes: number;
+  }): Promise<boolean> {
+    if (!this.zohoMailService.isConfigured()) {
+      return false;
+    }
+
+    const result = await this.zohoMailService.sendEmail({
+      fromAddress: this.getFromAddress(),
+      toAddress: data.to,
+      subject:
+        "Codigo de verificacion de inicio de sesion — BSK Motorcycle Team",
+      content: loginOtpTemplate({
+        name: data.name,
+        code: data.code,
+        expiresInMinutes: data.expiresInMinutes,
       }),
     });
     return result.ok;

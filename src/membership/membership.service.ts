@@ -260,11 +260,12 @@ export class MembershipService {
     const remainingAmount = totalAmount - creditUsedAmount;
 
     // A-3: Use atomic $inc with optimistic locking on expectedUsedAmount
-    const updated = await this.usersService.incrementPartialPaymentCreditUsedAmount(
-      userId,
-      creditUsedAmount,
-      credit.usedAmount,
-    );
+    const updated =
+      await this.usersService.incrementPartialPaymentCreditUsedAmount(
+        userId,
+        creditUsedAmount,
+        credit.usedAmount,
+      );
     if (!updated) {
       throw new ConflictException(
         "Conflicto al aplicar crédito: tu saldo fue modificado. Intenta de nuevo.",
@@ -1303,11 +1304,12 @@ export class MembershipService {
     }
 
     // A-3/A-4: Use atomic $inc with optimistic locking on expectedUsedAmount
-    const updated = await this.usersService.incrementPartialPaymentCreditUsedAmount(
-      userId,
-      dto.amount,
-      credit.usedAmount,
-    );
+    const updated =
+      await this.usersService.incrementPartialPaymentCreditUsedAmount(
+        userId,
+        dto.amount,
+        credit.usedAmount,
+      );
     if (!updated) {
       throw new ConflictException(
         "Conflicto al usar crédito: tu saldo fue modificado. Intenta de nuevo.",
