@@ -78,6 +78,34 @@ export interface BetterAuthSessionData {
 /** Headers accepted by better-auth API methods (Web `Headers` or plain record). */
 type AuthHeaders = Headers | Record<string, string | string[] | undefined>;
 
+/** Parámetros base para `auth.api.signInEmail()`. */
+interface SignInEmailBaseParams {
+  body: { email: string; password: string; rememberMe?: boolean };
+  headers?: AuthHeaders;
+}
+
+/** Llamada con `asResponse: true` → devuelve `Response`. */
+interface SignInEmailAsResponseParams extends SignInEmailBaseParams {
+  asResponse: true;
+}
+
+/** Llamada sin `asResponse` (o `false`) → devuelve datos (unknown). */
+interface SignInEmailDataParams extends SignInEmailBaseParams {
+  asResponse?: false;
+}
+
+/**
+ * Sobrecarga de `signInEmail` para reflejar el tipo condicional de
+ * retorno segun `asResponse` (mejora sugerida por la verificación con
+ * `Docs_Better_auth/concepts/api.md:175-203`):
+ *   - `asResponse: true`  → `Promise<Response>`
+ *   - `asResponse?: false` (omitido) → `Promise<unknown>` (data object)
+ */
+interface SignInEmailFn {
+  (params: SignInEmailAsResponseParams): Promise<Response>;
+  (params: SignInEmailDataParams): Promise<unknown>;
+}
+
 /** Minimal subset of the `Auth` instance we consume across the app. */
 export interface AuthInstance {
   handler: (request: Request) => Promise<Response>;
@@ -89,11 +117,7 @@ export interface AuthInstance {
       body: { currentPassword: string; newPassword: string };
       headers: AuthHeaders;
     }) => Promise<unknown>;
-    signInEmail: (params: {
-      body: { email: string; password: string; rememberMe?: boolean };
-      asResponse?: boolean;
-      headers?: AuthHeaders;
-    }) => Promise<Response>;
+    signInEmail: SignInEmailFn;
   };
   options: unknown;
   $ERROR_CODES: Record<string, string>;
