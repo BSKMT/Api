@@ -15,4 +15,8 @@ export class DeleteAccountDto {
   @IsBoolean()
   @Equals(true, { message: "Debes confirmar la eliminación de tu cuenta" })
   confirm!: boolean;
+
+  @IsString()
+  @MaxLength(256)
+  password!: string;
 }

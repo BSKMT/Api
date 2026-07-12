@@ -242,9 +242,39 @@ export class SettingsService {
     return { revoked: result.deletedCount };
   }
 
-  async requestAccountDeletion(userId: string, reason?: string) {
+  async requestAccountDeletion(
+    userId: string,
+    reason?: string,
+    password?: string,
+  ) {
     const user = await this.userModel.findById(userId);
     if (!user) throw new NotFoundException("Usuario no encontrado");
+
+    if (!password) {
+      throw new BadRequestException(
+        "Debes confirmar tu contraseña para solicitar la eliminación",
+      );
+    }
+
+    const auth = await getAuth();
+    let authResponse: Response;
+    try {
+      authResponse = await auth.api.signInEmail({
+        body: { email: user.email, password },
+        asResponse: true,
+      });
+    } catch {
+      throw new BadRequestException(
+        "La contraseña no es válida. Verifica e inténtalo de nuevo.",
+      );
+    }
+
+    if (!authResponse.ok) {
+      throw new BadRequestException(
+        "La contraseña no es válida. Verifica e inténtalo de nuevo.",
+      );
+    }
+
     if (user.accountDeletionRequested) {
       throw new BadRequestException(
         "Ya tienes una solicitud de eliminacion pendiente",
