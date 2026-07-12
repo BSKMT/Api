@@ -95,7 +95,11 @@ export class SettingsController {
   @HttpCode(HttpStatus.OK)
   async requestDeletion(@Req() req: Request, @Body() dto: DeleteAccountDto) {
     const user = (req as Request & { user: { userId: string } }).user;
-    return this.settingsService.requestAccountDeletion(user.userId, dto.reason);
+    return this.settingsService.requestAccountDeletion(
+      user.userId,
+      dto.reason,
+      dto.password,
+    );
   }
 
   @Delete("delete-account")
