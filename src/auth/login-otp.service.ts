@@ -16,7 +16,6 @@ import {
   createCipheriv,
   createDecipheriv,
   scryptSync,
-} from "crypto";
 } from "node:crypto";
 import { LoginOtp, LoginOtpDocument } from "./schemas/login-otp.schema";
 import { EmailService } from "../zoho-mail/email.service";
