@@ -375,9 +375,40 @@ export class PaymentsService {
       unknown
     >;
     const parsed = this.parseBoldWebhookEvent(event);
+
+    const transaction = await this.findWebhookTransaction(parsed);
+    if (!transaction) return;
+
+    this.recordWebhookEvent(transaction, event, parsed);
+
+    const statusFromEvent = this.mapBoldStatus(parsed.eventType);
+    if (this.isAmountMismatch(transaction, parsed, statusFromEvent)) {
+      await transaction.save();
+      return;
+    }
+
+    this.applyWebhookStatusUpdate(transaction, parsed, statusFromEvent);
+    await transaction.save();
+    this.logger.log(
+      `Webhook processed: ${parsed.eventType} for reference: ${parsed.referenceId}`,
+    );
+
+    if (statusFromEvent === "APPROVED") {
+      await this.linkPaymentByPurpose(transaction);
+    }
+  }
+
+  /**
+   * Locate the transaction referenced by a webhook, logging and returning
+   * `null` when the payload is missing a reference, the reference is unknown,
+   * or the webhook has already been processed (duplicate).
+   */
+  private async findWebhookTransaction(
+    parsed: ReturnType<PaymentsService["parseBoldWebhookEvent"]>,
+  ): Promise<TransactionDocument | null> {
     if (!parsed.referenceId) {
       this.logger.warn("Webhook received without reference");
-      return;
+      return null;
     }
 
     const transaction = await this.transactionModel.findOne({
@@ -387,53 +418,63 @@ export class PaymentsService {
       this.logger.warn(
         `Webhook received for unknown reference: ${parsed.referenceId}`,
       );
-      return;
+      return null;
     }
 
     if (this.isDuplicateWebhook(transaction, parsed.notificationId)) {
       this.logger.log(
         `Duplicate webhook ignored: ${parsed.notificationId ?? parsed.paymentId}, ${parsed.referenceId}`,
       );
-      return;
+      return null;
     }
 
-    this.recordWebhookEvent(transaction, event, parsed);
+    return transaction;
+  }
 
-    const statusFromEvent = this.mapBoldStatus(parsed.eventType);
-    // A-13: Validate webhook amount against transaction amount before approval
-    if (
-      statusFromEvent === "APPROVED" &&
-      parsed.amount !== undefined &&
-      transaction.amount > 0 &&
-      parsed.amount !== transaction.amount
-    ) {
-      this.logger.warn(
-        `Amount mismatch in webhook for reference ${parsed.referenceId}: expected ${transaction.amount}, received ${parsed.amount}. Skipping approval.`,
-      );
-      await transaction.save();
-      return;
-    }
-    if (statusFromEvent) {
-      transaction.status = statusFromEvent;
-      if (statusFromEvent === "APPROVED") {
-        if (parsed.paymentMethod)
-          transaction.paymentMethod = parsed.paymentMethod;
-        if (parsed.payerEmail) transaction.payerEmail = parsed.payerEmail;
-      }
-    } else {
+  /**
+   * A-13: Detect a mismatch between the amount reported by the webhook and
+   * the amount stored on the transaction. Returns `true` (and logs a warning)
+   * when an APPROVED webhook reports a different non-zero amount, so the
+   * caller can skip approval and persist the recorded webhook event.
+   */
+  private isAmountMismatch(
+    transaction: TransactionDocument,
+    parsed: ReturnType<PaymentsService["parseBoldWebhookEvent"]>,
+    statusFromEvent: string | null,
+  ): boolean {
+    if (statusFromEvent !== "APPROVED") return false;
+    if (parsed.amount === undefined) return false;
+    if (transaction.amount <= 0) return false;
+    if (parsed.amount === transaction.amount) return false;
+
+    this.logger.warn(
+      `Amount mismatch in webhook for reference ${parsed.referenceId}: expected ${transaction.amount}, received ${parsed.amount}. Skipping approval.`,
+    );
+    return true;
+  }
+
+  /**
+   * Apply the mapped webhook status to the transaction, persisting the
+   * payment method and payer email when the status is APPROVED, or logging
+   * a diagnostic message when the event type is not handled.
+   */
+  private applyWebhookStatusUpdate(
+    transaction: TransactionDocument,
+    parsed: ReturnType<PaymentsService["parseBoldWebhookEvent"]>,
+    statusFromEvent: string | null,
+  ): void {
+    if (!statusFromEvent) {
       this.logger.log(
         `Unhandled webhook event type: ${parsed.eventType} for reference: ${parsed.referenceId}`,
       );
+      return;
     }
 
-    await transaction.save();
-    this.logger.log(
-      `Webhook processed: ${parsed.eventType} for reference: ${parsed.referenceId}`,
-    );
+    transaction.status = statusFromEvent;
+    if (statusFromEvent !== "APPROVED") return;
 
-    if (statusFromEvent === "APPROVED") {
-      await this.linkPaymentByPurpose(transaction);
-    }
+    if (parsed.paymentMethod) transaction.paymentMethod = parsed.paymentMethod;
+    if (parsed.payerEmail) transaction.payerEmail = parsed.payerEmail;
   }
 
   /** Verify the Bold webhook HMAC signature (throwing on mismatch). */

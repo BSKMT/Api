@@ -4,13 +4,19 @@
  * alineado con la identidad visual de BSK Motorcycle Team.
  */
 
+const HTML_ESCAPE_MAP: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#x27;",
+};
+
+const HTML_ESCAPE_PATTERN = /[&<>"']/g;
+
+/** Escape HTML metacharacters in user-provided strings to prevent XSS in email templates. */
 function escapeHtml(str: string): string {
-  return str
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#x27;");
+  return str.replace(HTML_ESCAPE_PATTERN, (char) => HTML_ESCAPE_MAP[char] ?? char);
 }
 
 const SHELL = (title: string, body: string): string => `<!DOCTYPE html>
@@ -85,17 +91,20 @@ export function contactInternalTemplate(data: {
   message: string;
   source?: string;
 }): string {
-  const rows =
-    META_ROW("Nombre", data.name) +
-    META_ROW("Correo", data.email) +
-    META_ROW("Asunto", data.subject) +
-    (data.source ? META_ROW("Origen", data.source) : "");
+  const rows = [
+    META_ROW("Nombre", data.name),
+    META_ROW("Correo", data.email),
+    META_ROW("Asunto", data.subject),
+  ];
+  if (data.source) {
+    rows.push(META_ROW("Origen", data.source));
+  }
 
   return SHELL(
     "Nuevo mensaje de contacto",
     `${HEADING("Nuevo mensaje desde el formulario de contacto")}
     <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 16px;border-collapse:collapse;width:100%;">
-      ${rows}
+      ${rows.join("")}
     </table>
     <p style="margin:8px 0 6px;font-size:13px;font-weight:600;color:#0f172a;">Mensaje</p>
     <blockquote style="margin:0;padding:12px 16px;background:#f8fafc;border-left:3px solid #dc2626;font-size:14px;line-height:1.6;color:#334155;white-space:pre-wrap;">${escapeHtml(data.message)}</blockquote>`,
