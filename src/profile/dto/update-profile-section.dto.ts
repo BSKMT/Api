@@ -2,11 +2,13 @@ import { IsNotEmpty, IsObject, IsString, MaxLength } from "class-validator";
 
 const VALID_SECTION_IDS = [
   "datos-personales",
-  "membresia-ecosistema",
+  "contacto",
   "motocicleta",
-  "seguro-motocicleta",
-  "licencia-motocicleta",
-  "preferencias",
+  "salud-seguridad",
+  "documentacion-legal",
+  "equipamiento",
+  "experiencia-motera",
+  "membresia-ecosistema",
 ] as const;
 
 // A-12: numeroMiembro is auto-generated server-side, never user-settable
