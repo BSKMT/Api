@@ -358,11 +358,8 @@ export class MembershipService {
       this.configService.get<string>("BOLD_SECRET_KEY", {
         infer: true,
       }) ?? "";
-    const concatenated = `${orderId}${amount}${currency}`;
-    return crypto
-      .createHmac("sha256", secretKey)
-      .update(concatenated)
-      .digest("hex");
+    const concatenated = `${orderId}${amount}${currency}${secretKey}`;
+    return crypto.createHash("sha256").update(concatenated).digest("hex");
   }
 
   async createMembershipPayment(
