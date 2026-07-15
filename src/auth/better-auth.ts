@@ -370,13 +370,22 @@ async function initAuth(): Promise<AuthInstance> {
        */
       useSecureCookies: false,
       /**
-       * SameSite=strict prevents the session cookie from being sent on
-       * any cross-site request, effectively blocking CSRF attacks on
-       * all cookie-authenticated endpoints (including JSON APIs that
-       * are not covered by Astro's checkOrigin).
+       * SameSite=lax sends the session cookie on same-site requests and
+       * top-level cross-site GET navigations (including redirects back
+       * from third-party providers like Bold's checkout), but blocks it
+       * on cross-site POST/PUT/DELETE subrequests — the vector used by
+       * CSRF attacks.  Combined with the Astro middleware's origin
+       * allow-list and x-csrf-token checks this is the recommended
+       * setting for a BFF pattern where the API is never called directly
+       * by browsers.
+       *
+       * NOTE: `strict` was previously used, but it breaks the payment
+       * flow because Bold redirects from `checkout.bold.co` back to
+       * `bskmt.com/pagos` and the browser drops Strict cookies on that
+       * cross-site redirect, forcing the user to re-authenticate.
        */
       defaultCookieAttributes: {
-        sameSite: "strict",
+        sameSite: "lax",
       },
     },
 
