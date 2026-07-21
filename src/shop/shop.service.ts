@@ -18,10 +18,7 @@ import {
   WishlistItemDocument,
 } from "./schemas/wishlist-item.schema";
 import { CreateOrderDto } from "./dto/create-order.dto";
-import {
-  maskAmount,
-  maskUserId,
-} from "../common/utils/log-redact.util";
+import { maskAmount, maskUserId } from "../common/utils/log-redact.util";
 
 const LEGEND_LEVELS = new Set([
   "Legend",
@@ -172,7 +169,7 @@ export class ShopService {
 
     this.logger.log(
       // ADM-13: Redact user ID and amounts in logs
-    `Order created: ${orderNumber} user=${maskUserId(userId)} total=${maskAmount(total)} publicTotal=${maskAmount(publicTotal)} discount=${maskAmount(memberDiscount)} member=${isMember}`,
+      `Order created: ${orderNumber} user=${maskUserId(userId)} total=${maskAmount(total)} publicTotal=${maskAmount(publicTotal)} discount=${maskAmount(memberDiscount)} member=${isMember}`,
     );
 
     return {
@@ -245,13 +242,6 @@ export class ShopService {
       throw new BadRequestException(
         "No se puede cancelar un pedido que ya fue pagado o enviado",
       );
-    }
-
-    if (
-      order.status === OrderStatus.SHIPPED ||
-      order.status === OrderStatus.DELIVERED
-    ) {
-      throw new BadRequestException("No se puede cancelar un pedido enviado");
     }
 
     order.status = OrderStatus.CANCELLED;

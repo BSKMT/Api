@@ -16,7 +16,10 @@ const HTML_ESCAPE_PATTERN = /[&<>"']/g;
 
 /** Escape HTML metacharacters in user-provided strings to prevent XSS in email templates. */
 function escapeHtml(str: string): string {
-  return str.replace(HTML_ESCAPE_PATTERN, (char) => HTML_ESCAPE_MAP[char] ?? char);
+  return str.replace(
+    HTML_ESCAPE_PATTERN,
+    (char) => HTML_ESCAPE_MAP[char] ?? char,
+  );
 }
 
 const SHELL = (title: string, body: string): string => `<!DOCTYPE html>

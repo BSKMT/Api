@@ -90,4 +90,7 @@ export const ArphaRequestSchema = SchemaFactory.createForClass(ArphaRequest);
 
 ArphaRequestSchema.index({ userId: 1, createdAt: -1 });
 // M16: Sparse unique index ensures only one active request per user
-ArphaRequestSchema.index({ activeRequestKey: 1 }, { unique: true, sparse: true });
+ArphaRequestSchema.index(
+  { activeRequestKey: 1 },
+  { unique: true, sparse: true },
+);

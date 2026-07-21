@@ -28,16 +28,16 @@ async function bootstrap() {
     bodyParser: false,
   });
 
-/**
-    * trust proxy — Necesario porque el API corre detras de Cloudflare + Vercel.
-    * Sin esta configuracion, `req.ip` devuelve la IP del proxy,
-    * no la IP real del cliente, lo que hace inefectivo el rate limiting.
-    *
-    * M21: Cambiado de 1 a 2 hops para account for Cloudflare -> Vercel -> origin.
-    * Validar el comportamiento exacto de XFF en Vercel durante la remediacion.
-    * Si Vercel stripped client-set XFF, se puede volver a 1.
-    * Ref: https://expressjs.com/en/guide/behind-proxies.html
-    */
+  /**
+   * trust proxy — Necesario porque el API corre detras de Cloudflare + Vercel.
+   * Sin esta configuracion, `req.ip` devuelve la IP del proxy,
+   * no la IP real del cliente, lo que hace inefectivo el rate limiting.
+   *
+   * M21: Cambiado de 1 a 2 hops para account for Cloudflare -> Vercel -> origin.
+   * Validar el comportamiento exacto de XFF en Vercel durante la remediacion.
+   * Si Vercel stripped client-set XFF, se puede volver a 1.
+   * Ref: https://expressjs.com/en/guide/behind-proxies.html
+   */
   app.set("trust proxy", 2);
 
   const configService = app.get(ConfigService<EnvironmentConfig>);

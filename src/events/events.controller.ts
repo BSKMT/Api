@@ -116,11 +116,7 @@ export class EventsController {
       );
     }
     const { userId } = req.user;
-    return this.eventsService.acceptWaiver(
-      userId,
-      dto.eventSlug,
-      req.ip,
-    );
+    return this.eventsService.acceptWaiver(userId, dto.eventSlug, req.ip);
   }
 
   @Post("companion")

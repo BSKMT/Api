@@ -20,10 +20,7 @@ import {
 import { CreateProductDto } from "../dto/create-product.dto";
 import { UpdateProductDto } from "../dto/update-product.dto";
 import { UpdateOrderStatusDto } from "../dto/update-order-status.dto";
-import {
-  sanitizeQuery,
-  ensureString,
-} from "../../common/utils/sanitize-query.util";
+import { ensureString } from "../../common/utils/sanitize-query.util";
 
 @Injectable()
 export class AdminShopService {
@@ -108,9 +105,7 @@ export class AdminShopService {
     slug: string,
     dto: UpdateProductDto,
   ): Promise<ProductDocument> {
-    // A9: Defense-in-depth — never allow slug change on update
     const updateFields = { ...dto };
-    delete updateFields.slug;
     const updated = await this.productModel.findOneAndUpdate(
       { slug },
       { $set: updateFields },

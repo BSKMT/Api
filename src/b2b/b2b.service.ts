@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  ConflictException,
-} from "@nestjs/common";
+import { Injectable, Logger, ConflictException } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { B2bContactDto } from "./dto/b2b-contact.dto";
