@@ -4,6 +4,7 @@ import {
   BadRequestException,
   NotFoundException,
   ConflictException,
+  ForbiddenException,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { ConfigService } from "@nestjs/config";
@@ -20,6 +21,8 @@ import { EventsService } from "../events/events.service";
 import { ShopService } from "../shop/shop.service";
 import { ArphaService } from "../arpha/arpha.service";
 import { ARPHA_PRICING } from "../arpha/schemas/arpha-request.schema";
+import { UsersService } from "../users/users.service";
+import { UserRole } from "../users/schemas/user.schema";
 import type { EnvironmentConfig } from "../config/config.interface";
 
 const EVENT_TIER_REFERENCE_PREFIX: Record<string, string> = {
@@ -79,7 +82,32 @@ export class PaymentsService {
     private readonly eventsService: EventsService,
     private readonly shopService: ShopService,
     private readonly arphaService: ArphaService,
+    private readonly usersService: UsersService,
   ) {}
+
+  private static readonly MEMBER_TIERS = new Set([
+    "member-solo",
+    "member-companion",
+    "course-member-virtual",
+    "course-member-semipresencial",
+    "course-member-presencial",
+  ]);
+
+  private async verifyActiveMember(userId: string): Promise<void> {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new NotFoundException("Usuario no encontrado");
+    const now = new Date();
+    const membershipExpired =
+      user.membershipExpiryDate != null &&
+      new Date(user.membershipExpiryDate) < now;
+    const isActiveMember =
+      user.role === UserRole.MEMBER && !membershipExpired && !!user.membershipLevel;
+    if (!isActiveMember) {
+      throw new ForbiddenException(
+        "No tienes una membresía activa para usar este tier de precio",
+      );
+    }
+  }
 
   private generateBoldIntegritySignature(
     orderId: string,
@@ -142,6 +170,10 @@ export class PaymentsService {
   }
 
   private async createEventPayment(userId: string, dto: CreatePaymentDto) {
+    if (PaymentsService.MEMBER_TIERS.has(dto.tier)) {
+      await this.verifyActiveMember(userId);
+    }
+
     const event = await this.eventsService.getEventBySlug(dto.eventSlug);
     if (!event) {
       throw new NotFoundException("Evento no encontrado");
@@ -212,6 +244,10 @@ export class PaymentsService {
   }
 
   private async createCoursePayment(userId: string, dto: CreatePaymentDto) {
+    if (PaymentsService.MEMBER_TIERS.has(dto.tier)) {
+      await this.verifyActiveMember(userId);
+    }
+
     const course = await this.eventsService.getCourseBySlug(dto.eventSlug);
     if (!course) {
       throw new NotFoundException("Curso no encontrado");
