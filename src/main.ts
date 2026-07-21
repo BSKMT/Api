@@ -19,6 +19,8 @@ interface BetterAuthNodeModule {
 
 /** Simple in-memory rate limit store for Better Auth raw handler (M-3). */
 const authRateLimit = new Map<string, { count: number; resetAt: number }>();
+// M20: Cap the map size to prevent unbounded memory growth on serverless
+const AUTH_RATE_LIMIT_MAX_SIZE = 5000;
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -26,17 +28,17 @@ async function bootstrap() {
     bodyParser: false,
   });
 
-  /**
-   * trust proxy — Necesario porque el API corre detras de Cloudflare.
-   * Sin esta configuracion, `req.ip` devuelve la IP del proxy (CF),
-   * no la IP real del cliente, lo que hace inefectivo el rate limiting
-   * del ThrottlerGuard y del rate limit interno del Better Auth handler.
-   *
-   * Valor `1` = confiar en 1 hop de proxy (Cloudflare -> origin).
-   * Ref: https://expressjs.com/en/guide/behind-proxies.html
-   *     NestJS docs: security/rate-limiting.md lines 108-153
-   */
-  app.set("trust proxy", 1);
+/**
+    * trust proxy — Necesario porque el API corre detras de Cloudflare + Vercel.
+    * Sin esta configuracion, `req.ip` devuelve la IP del proxy,
+    * no la IP real del cliente, lo que hace inefectivo el rate limiting.
+    *
+    * M21: Cambiado de 1 a 2 hops para account for Cloudflare -> Vercel -> origin.
+    * Validar el comportamiento exacto de XFF en Vercel durante la remediacion.
+    * Si Vercel stripped client-set XFF, se puede volver a 1.
+    * Ref: https://expressjs.com/en/guide/behind-proxies.html
+    */
+  app.set("trust proxy", 2);
 
   const configService = app.get(ConfigService<EnvironmentConfig>);
 
@@ -123,8 +125,12 @@ async function bootstrap() {
         // Invalid referer, allow (defense-in-depth, not primary)
       }
     }
-    // No Origin and no Referer — allow (non-browser clients, server-to-server)
-    return next();
+    // M22: No Origin and no Referer — reject for state-changing requests
+    // Webhook endpoints are already exempt above. All other state-changing
+    // requests from browser-like clients should include Origin or Referer.
+    return res
+      .status(403)
+      .json({ message: "Origin or Referer header required" });
   });
 
   /**
@@ -169,6 +175,14 @@ async function bootstrap() {
         authRateLimit.set(key, { count: 1, resetAt: now + windowMs });
       } else {
         entry.count++;
+      }
+      // M20: Periodic cleanup of expired entries to cap memory usage
+      if (authRateLimit.size > AUTH_RATE_LIMIT_MAX_SIZE) {
+        for (const [k, v] of authRateLimit) {
+          if (now >= v.resetAt) {
+            authRateLimit.delete(k);
+          }
+        }
       }
     }
 
