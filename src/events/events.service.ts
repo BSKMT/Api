@@ -66,6 +66,13 @@ export class EventsService {
       );
     }
 
+    // M17: Prevent registration in past events
+    if (new Date(event.date) < new Date()) {
+      throw new BadRequestException(
+        "No puedes registrarte en un evento que ya ocurrió",
+      );
+    }
+
     const existing = await this.eventRegistrationModel.findOne({
       userId,
       eventSlug: dto.eventSlug,
@@ -75,18 +82,15 @@ export class EventsService {
       throw new ConflictException("Ya estás registrado para este evento");
     }
 
+    const isMember = MEMBER_LEVELS.has(membershipLevel ?? "");
+
     let membershipStatus: string;
 
-    // A-16: Use MEMBER_LEVELS consistently with courses
-    if (
-      MEMBER_LEVELS.has(membershipLevel ?? "") &&
-      dto.registrationType === "managed"
-    ) {
+    // A4/A5: self-managed is only for non-members (always free);
+    // members must use managed (which is free for them).
+    if (isMember) {
       membershipStatus = "active-member";
-    } else if (
-      dto.registrationType === "managed" &&
-      !MEMBER_LEVELS.has(membershipLevel ?? "")
-    ) {
+    } else if (dto.registrationType === "managed") {
       membershipStatus = "non-member-paid";
     } else {
       membershipStatus = "non-member-free";
@@ -109,9 +113,13 @@ export class EventsService {
       existing.waiverAcceptedAt = null;
       existing.transactionReference = null;
       existing.companionData = null;
+      // A6: Increment counter BEFORE save to prevent ghost registrations on capacity full
+      try {
+        await this.incrementEventRegisteredCount(dto.eventSlug, event);
+      } catch (err) {
+        throw err;
+      }
       const saved = await existing.save();
-      // A-10: Atomic counter increment with capacity check
-      await this.incrementEventRegisteredCount(dto.eventSlug, event);
       this.logger.log(
         `Event re-registration after cancellation: user=${userId} event=${dto.eventSlug} status=${status}`,
       );
@@ -197,6 +205,20 @@ export class EventsService {
     }
 
     this.validateConfirmationPrerequisites(registration);
+
+    // M19: If re-confirming a CANCELLED registration, re-increment the seat count
+    if (registration.status === "CANCELLED") {
+      const event = await this.eventModel.findOne({ slug: eventSlug });
+      if (event) {
+        try {
+          await this.incrementEventRegisteredCount(eventSlug, event);
+        } catch {
+          throw new BadRequestException(
+            "El evento ha alcanzado su capacidad máxima",
+          );
+        }
+      }
+    }
 
     registration.status = "CONFIRMED";
     registration.confirmedAt = new Date();

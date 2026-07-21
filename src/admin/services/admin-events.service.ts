@@ -182,6 +182,39 @@ export class AdminEventsService {
     if (registration.status === "CONFIRMED") {
       throw new BadRequestException("El registro ya está confirmado");
     }
+
+    // M19: If re-confirming a CANCELLED registration, re-increment the seat count
+    if (registration.status === "CANCELLED") {
+      const event = await this.eventModel.findOne({
+        slug: registration.eventSlug,
+      });
+      if (event) {
+        const maxCap = event.maxCapacity;
+        if (maxCap != null && maxCap > 0) {
+          const updateResult = await this.eventModel.findOneAndUpdate(
+            {
+              slug: registration.eventSlug,
+              $expr: {
+                $lt: [{ $ifNull: ["$registeredCount", 0] }, maxCap],
+              },
+            },
+            { $inc: { registeredCount: 1 } },
+            { new: true },
+          );
+          if (!updateResult) {
+            throw new BadRequestException(
+              "El evento ha alcanzado su capacidad máxima",
+            );
+          }
+        } else {
+          await this.eventModel.updateOne(
+            { slug: registration.eventSlug },
+            { $inc: { registeredCount: 1 } },
+          );
+        }
+      }
+    }
+
     registration.status = "CONFIRMED";
     registration.confirmedAt = new Date();
     await registration.save();
