@@ -6,9 +6,8 @@ import { ContactDto } from "./dto/contact.dto";
  * ContactService - Orquesta el envio de correos para el formulario de
  * contacto publico de la landing page.
  *
- * Envia dos correos a traves de Zoho Mail:
- *  1. Correo interno con los datos del contacto al equipo BSK.
- *  2. Auto-respuesta de confirmacion al remitente.
+ * Envia un correo interno con los datos del contacto al equipo BSK.
+ * No envia auto-respuesta al remitente (A7: elimina relay de spam/phishing).
  *
  * Si Zoho Mail no esta configurado, el metodo lanza un BadRequestException
  * para que el frontend informe al usuario de forma clara, evitando prometer

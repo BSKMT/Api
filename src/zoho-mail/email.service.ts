@@ -57,28 +57,22 @@ export class EmailService {
       this.configService.get("ZOHO_TEAM_EMAIL", { infer: true }) ||
       this.getFromAddress();
 
-    const [internalResult, autoReplyResult] = await Promise.all([
-      this.zohoMailService.sendEmail({
-        fromAddress: this.getFromAddress(),
-        toAddress: teamEmail,
-        subject: `[Contacto web] ${data.subject}`,
-        content: contactInternalTemplate({
-          name: data.name,
-          email: data.email,
-          subject: data.subject,
-          message: data.message,
-          source: data.source ?? "Formulario de contacto web",
-        }),
+    // A7: Only send internal notification to the team — no auto-reply to sender.
+    // Eliminates spam/phishing relay + mail-bombing via the BSK domain.
+    const internalResult = await this.zohoMailService.sendEmail({
+      fromAddress: this.getFromAddress(),
+      toAddress: teamEmail,
+      subject: `[Contacto web] ${data.subject}`,
+      content: contactInternalTemplate({
+        name: data.name,
+        email: data.email,
+        subject: data.subject,
+        message: data.message,
+        source: data.source ?? "Formulario de contacto web",
       }),
-      this.zohoMailService.sendEmail({
-        fromAddress: this.getFromAddress(),
-        toAddress: data.email,
-        subject: "Hemos recibido tu mensaje — BSK Motorcycle Team",
-        content: contactAutoReplyTemplate(data.name),
-      }),
-    ]);
+    });
 
-    return { delivered: internalResult.ok && autoReplyResult.ok };
+    return { delivered: internalResult.ok };
   }
 
   /**
