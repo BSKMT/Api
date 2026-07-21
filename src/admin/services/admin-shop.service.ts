@@ -203,6 +203,7 @@ export class AdminShopService {
   async updateOrderStatus(
     orderNumber: string,
     dto: UpdateOrderStatusDto,
+    actorId?: string,
   ): Promise<OrderDocument> {
     const order = await this.orderModel.findOne({ orderNumber });
     if (!order) {
@@ -210,12 +211,21 @@ export class AdminShopService {
     }
 
     const previousStatus = order.status;
+
+    // M7: Enforce valid state machine transitions
+    const VALID_TRANSITIONS: Record<string, Set<string>> = {
+      [OrderStatus.PENDING]: new Set([OrderStatus.PAID, OrderStatus.CANCELLED]),
+      [OrderStatus.PAID]: new Set([OrderStatus.SHIPPED, OrderStatus.CANCELLED]),
+      [OrderStatus.SHIPPED]: new Set([OrderStatus.DELIVERED]),
+      [OrderStatus.DELIVERED]: new Set(),
+      [OrderStatus.CANCELLED]: new Set(),
+    };
     if (
-      previousStatus === OrderStatus.CANCELLED &&
-      dto.status !== OrderStatus.CANCELLED
+      dto.status !== previousStatus &&
+      !VALID_TRANSITIONS[previousStatus]?.has(dto.status)
     ) {
       throw new BadRequestException(
-        "No se puede reactivar un pedido cancelado",
+        `Transición de estado inválida: ${previousStatus} → ${dto.status}`,
       );
     }
 
@@ -235,8 +245,9 @@ export class AdminShopService {
     }
 
     const saved = await order.save();
+    // M7: Log actor for audit trail
     this.logger.log(
-      `Order status updated: ${orderNumber} ${previousStatus} -> ${dto.status}`,
+      `Order status updated: ${orderNumber} ${previousStatus} -> ${dto.status} by ${actorId ?? "unknown"}`,
     );
     return saved;
   }

@@ -7,10 +7,12 @@ import {
   Body,
   Param,
   Query,
+  Req,
   UseGuards,
   HttpCode,
   HttpStatus,
 } from "@nestjs/common";
+import type { Request } from "express";
 import { SessionGuard } from "../../auth/session.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles, Role } from "../../common/decorators";
@@ -19,6 +21,10 @@ import { CreateProductDto } from "../dto/create-product.dto";
 import { UpdateProductDto } from "../dto/update-product.dto";
 import { UpdateOrderStatusDto } from "../dto/update-order-status.dto";
 import { ProductStatus } from "../../shop/schemas/product.schema";
+
+interface AuthenticatedRequest extends Request {
+  user: { userId: string; email?: string };
+}
 
 @Controller("admin/shop")
 @UseGuards(SessionGuard, RolesGuard)
@@ -104,9 +110,14 @@ export class AdminShopController {
   @Post("orders/:orderNumber/status")
   @HttpCode(HttpStatus.OK)
   async updateOrderStatus(
+    @Req() req: AuthenticatedRequest,
     @Param("orderNumber") orderNumber: string,
     @Body() dto: UpdateOrderStatusDto,
   ) {
-    return this.adminShopService.updateOrderStatus(orderNumber, dto);
+    return this.adminShopService.updateOrderStatus(
+      orderNumber,
+      dto,
+      req.user.userId,
+    );
   }
 }

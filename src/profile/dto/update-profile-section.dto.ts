@@ -12,8 +12,9 @@ const VALID_SECTION_IDS = [
 ] as const;
 
 // A-12: numeroMiembro is auto-generated server-side, never user-settable
+// M8: fechaIngreso is also server-set at profile completion, users cannot fake it
 const FORBIDDEN_BY_SECTION: Record<string, Set<string>> = {
-  "membresia-ecosistema": new Set(["numeroMiembro"]),
+  "membresia-ecosistema": new Set(["numeroMiembro", "fechaIngreso"]),
 };
 
 export class UpdateProfileSectionDto {
