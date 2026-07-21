@@ -299,4 +299,16 @@ export class UsersService {
       { partialPaymentCredit: null },
     );
   }
+
+  // M9: Revert credit used amount when a membership payment fails/is rejected
+  async revertPartialPaymentCredit(
+    userId: string,
+    amount: number,
+  ): Promise<void> {
+    if (amount <= 0) return;
+    await this.userModel.updateOne(
+      { _id: userId },
+      { $inc: { "partialPaymentCredit.usedAmount": -amount } },
+    );
+  }
 }

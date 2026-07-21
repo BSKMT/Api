@@ -436,6 +436,7 @@ export class MembershipService {
       installmentTotal,
       status: "PENDING",
       isRenewal,
+      creditUsedAmount: creditUsedAmount,
     });
     await transaction.save();
 
@@ -571,6 +572,16 @@ export class MembershipService {
     if (statusFromEvent === "APPROVED") {
       await this.processApprovedPayment(transaction);
     } else if (statusFromEvent === "REJECTED" || statusFromEvent === "FAILED") {
+      // M9: Revert credit if it was used for this transaction
+      if (transaction.creditUsedAmount > 0) {
+        await this.usersService.revertPartialPaymentCredit(
+          transaction.userId,
+          transaction.creditUsedAmount,
+        );
+        this.logger.log(
+          `Credit reverted: user=${maskUserId(transaction.userId)} amount=${maskAmount(transaction.creditUsedAmount)} ref=${maskReference(transaction.reference)}`,
+        );
+      }
       await this.sendRejectionNotification(transaction, statusFromEvent);
     }
   }
@@ -1070,6 +1081,16 @@ export class MembershipService {
     if (mappedStatus === "APPROVED") {
       await this.processApprovedPayment(transaction);
     } else if (mappedStatus === "REJECTED" || mappedStatus === "FAILED") {
+      // M9: Revert credit if it was used for this transaction
+      if (transaction.creditUsedAmount > 0) {
+        await this.usersService.revertPartialPaymentCredit(
+          transaction.userId,
+          transaction.creditUsedAmount,
+        );
+        this.logger.log(
+          `Credit reverted: user=${maskUserId(transaction.userId)} amount=${maskAmount(transaction.creditUsedAmount)} ref=${maskReference(transaction.reference)}`,
+        );
+      }
       await this.sendRejectionNotification(transaction, mappedStatus);
     }
   }

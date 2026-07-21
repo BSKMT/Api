@@ -38,6 +38,10 @@ export class MembershipTransaction {
   @Prop({ default: false })
   isRenewal!: boolean;
 
+  // M9: Track credit used so it can be reverted if payment fails
+  @Prop({ type: Number, default: 0 })
+  creditUsedAmount!: number;
+
   @Prop({ type: Date, default: null })
   paidAt!: Date | null;
 

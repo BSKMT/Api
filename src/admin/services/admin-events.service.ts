@@ -233,6 +233,13 @@ export class AdminEventsService {
     registration.status = "CANCELLED";
     registration.confirmedAt = null;
     await registration.save();
+
+    // M3: Decrement registeredCount atomically
+    await this.eventModel.findOneAndUpdate(
+      { slug: registration.eventSlug, registeredCount: { $gt: 0 } },
+      { $inc: { registeredCount: -1 } },
+    );
+
     this.logger.log(`Registration admin-cancelled: id=${registrationId}`);
     return registration;
   }
