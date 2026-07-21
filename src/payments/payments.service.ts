@@ -85,6 +85,13 @@ export class PaymentsService {
     private readonly usersService: UsersService,
   ) {}
 
+  private static readonly TERMINAL_STATUSES = new Set([
+    "APPROVED",
+    "REJECTED",
+    "FAILED",
+    "VOIDED",
+  ]);
+
   private static readonly MEMBER_TIERS = new Set([
     "member-solo",
     "member-companion",
@@ -114,10 +121,12 @@ export class PaymentsService {
     amount: number,
     currency: string,
   ): string {
-    const secretKey =
-      this.configService.get<string>("BOLD_SECRET_KEY", {
-        infer: true,
-      }) ?? "";
+    const secretKey = this.configService.get<string>("BOLD_SECRET_KEY", {
+      infer: true,
+    });
+    if (!secretKey) {
+      throw new BadRequestException("BOLD_SECRET_KEY not configured");
+    }
     const concatenated = `${orderId}${amount}${currency}${secretKey}`;
     return crypto.createHash("sha256").update(concatenated).digest("hex");
   }
@@ -503,6 +512,18 @@ export class PaymentsService {
       return;
     }
 
+    // A1: Don't overwrite a terminal status (e.g. APPROVED → VOIDED) without reversion.
+    // The payment was already linked; overwriting would corrupt state.
+    if (
+      PaymentsService.TERMINAL_STATUSES.has(transaction.status) &&
+      statusFromEvent !== transaction.status
+    ) {
+      this.logger.warn(
+        `Ignoring ${statusFromEvent} for already-${transaction.status} transaction ${parsed.referenceId}`,
+      );
+      return;
+    }
+
     transaction.status = statusFromEvent;
     if (statusFromEvent !== "APPROVED") return;
 
@@ -512,8 +533,13 @@ export class PaymentsService {
 
   /** Verify the Bold webhook HMAC signature (throwing on mismatch). */
   private verifyBoldWebhookSignature(rawBody: Buffer, signature: string): void {
-    const secretKey =
-      this.configService.get<string>("BOLD_SECRET_KEY", { infer: true }) ?? "";
+    const secretKey = this.configService.get<string>("BOLD_SECRET_KEY", {
+      infer: true,
+    });
+    if (!secretKey) {
+      this.logger.error("BOLD_SECRET_KEY not configured — rejecting webhook");
+      throw new BadRequestException("Webhook secret key not configured");
+    }
     const bodyBase64 = rawBody.toString("base64");
     const expectedSignature = crypto
       .createHmac("sha256", secretKey)
@@ -552,8 +578,20 @@ export class PaymentsService {
       referenceId: metadata["reference"] as string | undefined,
       paymentMethod: data["payment_method"] as string | undefined,
       payerEmail: data["payer_email"] as string | undefined,
-      amount: typeof data["amount"] === "number" ? data["amount"] : undefined,
+      amount: this.parseBoldAmount(data["amount"]),
     };
+  }
+
+  private parseBoldAmount(raw: unknown): number | undefined {
+    if (typeof raw === "number") return raw;
+    if (raw && typeof raw === "object") {
+      const obj = raw as Record<string, unknown>;
+      const total = obj["total"];
+      if (typeof total === "number") return total;
+      const amount = obj["amount"];
+      if (typeof amount === "number") return amount;
+    }
+    return undefined;
   }
 
   /** Returns true when the same Bold webhook has already been processed. */
@@ -737,6 +775,14 @@ export class PaymentsService {
 
     const mappedStatus = this.mapBoldVoucherStatus(boldStatus);
     if (!mappedStatus || mappedStatus === transaction.status) {
+      return;
+    }
+
+    // A1: Don't downgrade from a terminal status (e.g. APPROVED → VOIDED)
+    if (PaymentsService.TERMINAL_STATUSES.has(transaction.status)) {
+      this.logger.warn(
+        `Bold sync: ignoring ${mappedStatus} for already-${transaction.status} reference ${transaction.reference}`,
+      );
       return;
     }
 
