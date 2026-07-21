@@ -108,6 +108,7 @@ export class ZohoMailService {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: body.toString(),
+      signal: AbortSignal.timeout(10000), // EVT-13: 10s timeout
     });
     const data = (await res.json()) as ZohoTokenResponse & {
       error?: string;
@@ -177,6 +178,7 @@ export class ZohoMailService {
           Authorization: `Zoho-oauthtoken ${accessToken}`,
         },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(15000), // EVT-13: 15s timeout
       });
 
       const data = (await res.json()) as ZohoSendEmailResponse & {

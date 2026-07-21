@@ -3,6 +3,7 @@ import {
   IsOptional,
   IsEnum,
   IsNumber,
+  IsInt,
   IsBoolean,
   IsArray,
   MinLength,
@@ -54,6 +55,7 @@ export class CreateCourseDto {
 
   @IsNumber()
   @Min(0)
+  @IsInt()
   @IsOptional()
   durationHours?: number;
 
@@ -85,6 +87,7 @@ export class CreateCourseDto {
 
   @IsNumber()
   @Min(0)
+  @IsInt()
   @IsOptional()
   maxCapacity?: number;
 

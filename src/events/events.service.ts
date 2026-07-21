@@ -302,10 +302,16 @@ export class EventsService {
   async acceptWaiver(
     userId: string,
     eventSlug: string,
+    clientIp?: string,
   ): Promise<EventRegistrationDocument> {
+    // EVT-17: Store IP/UA for waiver audit trail
     const registration = await this.eventRegistrationModel.findOneAndUpdate(
       { userId, eventSlug },
-      { waiverAccepted: true, waiverAcceptedAt: new Date() },
+      {
+        waiverAccepted: true,
+        waiverAcceptedAt: new Date(),
+        waiverAcceptedIp: clientIp ?? null,
+      },
       { new: true },
     );
 
@@ -410,8 +416,10 @@ export class EventsService {
   }
 
   async getEventBySlug(slug: string): Promise<EventDocument | null> {
+    // EVT-15: Exclude internal metadata field from public endpoint
     return this.eventModel
       .findOne({ slug, status: EventStatus.PUBLISHED })
+      .select("-metadata")
       .lean();
   }
 
@@ -424,8 +432,10 @@ export class EventsService {
   }
 
   async getCourseBySlug(slug: string): Promise<CourseDocument | null> {
+    // EVT-15: Exclude internal metadata field from public endpoint
     return this.courseModel
       .findOne({ slug, status: CourseStatus.PUBLISHED })
+      .select("-metadata")
       .lean();
   }
 
@@ -506,7 +516,47 @@ export class EventsService {
     });
 
     if (existing) {
-      throw new ConflictException("Ya estás inscrito en este curso");
+      // EVT-16: Allow re-enrollment after cancellation, reject if still active
+      if (existing.status !== "CANCELLED") {
+        throw new ConflictException("Ya estás inscrito en este curso");
+      }
+      // Re-activate cancelled enrollment, clear residual paymentConfirmed
+      existing.status = pricing.requiresPayment ? "PENDING" : "ACTIVE";
+      existing.progress = 0;
+      existing.paymentConfirmed = !pricing.requiresPayment;
+      existing.transactionReference = null;
+      existing.completedAt = null;
+      existing.certificateId = null;
+      await existing.save();
+
+      // Re-increment enrolledCount
+      const maxCap = course.maxCapacity;
+      if (maxCap != null && maxCap > 0) {
+        const updateResult = await this.courseModel.findOneAndUpdate(
+          {
+            slug: courseSlug,
+            $expr: {
+              $lt: [{ $ifNull: ["$enrolledCount", 0] }, maxCap],
+            },
+          },
+          { $inc: { enrolledCount: 1 } },
+        );
+        if (!updateResult) {
+          throw new BadRequestException(
+            "El curso ha alcanzado su capacidad máxima",
+          );
+        }
+      } else {
+        await this.courseModel.updateOne(
+          { slug: courseSlug },
+          { $inc: { enrolledCount: 1 } },
+        );
+      }
+
+      this.logger.log(
+        `Course re-enrollment after cancellation: user=${userId} course=${courseSlug} status=${existing.status} amount=${pricing.amount}`,
+      );
+      return { enrollment: existing, pricing };
     }
 
     const pricing = this.calculateCoursePricing(course, membershipLevel);

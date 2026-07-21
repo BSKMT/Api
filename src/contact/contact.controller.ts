@@ -21,14 +21,15 @@ export class ContactController {
   constructor(private readonly contactService: ContactService) {}
 
   /**
-   * Endpoint de verificacion ligera para confirmar que el canal de contacto
-   * esta activo sin exponer detalles internos.
+   * Endpoint de verificacion ligera para confirmar que el servicio
+   * esta activo.
+   * EVT-19: Removed output that could be used as delivery oracle.
    */
   @Public()
   @Get("health")
   @HttpCode(HttpStatus.OK)
   health() {
-    return { status: "ok" };
+    return { ok: true };
   }
 
   @Public()

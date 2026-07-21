@@ -193,7 +193,10 @@ export class AdminShopService {
   }
 
   async getOrder(orderNumber: string): Promise<OrderDocument> {
-    const order = await this.orderModel.findOne({ orderNumber }).lean();
+    const order = await this.orderModel
+      .findOne({ orderNumber })
+      .select("-shippingAddress")
+      .lean();
     if (!order) {
       throw new NotFoundException("Pedido no encontrado");
     }

@@ -1,4 +1,8 @@
-import { Injectable, Logger } from "@nestjs/common";
+import {
+  Injectable,
+  Logger,
+  ConflictException,
+} from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { B2bContactDto } from "./dto/b2b-contact.dto";
@@ -14,6 +18,19 @@ export class B2bService {
   ) {}
 
   async createContact(dto: B2bContactDto): Promise<B2bContact> {
+    // EVT-20: Prevent refillable submissions — check for recent identical entry
+    const recentThreshold = new Date(Date.now() - 5 * 60 * 1000); // 5 minutes
+    const recent = await this.b2bContactModel.findOne({
+      email: dto.email.toLowerCase(),
+      companyName: dto.companyName,
+      createdAt: { $gte: recentThreshold },
+    });
+    if (recent) {
+      throw new ConflictException(
+        "Ya tenemos una propuesta reciente tuya. Te contactaremos pronto.",
+      );
+    }
+
     // A-15: Explicitly pick only allowed fields to prevent mass assignment
     const contact = new this.b2bContactModel({
       companyName: dto.companyName,

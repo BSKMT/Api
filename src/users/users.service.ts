@@ -15,6 +15,7 @@ import {
   REQUIRED_PROFILE_SECTIONS,
 } from "./schemas/user.schema";
 import { UpdateProfileSectionDto } from "../profile/dto/update-profile-section.dto";
+import { DeleteProfileSectionDto } from "../profile/dto/delete-profile-section.dto";
 
 function getColombiaDate(): string {
   const now = new Date();
@@ -154,6 +155,10 @@ export class UsersService {
     userId: string,
     sectionId: string,
   ): Promise<UserDocument> {
+    // ADM-12: Validate sectionId against whitelist
+    if (!DeleteProfileSectionDto.isValidSectionId(sectionId)) {
+      throw new BadRequestException(`Sección inválida: ${sectionId}`);
+    }
     const user = await this.userModel.findById(userId);
     if (!user) {
       throw new NotFoundException("Usuario no encontrado");

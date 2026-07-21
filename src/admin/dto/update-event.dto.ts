@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsEnum,
   IsNumber,
+  IsInt,
   IsBoolean,
   IsArray,
   MinLength,
@@ -98,6 +99,7 @@ export class UpdateEventDto {
 
   @IsNumber()
   @Min(0)
+  @IsInt()
   @IsOptional()
   maxCapacity?: number;
 

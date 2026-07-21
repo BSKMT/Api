@@ -1,4 +1,4 @@
-import { IsString, IsIn, IsOptional, IsNumber, Min } from "class-validator";
+import { IsString, IsIn, IsOptional } from "class-validator";
 
 export class CreatePaymentDto {
   @IsString()
@@ -29,9 +29,4 @@ export class CreatePaymentDto {
   @IsString()
   @IsOptional()
   relatedReference?: string;
-
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  amount?: number;
 }
