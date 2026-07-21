@@ -97,13 +97,18 @@ export class ZohoMailService {
       infer: true,
     });
 
-    const url = new URL(`${tokenBase}/token`);
-    url.searchParams.set("refresh_token", refreshToken);
-    url.searchParams.set("client_id", clientId);
-    url.searchParams.set("client_secret", clientSecret);
-    url.searchParams.set("grant_type", "refresh_token");
+    // M13: Send credentials in POST body, NOT query string (CWE-598)
+    const body = new URLSearchParams();
+    body.set("refresh_token", refreshToken);
+    body.set("client_id", clientId);
+    body.set("client_secret", clientSecret);
+    body.set("grant_type", "refresh_token");
 
-    const res = await fetch(url, { method: "POST" });
+    const res = await fetch(`${tokenBase}/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+    });
     const data = (await res.json()) as ZohoTokenResponse & {
       error?: string;
     };

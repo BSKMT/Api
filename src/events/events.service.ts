@@ -519,12 +519,46 @@ export class EventsService {
       paymentConfirmed: !pricing.requiresPayment,
     });
 
-    const saved = await enrollment.save();
+    // M15: Handle E11000 race on unique index { userId, courseSlug }
+    let saved: CourseEnrollmentDocument;
+    try {
+      saved = await enrollment.save();
+    } catch (err: unknown) {
+      if (
+        err &&
+        typeof err === "object" &&
+        "code" in err &&
+        err.code === 11000
+      ) {
+        throw new ConflictException("Ya estás inscrito en este curso");
+      }
+      throw err;
+    }
 
-    await this.courseModel.updateOne(
-      { slug: courseSlug },
-      { $inc: { enrolledCount: 1 } },
-    );
+    // M15: Atomic capacity-aware increment with rollback on full
+    const maxCap = course.maxCapacity;
+    if (maxCap != null && maxCap > 0) {
+      const updateResult = await this.courseModel.findOneAndUpdate(
+        {
+          slug: courseSlug,
+          $expr: {
+            $lt: [{ $ifNull: ["$enrolledCount", 0] }, maxCap],
+          },
+        },
+        { $inc: { enrolledCount: 1 } },
+      );
+      if (!updateResult) {
+        await this.courseEnrollmentModel.deleteOne({ _id: saved._id }).exec();
+        throw new BadRequestException(
+          "El curso ha alcanzado su capacidad máxima",
+        );
+      }
+    } else {
+      await this.courseModel.updateOne(
+        { slug: courseSlug },
+        { $inc: { enrolledCount: 1 } },
+      );
+    }
 
     this.logger.log(
       `Course enrollment: user=${userId} course=${courseSlug} status=${enrollment.status} amount=${pricing.amount}`,
@@ -638,7 +672,12 @@ export class EventsService {
       throw new BadRequestException("La inscripción no está activa");
     }
 
-    enrollment.progress = Math.min(100, Math.max(0, progress));
+    // M14: Progress is monotonic — can only increase, never decrease.
+    // Prevents client from directly jumping to 100 without consuming content.
+    enrollment.progress = Math.max(
+      enrollment.progress,
+      Math.min(100, Math.max(0, progress)),
+    );
 
     if (enrollment.progress === 100 && !enrollment.completedAt) {
       if (!enrollment.paymentConfirmed) {

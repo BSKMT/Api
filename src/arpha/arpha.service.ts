@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
@@ -72,9 +73,27 @@ export class ArphaService {
       isMember,
       amount,
       paymentConfirmed: isMember,
+      // M16: Set activeRequestKey to userId — sparse unique index prevents race
+      activeRequestKey: userId,
     });
 
-    const saved = await request.save();
+    // M16: Catch E11000 from concurrent createRequest race
+    let saved;
+    try {
+      saved = await request.save();
+    } catch (err: unknown) {
+      if (
+        err &&
+        typeof err === "object" &&
+        "code" in err &&
+        err.code === 11000
+      ) {
+        throw new ConflictException(
+          "Ya tienes una solicitud de asistencia activa",
+        );
+      }
+      throw err;
+    }
     this.logger.log(
       `ARPHA request created: id=${String(saved._id)} user=${userId} type=${dto.requestType} amount=${amount} member=${isMember}`,
     );
@@ -113,6 +132,7 @@ export class ArphaService {
 
     request.status = ArphaRequestStatus.CANCELLED;
     request.cancelledAt = new Date();
+    request.activeRequestKey = null; // M16: Release active slot
     await request.save();
 
     this.logger.log(`ARPHA request cancelled: id=${requestId} user=${userId}`);
