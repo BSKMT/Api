@@ -84,7 +84,11 @@ export class AdminMembershipService {
   }
 
   async getTransaction(reference: string) {
-    const tx = await this.transactionModel.findOne({ reference }).lean();
+    // M5: Exclude webhookEvents (contains PII: payer email, BIN, signatures)
+    const tx = await this.transactionModel
+      .findOne({ reference })
+      .select("-webhookEvents")
+      .lean();
     if (!tx) {
       throw new NotFoundException("Transacción no encontrada");
     }
@@ -107,13 +111,19 @@ export class AdminMembershipService {
     const page = filters.page ?? 1;
     const skip = (page - 1) * limit;
 
+    // M6: Exclude sensitive profile data from member listings
+    const SENSITIVE_PROFILE_EXCLUSIONS =
+      "-profile.salud-seguridad -profile.documentacion-legal";
+
     const [items, total] = await Promise.all([
       this.userModel
         .find(filter)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
-        .select("-password -refreshTokenHash")
+        .select(
+          "-betterAuthId " + SENSITIVE_PROFILE_EXCLUSIONS,
+        )
         .lean(),
       this.userModel.countDocuments(filter),
     ]);
@@ -128,14 +138,16 @@ export class AdminMembershipService {
   }
 
   async getMember(userId: string) {
+    // M6: Exclude health/legal profile sections (special category data per Ley 1581/GDPR)
     const user = await this.userModel
       .findById(userId)
-      .select("-password -refreshTokenHash")
+      .select("-password -refreshTokenHash -profile.salud-seguridad -profile.documentacion-legal")
       .lean();
     if (!user) {
       throw new NotFoundException("Usuario no encontrado");
     }
 
+    // M5: Exclude webhookEvents from transactions (PII)
     const transactions = await this.transactionModel
       .find({ userId })
       .sort({ createdAt: -1 })
