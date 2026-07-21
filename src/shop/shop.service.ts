@@ -88,24 +88,32 @@ export class ShopService {
     const orderItems = [];
 
     for (const item of dto.items) {
-      const product = await this.productModel.findOne({
-        slug: item.productSlug,
-        status: ProductStatus.PUBLISHED,
-      });
+      const qty = item.quantity;
+
+      // A3: Atomic check-and-decrement prevents TOCTOU race on stock
+      const product = await this.productModel.findOneAndUpdate(
+        {
+          slug: item.productSlug,
+          status: ProductStatus.PUBLISHED,
+          stock: { $gte: qty },
+        },
+        { $inc: { stock: -qty } },
+        { new: true },
+      );
 
       if (!product) {
+        // Rollback all previously decremented stock
+        for (const oi of orderItems) {
+          await this.productModel.updateOne(
+            { slug: oi.productSlug },
+            { $inc: { stock: oi.quantity } },
+          );
+        }
         throw new NotFoundException(
-          `Producto no encontrado: ${item.productSlug}`,
+          `Producto no encontrado o stock insuficiente: ${item.productSlug}`,
         );
       }
 
-      if (product.stock < item.quantity) {
-        throw new BadRequestException(
-          `Stock insuficiente para: ${product.name}`,
-        );
-      }
-
-      const qty = item.quantity;
       const publicPrice = product.publicPrice;
       const publicSubtotal = publicPrice * qty;
 
@@ -131,11 +139,6 @@ export class ShopService {
         quantity: qty,
         subtotal,
       });
-
-      await this.productModel.updateOne(
-        { _id: product._id },
-        { $inc: { stock: -qty } },
-      );
     }
 
     const orderNumber = `BSK-${Date.now().toString(36)}`;
@@ -149,7 +152,19 @@ export class ShopService {
       shippingAddress: dto.shippingAddress ?? null,
     });
 
-    const saved = await order.save();
+    let saved: OrderDocument;
+    try {
+      saved = await order.save();
+    } catch (err) {
+      // A3: Rollback stock decrements if order save fails
+      for (const oi of orderItems) {
+        await this.productModel.updateOne(
+          { slug: oi.productSlug },
+          { $inc: { stock: oi.quantity } },
+        );
+      }
+      throw err;
+    }
 
     this.logger.log(
       `Order created: ${orderNumber} user=${userId} total=${total} publicTotal=${publicTotal} discount=${memberDiscount} member=${isMember}`,
@@ -168,8 +183,9 @@ export class ShopService {
     orderNumber: string,
     transactionReference: string,
   ): Promise<OrderDocument> {
+    // M11: Only link payment to PENDING orders — prevents resurrección of CANCELLED orders
     const order = await this.orderModel.findOneAndUpdate(
-      { orderNumber },
+      { orderNumber, status: OrderStatus.PENDING },
       {
         transactionReference,
         status: OrderStatus.PAID,
@@ -178,7 +194,9 @@ export class ShopService {
     );
 
     if (!order) {
-      throw new NotFoundException("Pedido no encontrado");
+      throw new NotFoundException(
+        "Pedido no encontrado o ya no está pendiente de pago",
+      );
     }
 
     this.logger.log(
@@ -215,6 +233,13 @@ export class ShopService {
 
     if (order.status === OrderStatus.CANCELLED) {
       throw new BadRequestException("El pedido ya está cancelado");
+    }
+
+    // M11: Only PENDING orders can be cancelled — PAID orders require admin refund
+    if (order.status !== OrderStatus.PENDING) {
+      throw new BadRequestException(
+        "No se puede cancelar un pedido que ya fue pagado o enviado",
+      );
     }
 
     if (
