@@ -13,6 +13,7 @@ import {
 } from "../../arpha/schemas/arpha-request.schema";
 import { AssignArphaRequestDto } from "../dto/assign-arpha-request.dto";
 import { UpdateArphaStatusDto } from "../dto/update-arpha-status.dto";
+import { ensureString } from "../../common/utils/sanitize-query.util";
 
 @Injectable()
 export class AdminArphaService {
@@ -29,12 +30,16 @@ export class AdminArphaService {
     limit?: number;
     page?: number;
   }) {
+    // M2: Sanitize filter
     const filter: Record<string, unknown> = {};
-    if (filters.status) filter.status = filters.status;
-    if (filters.requestType) filter.requestType = filters.requestType;
+    const status = ensureString(filters.status);
+    const requestType = ensureString(filters.requestType);
+    if (status) filter.status = status;
+    if (requestType) filter.requestType = requestType;
 
-    const limit = filters.limit ?? 50;
-    const page = filters.page ?? 1;
+    // M1: Clamp limit/page
+    const limit = Math.min(Math.max(filters.limit ?? 50, 1), 100);
+    const page = Math.max(filters.page ?? 1, 1);
     const skip = (page - 1) * limit;
 
     const [items, total] = await Promise.all([

@@ -28,6 +28,7 @@ import {
   NotificationPriority,
 } from "../../notifications/schemas/notification.schema";
 import { MEMBERSHIP_DURATION_MS } from "../../membership/membership.constants";
+import { ensureString } from "../../common/utils/sanitize-query.util";
 
 @Injectable()
 export class AdminMembershipService {
@@ -50,13 +51,16 @@ export class AdminMembershipService {
     limit?: number;
     page?: number;
   }) {
+    // M2: Sanitize filter
     const filter: Record<string, unknown> = {};
-    if (filters.status) filter.status = filters.status;
-    if (filters.userId) filter.userId = filters.userId;
+    const status = ensureString(filters.status);
+    const userId = ensureString(filters.userId);
+    if (status) filter.status = status;
+    if (userId) filter.userId = userId;
     if (filters.isRenewal !== undefined) filter.isRenewal = filters.isRenewal;
 
     const limit = Math.min(Math.max(filters.limit ?? 50, 1), 100);
-    const page = filters.page ?? 1;
+    const page = Math.max(filters.page ?? 1, 1);
     const skip = (page - 1) * limit;
 
     const [items, total] = await Promise.all([
