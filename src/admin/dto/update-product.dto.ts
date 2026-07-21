@@ -3,6 +3,7 @@ import {
   IsOptional,
   IsEnum,
   IsNumber,
+  IsInt,
   IsBoolean,
   MinLength,
   MaxLength,
@@ -45,6 +46,7 @@ export class UpdateProductDto {
 
   @IsNumber()
   @Min(0)
+  @IsInt()
   @IsOptional()
   stock?: number;
 

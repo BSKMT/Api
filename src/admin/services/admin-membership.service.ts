@@ -56,7 +56,13 @@ export class AdminMembershipService {
     const status = ensureString(filters.status);
     const userId = ensureString(filters.userId);
     if (status) filter.status = status;
-    if (userId) filter.userId = userId;
+    // ADM-11: Validate userId format to prevent CastError → 500
+    if (userId) {
+      if (!/^[a-fA-F0-9]{24}$/.test(userId)) {
+        throw new BadRequestException("userId inválido");
+      }
+      filter.userId = userId;
+    }
     if (filters.isRenewal !== undefined) filter.isRenewal = filters.isRenewal;
 
     const limit = Math.min(Math.max(filters.limit ?? 50, 1), 100);

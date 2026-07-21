@@ -18,6 +18,10 @@ import {
   WishlistItemDocument,
 } from "./schemas/wishlist-item.schema";
 import { CreateOrderDto } from "./dto/create-order.dto";
+import {
+  maskAmount,
+  maskUserId,
+} from "../common/utils/log-redact.util";
 
 const LEGEND_LEVELS = new Set([
   "Legend",
@@ -167,7 +171,8 @@ export class ShopService {
     }
 
     this.logger.log(
-      `Order created: ${orderNumber} user=${userId} total=${total} publicTotal=${publicTotal} discount=${memberDiscount} member=${isMember}`,
+      // ADM-13: Redact user ID and amounts in logs
+    `Order created: ${orderNumber} user=${maskUserId(userId)} total=${maskAmount(total)} publicTotal=${maskAmount(publicTotal)} discount=${maskAmount(memberDiscount)} member=${isMember}`,
     );
 
     return {

@@ -6,7 +6,7 @@ import {
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
-import { User, UserDocument } from "../../users/schemas/user.schema";
+import { User, UserDocument, UserRole } from "../../users/schemas/user.schema";
 import { NotificationsService } from "../../notifications/notifications.service";
 import {
   NotificationType,
@@ -62,6 +62,18 @@ export class AdminSettingsService {
       throw new BadRequestException(
         "Este usuario no ha solicitado eliminacion",
       );
+    }
+
+    // ADM-17: Prevent deleting the last admin account
+    if (user.role === UserRole.ADMIN) {
+      const adminCount = await this.userModel.countDocuments({
+        role: UserRole.ADMIN,
+      });
+      if (adminCount <= 1) {
+        throw new BadRequestException(
+          "No se puede eliminar la última cuenta de administrador",
+        );
+      }
     }
 
     const db = getMongoDb();

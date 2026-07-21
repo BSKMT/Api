@@ -23,6 +23,11 @@ import { ArphaService } from "../arpha/arpha.service";
 import { ARPHA_PRICING } from "../arpha/schemas/arpha-request.schema";
 import { UsersService } from "../users/users.service";
 import { UserRole } from "../users/schemas/user.schema";
+import {
+  maskUserId,
+  maskReference,
+  maskAmount,
+} from "../common/utils/log-redact.util";
 import type { EnvironmentConfig } from "../config/config.interface";
 
 const EVENT_TIER_REFERENCE_PREFIX: Record<string, string> = {
@@ -158,7 +163,7 @@ export class PaymentsService {
 
     const timestamp = Date.now();
     const shortUserId = userId.slice(-8);
-    const reference = `${ARPHA_TIER_PREFIX[dto.tier]}-${shortUserId}-${timestamp}`;
+    const reference = `${ARPHA_TIER_PREFIX[dto.tier]}-${shortUserId}-${timestamp}-${crypto.randomBytes(4).toString("hex")}`;
 
     const transaction = new this.transactionModel({
       userId,
@@ -218,7 +223,7 @@ export class PaymentsService {
     const hasCompanion = COMPANION_TIERS.has(dto.tier);
     const timestamp = Date.now();
     const shortUserId = userId.slice(-8);
-    const reference = `${EVENT_TIER_REFERENCE_PREFIX[dto.tier]}-${shortUserId}-${timestamp}`;
+    const reference = `${EVENT_TIER_REFERENCE_PREFIX[dto.tier]}-${shortUserId}-${timestamp}-${crypto.randomBytes(4).toString("hex")}`;
 
     const transaction = new this.transactionModel({
       userId,
@@ -241,6 +246,8 @@ export class PaymentsService {
       this.logger.log(
         `Free tier payment auto-approved: ${reference} for user ${userId}`,
       );
+      // PAY-15: Link free ($0) registrations to the benefit
+      await this.linkPaymentByPurpose(transaction);
       return {
         reference,
         amount,
@@ -294,7 +301,7 @@ export class PaymentsService {
 
     const timestamp = Date.now();
     const shortUserId = userId.slice(-8);
-    const reference = `${COURSE_TIER_REFERENCE_PREFIX[dto.tier]}-${shortUserId}-${timestamp}`;
+    const reference = `${COURSE_TIER_REFERENCE_PREFIX[dto.tier]}-${shortUserId}-${timestamp}-${crypto.randomBytes(4).toString("hex")}`;
 
     const transaction = new this.transactionModel({
       userId,
@@ -317,6 +324,8 @@ export class PaymentsService {
       this.logger.log(
         `Free course payment auto-approved: ${reference} for user ${userId}`,
       );
+      // PAY-15: Link free ($0) course registration to the benefit
+      await this.linkPaymentByPurpose(transaction);
       return {
         reference,
         amount,
@@ -333,7 +342,7 @@ export class PaymentsService {
     description: string,
   ) {
     this.logger.log(
-      `Payment intent created: ${transaction.reference} for user ${transaction.userId}, amount: ${transaction.amount} COP`,
+      `Payment intent created: ref=${maskReference(transaction.reference)} user=${maskUserId(transaction.userId)} amount=${maskAmount(transaction.amount)} COP`,
     );
 
     return {
@@ -375,7 +384,7 @@ export class PaymentsService {
 
     const timestamp = Date.now();
     const shortUserId = userId.slice(-8);
-    const reference = `SHOP-${shortUserId}-${timestamp}`;
+    const reference = `SHOP-${shortUserId}-${timestamp}-${crypto.randomBytes(4).toString("hex")}`;
 
     const transaction = new this.transactionModel({
       userId,
@@ -453,6 +462,7 @@ export class PaymentsService {
       return null;
     }
 
+    // Atomic find + dedup check to prevent race condition
     const transaction = await this.transactionModel.findOne({
       reference: parsed.referenceId,
     });
@@ -468,6 +478,21 @@ export class PaymentsService {
         `Duplicate webhook ignored: ${parsed.notificationId ?? parsed.paymentId}, ${parsed.referenceId}`,
       );
       return null;
+    }
+
+    // PAY-16: If notificationId is missing, use paymentId as fallback dedup
+    if (parsed.notificationId === undefined && parsed.paymentId) {
+      const seenByPaymentId = transaction.webhookEvents.some(
+        (e) =>
+          typeof e["paymentId"] === "string" &&
+          e["paymentId"] === parsed.paymentId,
+      );
+      if (seenByPaymentId) {
+        this.logger.log(
+          `Duplicate webhook (by paymentId) ignored: ${parsed.paymentId}, ${parsed.referenceId}`,
+        );
+        return null;
+      }
     }
 
     return transaction;

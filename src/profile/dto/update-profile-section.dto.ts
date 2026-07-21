@@ -49,7 +49,18 @@ export class UpdateProfileSectionDto {
     for (const [key, value] of Object.entries(obj)) {
       if (++keyCount > this.MAX_KEYS) break;
       if (FORBIDDEN_KEYS.has(key) || extraForbidden.has(key)) continue;
-      if (value && typeof value === "object" && !Array.isArray(value)) {
+      if (Array.isArray(value)) {
+        // ADM-18: Sanitize arrays — sanitize each object element, keep primitives
+        cleaned[key] = value.map((item) =>
+          item && typeof item === "object" && !Array.isArray(item)
+            ? UpdateProfileSectionDto.sanitize(
+                item as Record<string, unknown>,
+                undefined,
+                depth + 1,
+              )
+            : item,
+        );
+      } else if (value && typeof value === "object") {
         cleaned[key] = UpdateProfileSectionDto.sanitize(
           value as Record<string, unknown>,
           undefined,

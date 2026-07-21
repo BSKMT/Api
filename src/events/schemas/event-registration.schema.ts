@@ -35,6 +35,10 @@ export class EventRegistration {
   @Prop({ type: Date, default: null })
   waiverAcceptedAt!: Date | null;
 
+  // EVT-17: Store IP/UA for waiver audit trail
+  @Prop({ type: String, default: null })
+  waiverAcceptedIp!: string | null;
+
   @Prop({
     type: Object,
     default: null,
