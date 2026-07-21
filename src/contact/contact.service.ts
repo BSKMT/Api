@@ -1,6 +1,7 @@
 import { Injectable, Logger, BadRequestException } from "@nestjs/common";
 import { EmailService } from "../zoho-mail/email.service";
 import { ContactDto } from "./dto/contact.dto";
+import { maskEmail, sanitizeForLog } from "../common/utils/log-redact.util";
 
 /**
  * ContactService - Orquesta el envio de correos para el formulario de
@@ -33,7 +34,7 @@ export class ContactService {
 
     if (!delivered) {
       this.logger.warn(
-        `Contacto de ${dto.email} registrado pero no entregado por correo (Zoho no configurado o fallo de envio)`,
+        `Contacto de ${maskEmail(dto.email)} registrado pero no entregado por correo (Zoho no configurado o fallo de envio)`,
       );
       throw new BadRequestException({
         message:
@@ -41,7 +42,10 @@ export class ContactService {
       });
     }
 
-    this.logger.log(`Mensaje de contacto recibido de ${dto.email}`);
+    // M18: Redact email + sanitize name/subject to prevent CRLF log injection
+    this.logger.log(
+      `Mensaje de contacto recibido de ${maskEmail(dto.email)} asunto: ${sanitizeForLog(dto.subject)}`,
+    );
     return {
       message:
         "Hemos recibido tu mensaje. Te contactaremos en un maximo de 48 horas habiles.",

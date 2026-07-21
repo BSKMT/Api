@@ -11,3 +11,15 @@ export function maskUserId(id: string): string {
   if (!id || id.length < 8) return "***";
   return `${id.slice(0, 4)}...${id.slice(-4)}`;
 }
+
+export function maskEmail(email: string): string {
+  if (!email || !email.includes("@")) return "***";
+  const [local, domain] = email.split("@");
+  if (local.length <= 2) return `***@${domain}`;
+  return `${local.slice(0, 2)}***@${domain}`;
+}
+
+/** M18: Strip CRLF and other control chars to prevent log injection. */
+export function sanitizeForLog(value: string): string {
+  return value.replace(/[\r\n\t]/g, " ").slice(0, 200);
+}
