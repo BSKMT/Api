@@ -228,6 +228,17 @@ export class UsersService {
     );
   }
 
+  async incrementRenewalInstallmentsPaid(
+    userId: string,
+  ): Promise<number> {
+    const updated = await this.userModel.findOneAndUpdate(
+      { _id: userId },
+      { $inc: { renewalInstallmentsPaid: 1 } },
+      { new: true },
+    );
+    return updated?.renewalInstallmentsPaid ?? 0;
+  }
+
   async updatePartialPaymentCredit(
     userId: string,
     credit: PartialPaymentCredit,
