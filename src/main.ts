@@ -23,7 +23,6 @@ const authRateLimit = new Map<string, { count: number; resetAt: number }>();
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     cors: false,
-    rawBody: true,
     bodyParser: false,
   });
 
@@ -177,7 +176,14 @@ async function bootstrap() {
   });
 
   app.use(urlencoded({ extended: true, limit: "1mb" }));
-  app.use(express.json({ limit: "1mb" }));
+  app.use(
+    express.json({
+      limit: "1mb",
+      verify: (req: Request, _res: Response, buf: Buffer) => {
+        (req as Request & { rawBody?: Buffer }).rawBody = buf;
+      },
+    }),
+  );
 
   app.useGlobalPipes(
     new ValidationPipe({
