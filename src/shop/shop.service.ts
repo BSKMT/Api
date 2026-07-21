@@ -252,11 +252,17 @@ export class ShopService {
     order.status = OrderStatus.CANCELLED;
     await order.save();
 
+    // M12: Restore stock with rollback logging — if any restore fails, log for manual reconciliation
     for (const item of order.items) {
-      await this.productModel.updateOne(
+      const restoreResult = await this.productModel.updateOne(
         { slug: item.productSlug },
         { $inc: { stock: item.quantity } },
       );
+      if (restoreResult.modifiedCount === 0) {
+        this.logger.error(
+          `Stock restore failed for ${item.productSlug} (qty ${item.quantity}) on cancelled order ${orderNumber} — manual reconciliation needed`,
+        );
+      }
     }
 
     this.logger.log(`Order cancelled: ${orderNumber} user=${userId}`);
