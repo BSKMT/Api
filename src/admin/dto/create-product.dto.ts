@@ -3,10 +3,12 @@ import {
   IsOptional,
   IsEnum,
   IsNumber,
+  IsInt,
   IsBoolean,
   MinLength,
   MaxLength,
   Min,
+  Max,
 } from "class-validator";
 import { ProductStatus } from "../../shop/schemas/product.schema";
 
@@ -38,6 +40,7 @@ export class CreateProductDto {
 
   @IsNumber()
   @Min(0)
+  @Max(100)
   @IsOptional()
   memberDiscountPercent?: number;
 
