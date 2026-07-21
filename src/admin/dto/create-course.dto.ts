@@ -8,6 +8,7 @@ import {
   MinLength,
   MaxLength,
   Min,
+  Max,
 } from "class-validator";
 import {
   CourseLevel,
@@ -72,11 +73,13 @@ export class CreateCourseDto {
 
   @IsNumber()
   @Min(0)
+  @Max(100)
   @IsOptional()
   memberSemipresencialDiscount?: number;
 
   @IsNumber()
   @Min(0)
+  @Max(100)
   @IsOptional()
   memberPresencialDiscount?: number;
 

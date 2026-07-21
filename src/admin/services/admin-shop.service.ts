@@ -100,9 +100,12 @@ export class AdminShopService {
     slug: string,
     dto: UpdateProductDto,
   ): Promise<ProductDocument> {
+    // A9: Defense-in-depth — never allow slug change on update
+    const updateFields = { ...dto };
+    delete updateFields.slug;
     const updated = await this.productModel.findOneAndUpdate(
       { slug },
-      { $set: { ...dto } },
+      { $set: updateFields },
       { new: true },
     );
     if (!updated) {

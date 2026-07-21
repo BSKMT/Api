@@ -7,16 +7,12 @@ import {
   MinLength,
   MaxLength,
   Min,
+  Max,
 } from "class-validator";
 import { ProductStatus } from "../../shop/schemas/product.schema";
 
 export class UpdateProductDto {
-  @IsString()
-  @MinLength(2)
-  @MaxLength(120)
-  @IsOptional()
-  slug?: string;
-
+  // A9: slug removed — slug is the identifier, cannot be changed via update
   @IsString()
   @MinLength(2)
   @MaxLength(200)
@@ -40,8 +36,10 @@ export class UpdateProductDto {
   @IsOptional()
   publicPrice?: number;
 
+  // A8: @Max(100) prevents negative checkout totals
   @IsNumber()
   @Min(0)
+  @Max(100)
   @IsOptional()
   memberDiscountPercent?: number;
 
