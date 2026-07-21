@@ -51,7 +51,7 @@ export class UpdateProfileSectionDto {
       if (FORBIDDEN_KEYS.has(key) || extraForbidden.has(key)) continue;
       if (Array.isArray(value)) {
         // ADM-18: Sanitize arrays — sanitize each object element, keep primitives
-        cleaned[key] = value.map((item) =>
+        cleaned[key] = (value as unknown[]).map((item: unknown): unknown =>
           item && typeof item === "object" && !Array.isArray(item)
             ? UpdateProfileSectionDto.sanitize(
                 item as Record<string, unknown>,

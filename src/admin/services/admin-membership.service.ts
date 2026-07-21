@@ -127,9 +127,7 @@ export class AdminMembershipService {
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
-        .select(
-          "-betterAuthId " + SENSITIVE_PROFILE_EXCLUSIONS,
-        )
+        .select("-betterAuthId " + SENSITIVE_PROFILE_EXCLUSIONS)
         .lean(),
       this.userModel.countDocuments(filter),
     ]);
@@ -147,7 +145,9 @@ export class AdminMembershipService {
     // M6: Exclude health/legal profile sections (special category data per Ley 1581/GDPR)
     const user = await this.userModel
       .findById(userId)
-      .select("-password -refreshTokenHash -profile.salud-seguridad -profile.documentacion-legal")
+      .select(
+        "-password -refreshTokenHash -profile.salud-seguridad -profile.documentacion-legal",
+      )
       .lean();
     if (!user) {
       throw new NotFoundException("Usuario no encontrado");

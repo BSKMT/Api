@@ -18,10 +18,7 @@ export function sanitizeQuery<T extends Record<string, unknown>>(
     if (key.startsWith("$")) continue;
 
     if (value && typeof value === "object" && !Array.isArray(value)) {
-      cleaned[key] = sanitizeQuery(
-        value as Record<string, unknown>,
-        depth + 1,
-      );
+      cleaned[key] = sanitizeQuery(value as Record<string, unknown>, depth + 1);
     } else {
       cleaned[key] = value;
     }

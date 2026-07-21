@@ -114,11 +114,7 @@ export class EventsService {
       existing.transactionReference = null;
       existing.companionData = null;
       // A6: Increment counter BEFORE save to prevent ghost registrations on capacity full
-      try {
-        await this.incrementEventRegisteredCount(dto.eventSlug, event);
-      } catch (err) {
-        throw err;
-      }
+      await this.incrementEventRegisteredCount(dto.eventSlug, event);
       const saved = await existing.save();
       this.logger.log(
         `Event re-registration after cancellation: user=${userId} event=${dto.eventSlug} status=${status}`,
@@ -515,6 +511,8 @@ export class EventsService {
       courseSlug,
     });
 
+    const pricing = this.calculateCoursePricing(course, membershipLevel);
+
     if (existing) {
       // EVT-16: Allow re-enrollment after cancellation, reject if still active
       if (existing.status !== "CANCELLED") {
@@ -558,8 +556,6 @@ export class EventsService {
       );
       return { enrollment: existing, pricing };
     }
-
-    const pricing = this.calculateCoursePricing(course, membershipLevel);
 
     const enrollment = new this.courseEnrollmentModel({
       userId,

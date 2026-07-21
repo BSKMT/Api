@@ -3,7 +3,6 @@ import { ConfigService } from "@nestjs/config";
 import type { EnvironmentConfig } from "../config/config.interface";
 import { ZohoMailService } from "./zoho-mail.service";
 import {
-  contactAutoReplyTemplate,
   contactInternalTemplate,
   emailVerificationTemplate,
   loginOtpTemplate,

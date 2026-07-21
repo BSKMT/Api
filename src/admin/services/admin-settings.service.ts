@@ -65,7 +65,7 @@ export class AdminSettingsService {
     }
 
     // ADM-17: Prevent deleting the last admin account
-    if (user.role === UserRole.ADMIN) {
+    if ((user.role as UserRole) === UserRole.ADMIN) {
       const adminCount = await this.userModel.countDocuments({
         role: UserRole.ADMIN,
       });

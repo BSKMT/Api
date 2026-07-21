@@ -113,7 +113,9 @@ export class PaymentsService {
       user.membershipExpiryDate != null &&
       new Date(user.membershipExpiryDate) < now;
     const isActiveMember =
-      user.role === UserRole.MEMBER && !membershipExpired && !!user.membershipLevel;
+      (user.role as UserRole) === UserRole.MEMBER &&
+      !membershipExpired &&
+      !!user.membershipLevel;
     if (!isActiveMember) {
       throw new ForbiddenException(
         "No tienes una membresía activa para usar este tier de precio",
