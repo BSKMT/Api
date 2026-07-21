@@ -333,16 +333,29 @@ export class AdminMembershipService {
   }
 
   async approveRefund(userId: string, actorId = "") {
-    const user = await this.userModel.findById(userId);
-    if (!user) {
-      throw new NotFoundException("Usuario no encontrado");
-    }
-    const credit = user.partialPaymentCredit;
-    if (credit?.type !== CreditType.REFUND_REQUESTED) {
+    // M4: Atomic update with type guard prevents double refund by concurrent admins
+    const updated = await this.userModel.findOneAndUpdate(
+      {
+        _id: userId,
+        "partialPaymentCredit.type": CreditType.REFUND_REQUESTED,
+      },
+      {
+        $set: {
+          "partialPaymentCredit.type": CreditType.REFUNDED,
+          "partialPaymentCredit.notes": "Reembolso aprobado por admin",
+        },
+      },
+      { new: true },
+    );
+    if (!updated) {
+      const user = await this.userModel.findById(userId);
+      if (!user) throw new NotFoundException("Usuario no encontrado");
       throw new BadRequestException(
-        "El usuario no tiene una solicitud de reembolso pendiente",
+        "El reembolso ya fue procesado o el crédito no está pendiente",
       );
     }
+
+    const credit = updated.partialPaymentCredit!;
 
     const timestamp = Date.now();
     const shortUserId = userId.slice(-8);
@@ -366,11 +379,7 @@ export class AdminMembershipService {
     await this.userModel.updateOne(
       { _id: userId },
       {
-        partialPaymentCredit: {
-          ...credit,
-          type: CreditType.REFUNDED,
-          notes: `Reembolso aprobado por admin. Ref: ${reference}`,
-        },
+        "partialPaymentCredit.notes": `Reembolso aprobado por admin. Ref: ${reference}`,
       },
     );
 
