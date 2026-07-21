@@ -20,6 +20,10 @@ import {
 import { CreateProductDto } from "../dto/create-product.dto";
 import { UpdateProductDto } from "../dto/update-product.dto";
 import { UpdateOrderStatusDto } from "../dto/update-order-status.dto";
+import {
+  sanitizeQuery,
+  ensureString,
+} from "../../common/utils/sanitize-query.util";
 
 @Injectable()
 export class AdminShopService {
@@ -38,12 +42,16 @@ export class AdminShopService {
     limit?: number;
     page?: number;
   }) {
+    // M2: Sanitize filter to prevent NoSQL operator injection
     const filter: Record<string, unknown> = {};
-    if (filters.status) filter.status = filters.status;
-    if (filters.collection) filter.collection = filters.collection;
+    const status = ensureString(filters.status);
+    const collection = ensureString(filters.collection);
+    if (status) filter.status = status;
+    if (collection) filter.collection = collection;
 
-    const limit = filters.limit ?? 50;
-    const page = filters.page ?? 1;
+    // M1: Clamp limit/page to prevent DoS via massive limit values
+    const limit = Math.min(Math.max(filters.limit ?? 50, 1), 100);
+    const page = Math.max(filters.page ?? 1, 1);
     const skip = (page - 1) * limit;
 
     const [items, total] = await Promise.all([
@@ -155,11 +163,14 @@ export class AdminShopService {
     limit?: number;
     page?: number;
   }) {
+    // M2: Sanitize filter
     const filter: Record<string, unknown> = {};
-    if (filters.status) filter.status = filters.status;
+    const status = ensureString(filters.status);
+    if (status) filter.status = status;
 
-    const limit = filters.limit ?? 50;
-    const page = filters.page ?? 1;
+    // M1: Clamp limit/page
+    const limit = Math.min(Math.max(filters.limit ?? 50, 1), 100);
+    const page = Math.max(filters.page ?? 1, 1);
     const skip = (page - 1) * limit;
 
     const [items, total] = await Promise.all([

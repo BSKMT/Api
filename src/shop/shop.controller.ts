@@ -18,6 +18,7 @@ import { UsersService } from "../users/users.service";
 import { ShopService } from "./shop.service";
 import { CreateOrderDto } from "./dto/create-order.dto";
 import { AddWishlistDto } from "./dto/add-wishlist.dto";
+import { ensureString } from "../common/utils/sanitize-query.util";
 
 interface AuthenticatedRequest extends Request {
   user: { userId: string; email?: string };
@@ -35,12 +36,14 @@ export class ShopController {
   async getProducts(
     @Query("limit") limit?: string,
     @Query("featured") featured?: string,
-    @Query("collection") collection?: string,
+    @Query("collection") collection?: unknown,
   ) {
+    // M2: Sanitize collection param — public endpoint, prevent NoSQL injection
+    const safeCollection = ensureString(collection);
     return this.shopService.getProducts(
       limit ? Number.parseInt(limit, 10) : 20,
       featured === "true",
-      collection,
+      safeCollection,
     );
   }
 
@@ -116,9 +119,11 @@ export class ShopController {
   @HttpCode(HttpStatus.OK)
   async removeFromWishlist(
     @Req() req: AuthenticatedRequest,
-    @Body("productSlug") productSlug: string,
+    @Body() dto: AddWishlistDto,
   ) {
+    // M2: Use proper DTO instead of raw @Body("productSlug") — prevents
+    // NoSQL injection via {"productSlug":{"$ne":null}} deleting all wishlist items
     const { userId } = req.user;
-    return this.shopService.removeFromWishlist(userId, productSlug);
+    return this.shopService.removeFromWishlist(userId, dto.productSlug);
   }
 }
