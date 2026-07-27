@@ -201,6 +201,10 @@ export class UsersService {
     user.membershipPaymentPlan = paymentPlan;
     user.installmentsPaid =
       paymentPlan === "single" ? 12 : user.installmentsPaid;
+    // C-4: Reset the renewal-installments counter upon successful
+    // activation so the expired-membership cron does not re-grant
+    // credit for an already-completed renewal cycle.
+    user.renewalInstallmentsPaid = 0;
     user.membershipGracePeriodEnd = null;
     user.membershipExpired = false;
 
@@ -303,15 +307,32 @@ export class UsersService {
     );
   }
 
-  // M9: Revert credit used amount when a membership payment fails/is rejected
+  // M9/C-3: Revert credit used amount when a membership payment fails/is
+  // rejected, with an atomic precondition to prevent `usedAmount` from
+  // going negative (which would inflate spendable credit). Returns true
+  // when the revert actually applied; false when a concurrent caller
+  // beat us or the available credit was already insufficient.
   async revertPartialPaymentCredit(
     userId: string,
     amount: number,
-  ): Promise<void> {
-    if (amount <= 0) return;
-    await this.userModel.updateOne(
-      { _id: userId },
+  ): Promise<boolean> {
+    if (amount <= 0) return true;
+    const result = await this.userModel.findOneAndUpdate(
+      {
+        _id: userId,
+        "partialPaymentCredit.usedAmount": { $gte: amount },
+      },
       { $inc: { "partialPaymentCredit.usedAmount": -amount } },
+      { new: true },
     );
+    if (result) return true;
+    // Precondition failed — clamp any sub-zero usedAmount as a
+    // defense-in-depth measure so credit can never be spent multiple
+    // times via the negative-number trick.
+    await this.userModel.updateOne(
+      { _id: userId, "partialPaymentCredit.usedAmount": { $lt: 0 } },
+      { $set: { "partialPaymentCredit.usedAmount": 0 } },
+    );
+    return false;
   }
 }

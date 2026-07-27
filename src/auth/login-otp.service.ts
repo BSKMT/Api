@@ -270,10 +270,21 @@ export class LoginOtpService {
       const message = errorBody["message"] as string | undefined;
 
       if (errorCode === "EMAIL_NOT_VERIFIED") {
-        throw new UnauthorizedException(
-          "Tu correo electrónico no ha sido verificado. Verifica tu correo antes de iniciar sesión.",
-          { cause: rawBody },
+        /**
+         * M-14: EMAIL_NOT_VERIFIED is only emitted after Better Auth has
+         * already validated the password — so it leaks valid credentials
+         * to an attacker probing accounts. Mask it externally as the
+         * generic auth failure but tag the cause server-side for ops
+         * triage. The legitimate user can still trigger a fresh
+         * verification link via the dedicated "Verificar correo" flow
+         * on the landing page.
+         */
+        this.logger.warn(
+          `Account email not verified (masked as generic auth error to close credential oracle)`,
         );
+        throw new UnauthorizedException(LoginOtpService.GENERIC_AUTH_ERROR, {
+          cause: "EMAIL_NOT_VERIFIED",
+        });
       }
 
       // Todos los demas errores (credenciales invalidas, usuario no

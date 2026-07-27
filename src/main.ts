@@ -101,7 +101,9 @@ async function bootstrap() {
     // Exempt external webhook endpoints
     if (
       req.path === "/api/payments/webhook" ||
-      req.path === "/api/membership/webhook"
+      req.path === "/api/membership/webhook" ||
+      req.path.startsWith("/api/internal/cron/") ||
+      req.path === "/api/membership/internal/cron/sweep-pending"
     ) {
       return next();
     }
@@ -148,6 +150,15 @@ async function bootstrap() {
     const path = req.path;
     if (path === "/me" || path === "/me/" || path.startsWith("/login-otp/")) {
       return next();
+    }
+
+    // A-1: Defense-in-depth — native /sign-in/email is disabled in
+    // better-auth.ts (disabledPaths). Reject any direct HTTP hit to that
+    // route with a 404 so a misconfiguration of disabledPaths cannot
+    // silently re-enable the bypass route. The explicit message omits
+    // clues about the existence of the endpoint.
+    if (path === "/sign-in/email") {
+      return res.status(404).json({ message: "Not Found" });
     }
 
     // Simple rate-limit for sensitive Better Auth endpoints (M-3).

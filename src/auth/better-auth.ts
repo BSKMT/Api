@@ -398,6 +398,17 @@ async function initAuth(): Promise<AuthInstance> {
             "http://localhost:4322",
           ],
 
+    /**
+     * A-1: Disable the native `POST /sign-in/email` HTTP route so two-factor
+     * (OTP) login cannot be bypassed. The login flow is exclusively handled
+     * by NestJS (`LoginOtpController` → `LoginOtpService.initiateLogin`)
+     * which calls `auth.api.signInEmail({ asResponse: true })` in-process
+     * (not over HTTP) and gates the session behind an OTP challenge. The
+     * disabledPaths option only blocks the HTTP handler — the in-process
+     * API call still works.
+     */
+    disabledPaths: ["/sign-in/email"],
+
     databaseHooks: {
       user: {
         create: {

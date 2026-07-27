@@ -42,6 +42,14 @@ export class MembershipTransaction {
   @Prop({ type: Number, default: 0 })
   creditUsedAmount!: number;
 
+  // C-2/C-3: Idempotency flags — prevent double-granting of benefits and
+  // double-reverting of credit across duplicate webhook/sync events.
+  @Prop({ default: false })
+  benefitGranted!: boolean;
+
+  @Prop({ default: false })
+  creditReverted!: boolean;
+
   @Prop({ type: Date, default: null })
   paidAt!: Date | null;
 
@@ -62,3 +70,23 @@ export const MembershipTransactionSchema = SchemaFactory.createForClass(
 
 MembershipTransactionSchema.index({ userId: 1, installmentNumber: 1 });
 MembershipTransactionSchema.index({ boldPaymentId: 1 }, { sparse: true });
+
+// A-6: Partial unique index — at most one APPROVED transaction per
+// (user, plan, term, installment). Multiple PENDING attempts are still
+// tolerated in case a webhook arrives while the user is retrying; the
+// sweeper eventually collapses abandoned PENDING to VOIDED. The
+// in-service guard (`createMembershipPayment`) additionally rejects new
+// intents when a PENDING already exists for the same installment key to
+// avoid two Bold checkout links charging the same cuota.
+MembershipTransactionSchema.index(
+  {
+    userId: 1,
+    paymentPlan: 1,
+    isRenewal: 1,
+    installmentNumber: 1,
+  },
+  {
+    unique: true,
+    partialFilterExpression: { status: "APPROVED" },
+  },
+);

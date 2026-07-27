@@ -24,4 +24,5 @@ export const configValidationSchema = Joi.object({
     .uri()
     .default("https://accounts.zoho.com/oauth/v2"),
   LANDING_PAGE_URL: Joi.string().uri().default("http://localhost:4321"),
+  CRON_SECRET: Joi.string().min(16).required(),
 });

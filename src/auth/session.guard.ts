@@ -84,6 +84,22 @@ export class SessionGuard {
       );
     }
 
+    // A-2: Reject deactivated users and users with a pending deletion
+    // request. Previously they kept working off the cached session
+    // cookie for up to `session.expiresIn` (7 days). This check is the
+    // authoritative gate — the session token may still exist in
+    // MongoDB but it is no longer accepted here.
+    if (mongooseUser.isActive === false) {
+      throw new UnauthorizedException(
+        "Tu cuenta ha sido desactivada. Contacta al administrador.",
+      );
+    }
+    if (mongooseUser.accountDeletionRequested === true) {
+      throw new UnauthorizedException(
+        "Tu cuenta está marcada para eliminación. Contacta al administrador.",
+      );
+    }
+
     (
       request as Request & {
         user: {

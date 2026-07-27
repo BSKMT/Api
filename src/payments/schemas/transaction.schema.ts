@@ -90,6 +90,12 @@ export class Transaction {
   @Prop({ type: Date, default: null })
   lastBoldSyncAt!: Date | null;
 
+  // C-2: Idempotency flag — prevents double-linking of benefit
+  // (event registration, course enrollment, ARPHA, shop order)
+  // across duplicate webhook/sync APPROVED events.
+  @Prop({ default: false })
+  benefitGranted!: boolean;
+
   createdAt!: Date;
 
   updatedAt!: Date;

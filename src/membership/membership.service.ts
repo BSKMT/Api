@@ -400,6 +400,26 @@ export class MembershipService {
         ? await this.computeNextInstallmentNumber(userId, isRenewal)
         : 1;
 
+    // A-6: Reject new intents when a PENDING transaction already exists
+    // for the same installment key. This prevents the "two tabs /
+    // double-click" pattern from generating two Bold checkout links
+    // (both of which a user can pay), which would otherwise produce
+    // duplicate charges for the same cuota.
+    if (dto.paymentPlan === "installment") {
+      const pendingForSameKey = await this.transactionModel.findOne({
+        userId,
+        paymentPlan: "installment",
+        isRenewal,
+        installmentNumber,
+        status: "PENDING",
+      });
+      if (pendingForSameKey) {
+        throw new ConflictException(
+          "Ya tienes un pago pendiente para esta cuota. Cancela o complétalo antes de iniciar uno nuevo.",
+        );
+      }
+    }
+
     const { creditUsedAmount, remainingAmount } =
       await this.applyCreditIfRequested(
         userId,
@@ -550,9 +570,7 @@ export class MembershipService {
     // A-13: Validate webhook amount against transaction amount before approval
     if (
       statusFromEvent === "APPROVED" &&
-      parsed.amount !== undefined &&
-      transaction.amount > 0 &&
-      parsed.amount !== transaction.amount
+      this.isAmountMismatch(transaction, parsed, statusFromEvent)
     ) {
       this.logger.warn(
         `Amount mismatch in membership webhook for ref ${maskReference(parsed.referenceId ?? "")}: expected ${transaction.amount}, received ${parsed.amount}. Skipping approval.`,
@@ -560,8 +578,13 @@ export class MembershipService {
       await transaction.save();
       return;
     }
+    let didChange = false;
     if (statusFromEvent) {
-      this.applyWebhookStatusUpdate(transaction, statusFromEvent, parsed);
+      didChange = this.applyWebhookStatusUpdate(
+        transaction,
+        statusFromEvent,
+        parsed,
+      );
     }
 
     await transaction.save();
@@ -569,21 +592,52 @@ export class MembershipService {
       `Membership webhook processed: ${parsed.eventType} for ${maskReference(parsed.referenceId ?? "")}`,
     );
 
-    if (statusFromEvent === "APPROVED") {
+    if (didChange && statusFromEvent === "APPROVED") {
       await this.processApprovedPayment(transaction);
-    } else if (statusFromEvent === "REJECTED" || statusFromEvent === "FAILED") {
-      // M9: Revert credit if it was used for this transaction
-      if (transaction.creditUsedAmount > 0) {
-        await this.usersService.revertPartialPaymentCredit(
+    } else if (
+      didChange &&
+      (statusFromEvent === "REJECTED" || statusFromEvent === "FAILED")
+    ) {
+      // M9/C-3: Revert credit only on a genuine non-terminal → terminal
+      // transition (the flag is the idempotency key). The atomic floor in
+      // revertPartialPaymentCredit() prevents `usedAmount` from going
+      // negative so duplicate REJECTED events cannot inflate spendable
+      // credit.
+      if (transaction.creditUsedAmount > 0 && !transaction.creditReverted) {
+        const reverted = await this.usersService.revertPartialPaymentCredit(
           transaction.userId,
           transaction.creditUsedAmount,
         );
-        this.logger.log(
-          `Credit reverted: user=${maskUserId(transaction.userId)} amount=${maskAmount(transaction.creditUsedAmount)} ref=${maskReference(transaction.reference)}`,
-        );
+        if (reverted) {
+          await this.transactionModel.updateOne(
+            { _id: transaction._id, creditReverted: false },
+            { $set: { creditReverted: true } },
+          );
+          this.logger.log(
+            `Credit reverted: user=${maskUserId(transaction.userId)} amount=${maskAmount(transaction.creditUsedAmount)} ref=${maskReference(transaction.reference)}`,
+          );
+        }
       }
       await this.sendRejectionNotification(transaction, statusFromEvent);
     }
+  }
+
+  /**
+   * A-9/A-13: Detect a mismatch between the amount reported by Bold (in
+   * a webhook or voucher-sync response) and the amount stored on the
+   * transaction. Returns true (and logs a warning) when an APPROVED
+   * event reports a non-zero amount that differs from the transaction,
+   * so callers can skip approval and persist the recorded event.
+   */
+  private isAmountMismatch(
+    transaction: MembershipTransactionDocument,
+    parsed: ReturnType<MembershipService["parseBoldWebhookEvent"]>,
+    statusFromEvent: string | null,
+  ): boolean {
+    if (statusFromEvent !== "APPROVED") return false;
+    if (parsed.amount === undefined) return false;
+    if (transaction.amount <= 0) return false;
+    return parsed.amount !== transaction.amount;
   }
 
   /** Verify the Bold webhook HMAC signature (throwing on mismatch). */
@@ -687,21 +741,31 @@ export class MembershipService {
     "VOIDED",
   ]);
 
-  /** Mutate the transaction based on the mapped Bold status. */
+  /**
+   * Apply the mapped webhook status to the transaction and return whether
+   * the status was genuinely changed (i.e., the transaction was not
+   * already in a terminal state).
+   *
+   * C-2 Fix: previously this blocked only *different* terminal-status
+   * transitions; a second APPROVED event (which Bold emits twice —
+   * SALE_APPROVED and PAYMENT_APPROVED — with different notificationIds)
+   * slipped past the guard because the statuses were the same, and
+   * processApprovedPayment() ran twice — granting the membership or
+   * crediting an installment twice.
+   */
   private applyWebhookStatusUpdate(
     transaction: MembershipTransactionDocument,
     status: string,
     parsed: ReturnType<MembershipService["parseBoldWebhookEvent"]>,
-  ): void {
-    // A1: Don't overwrite a terminal status without reversion
-    if (
-      MembershipService.TERMINAL_STATUSES.has(transaction.status) &&
-      status !== transaction.status
-    ) {
+  ): boolean {
+    const wasTerminal =
+      MembershipService.TERMINAL_STATUSES.has(transaction.status);
+
+    if (wasTerminal) {
       this.logger.warn(
         `Ignoring ${status} for already-${transaction.status} membership transaction ${transaction.reference}`,
       );
-      return;
+      return false;
     }
 
     if (status === "APPROVED") {
@@ -713,6 +777,7 @@ export class MembershipService {
     } else {
       transaction.status = status;
     }
+    return true;
   }
 
   private mapBoldStatus(eventType: string | undefined): string | null {
@@ -737,6 +802,29 @@ export class MembershipService {
   private async processApprovedPayment(
     transaction: MembershipTransactionDocument,
   ) {
+    // C-2/M-23: idempotency guard — atomically claim the benefit grant.
+    // Complements the terminal-state gate in handleWebhook: even if some
+    // other code path re-invokes processApprovedPayment(), the effects
+    // (installment counter $inc, membership activation, etc.) fire at
+    // most once per membership-transaction document.
+    if (transaction.benefitGranted) {
+      this.logger.log(
+        `Benefit already granted for ${transaction.reference}, skipping`,
+      );
+      return;
+    }
+    const claimResult = await this.transactionModel.updateOne(
+      { _id: transaction._id, benefitGranted: false },
+      { $set: { benefitGranted: true } },
+    );
+    if (claimResult.matchedCount === 0 || claimResult.modifiedCount === 0) {
+      this.logger.log(
+        `Concurrent benefit-grant for ${transaction.reference}; skipping`,
+      );
+      return;
+    }
+    transaction.benefitGranted = true;
+
     const user = await this.usersService.findById(transaction.userId);
     if (!user) {
       this.logger.warn(
@@ -1046,16 +1134,35 @@ export class MembershipService {
     }
 
     const mappedStatus = this.mapBoldVoucherStatus(boldStatus);
-    if (!mappedStatus || mappedStatus === transaction.status) {
+    if (!mappedStatus) {
       return;
     }
 
-    // A1: Don't downgrade from a terminal status
+    // C-2/A-1: Block ALL transitions from a terminal status — sync must
+    // never override a terminal webhook outcome (in either direction).
     if (MembershipService.TERMINAL_STATUSES.has(transaction.status)) {
       this.logger.warn(
         `Bold sync: ignoring ${mappedStatus} for already-${transaction.status} reference ${transaction.reference}`,
       );
       return;
+    }
+
+    // A-9: Validate the voucher amount against the transaction amount
+    // before approving, mirroring the webhook path. This is the same
+    // flaw the user-flag report noted: previously the sync route
+    // approved on `payment_status` alone.
+    if (mappedStatus === "APPROVED") {
+      const voucherAmount = this.parseBoldAmount(body["amount"]);
+      if (
+        voucherAmount !== undefined &&
+        transaction.amount > 0 &&
+        voucherAmount !== transaction.amount
+      ) {
+        this.logger.warn(
+          `Amount mismatch in Bold voucher sync for ref ${transaction.reference}: expected ${transaction.amount}, received ${voucherAmount}. Skipping approval.`,
+        );
+        return;
+      }
     }
 
     this.logger.log(
@@ -1081,15 +1188,23 @@ export class MembershipService {
     if (mappedStatus === "APPROVED") {
       await this.processApprovedPayment(transaction);
     } else if (mappedStatus === "REJECTED" || mappedStatus === "FAILED") {
-      // M9: Revert credit if it was used for this transaction
-      if (transaction.creditUsedAmount > 0) {
-        await this.usersService.revertPartialPaymentCredit(
+      // M9/C-3: Revert credit only when the credit has not already been
+      // reverted. The atomic floor in users.service keeps usedAmount
+      // from going negative across duplicate REJECTED events.
+      if (transaction.creditUsedAmount > 0 && !transaction.creditReverted) {
+        const reverted = await this.usersService.revertPartialPaymentCredit(
           transaction.userId,
           transaction.creditUsedAmount,
         );
-        this.logger.log(
-          `Credit reverted: user=${maskUserId(transaction.userId)} amount=${maskAmount(transaction.creditUsedAmount)} ref=${maskReference(transaction.reference)}`,
-        );
+        if (reverted) {
+          await this.transactionModel.updateOne(
+            { _id: transaction._id, creditReverted: false },
+            { $set: { creditReverted: true } },
+          );
+          this.logger.log(
+            `Credit reverted: user=${maskUserId(transaction.userId)} amount=${maskAmount(transaction.creditUsedAmount)} ref=${maskReference(transaction.reference)}`,
+          );
+        }
       }
       await this.sendRejectionNotification(transaction, mappedStatus);
     }
@@ -1444,6 +1559,70 @@ export class MembershipService {
         createdAt: t.createdAt,
       })),
     };
+  }
+
+  /**
+   * A-5: Sweeps abandoned PENDING membership transactions that have
+   * been sitting without an APPROVED webhook/sync event for more than
+   * `PENDING_TTL_MS` (48h). For each swept transaction:
+   *   - atomically transitions PENDING → VOIDED (winner-takes-all with
+   *     any concurrent webhook/sync),
+   *   - reverts any credit that was consumed against it (using the same
+   *     atomic floor and `creditReverted` flag as the REJECTED path).
+   *
+   * The endpoint is meant to be invoked by the Vercel Cron entry at
+   * `/api/membership/internal/cron/sweep-pending` every 12 hours.
+   */
+  async sweepAbandonedPayments(now: Date = new Date()): Promise<{
+    swept: number;
+    creditReverted: number;
+  }> {
+    const PENDING_TTL_MS = 48 * 60 * 60 * 1000;
+    const cutoff = new Date(now.getTime() - PENDING_TTL_MS);
+
+    const abandoned = await this.transactionModel
+      .find({
+        status: "PENDING",
+        createdAt: { $lt: cutoff },
+        benefitGranted: false,
+      })
+      .limit(500);
+
+    let swept = 0;
+    let creditReverted = 0;
+
+    for (const tx of abandoned) {
+      const updated = await this.transactionModel.findOneAndUpdate(
+        { _id: tx._id, status: "PENDING" },
+        { $set: { status: "VOIDED" } },
+        { new: true },
+      );
+      if (!updated) continue;
+
+      swept++;
+
+      if (tx.creditUsedAmount > 0 && !updated.creditReverted) {
+        const reverted = await this.usersService.revertPartialPaymentCredit(
+          tx.userId,
+          tx.creditUsedAmount,
+        );
+        if (reverted) {
+          await this.transactionModel.updateOne(
+            { _id: updated._id, creditReverted: false },
+            { $set: { creditReverted: true } },
+          );
+          creditReverted += tx.creditUsedAmount;
+          this.logger.log(
+            `Credit reverted by sweeper: user=${maskUserId(tx.userId)} amount=${maskAmount(tx.creditUsedAmount)} ref=${maskReference(tx.reference)}`,
+          );
+        }
+      }
+    }
+
+    this.logger.log(
+      `Pending sweeper: ${swept} VOIDED, ${maskAmount(creditReverted)} COP reverted`,
+    );
+    return { swept, creditReverted };
   }
 
   async requestRefund(userId: string) {
