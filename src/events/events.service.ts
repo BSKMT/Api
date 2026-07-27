@@ -87,9 +87,12 @@ export class EventsService {
     let membershipStatus: string;
 
     // A4/A5: self-managed is only for non-members (always free);
-    // members must use managed (which is free for them).
+    // members use "active-member" which is free on `membersFree: true`
+    // events. On `membersFree: false` events, members are routed through
+    // `member-paid` which demands full payment before confirmation
+    // (closing the bypass reported in H-2/A-4).
     if (isMember) {
-      membershipStatus = "active-member";
+      membershipStatus = event.membersFree ? "active-member" : "member-paid";
     } else if (dto.registrationType === "managed") {
       membershipStatus = "non-member-paid";
     } else {
@@ -98,6 +101,7 @@ export class EventsService {
 
     let status = "PENDING";
 
+    // Only members on free events going solo are auto-confirmed.
     if (membershipStatus === "active-member" && dto.attendanceMode === "solo") {
       status = "CONFIRMED";
     }
@@ -230,9 +234,14 @@ export class EventsService {
   ): void {
     const { membershipStatus, attendanceMode } = registration;
 
-    const isMemberSolo =
+    const isMemberPaidSolo =
+      membershipStatus === "member-paid" && attendanceMode === "solo";
+    const isMemberPaidWithCompanion =
+      membershipStatus === "member-paid" &&
+      attendanceMode === "with-companion";
+    const isMemberFreeSolo =
       membershipStatus === "active-member" && attendanceMode === "solo";
-    const isMemberWithCompanion =
+    const isMemberFreeWithCompanion =
       membershipStatus === "active-member" &&
       attendanceMode === "with-companion";
     const isNonMemberPaid = membershipStatus === "non-member-paid";
@@ -242,11 +251,24 @@ export class EventsService {
       membershipStatus === "non-member-free" &&
       attendanceMode === "with-companion";
 
-    if (isMemberSolo) {
+    // A-4: Members on a paid event pay the same way a non-member does.
+    if (isMemberPaidSolo) {
+      this.requirePayment(registration);
+      this.requireWaiver(registration);
+      return;
+    }
+    if (isMemberPaidWithCompanion) {
+      this.requirePayment(registration);
+      this.requireCompanionData(registration);
+      this.requireWaiver(registration);
       return;
     }
 
-    if (isMemberWithCompanion) {
+    if (isMemberFreeSolo) {
+      return;
+    }
+
+    if (isMemberFreeWithCompanion) {
       this.requirePayment(registration);
       this.requireCompanionData(registration);
       return;
@@ -718,17 +740,44 @@ export class EventsService {
       throw new BadRequestException("La inscripción no está activa");
     }
 
-    // M14: Progress is monotonic — can only increase, never decrease.
-    // Prevents client from directly jumping to 100 without consuming content.
-    enrollment.progress = Math.max(
-      enrollment.progress,
-      Math.min(100, Math.max(0, progress)),
+    // A-3: Progress is monotonic AND rate-limited — clients may only
+    // advance by a bounded delta per request. The previous
+    // `Math.max(...)` was a no-op against a single 0→100 jump, which let
+    // a member mint a certificate in seconds on a free course. Cap the
+    // delta at MAX_PROGRESS_DELTA_PER_REQUEST (e.g., 10%) so a course
+    // must be visited in at least ~10 calls; combined with the
+    // `learningStartedAt` minimum time window further down this is a
+    // defense-in-depth anti-fraud measure.
+    const clampedInput = Math.min(100, Math.max(0, progress));
+    const MAX_PROGRESS_DELTA_PER_REQUEST = 10;
+    const currentProgress = enrollment.progress ?? 0;
+    const nextProgress = Math.min(
+      100,
+      Math.max(currentProgress, clampedInput),
+      currentProgress + MAX_PROGRESS_DELTA_PER_REQUEST,
     );
+    enrollment.progress = nextProgress;
 
     if (enrollment.progress === 100 && !enrollment.completedAt) {
       if (!enrollment.paymentConfirmed) {
         throw new BadRequestException(
           "No puedes completar el curso sin un pago confirmado",
+        );
+      }
+      // A-3: Defense-in-depth — require at least MIN_LEARNING_TIME_MS
+      // between enrollment and completion. The delta cap forces ≥10
+      // separate calls but a bot could fire them instantly; this gate
+      // stops "complete in under a minute" fraud.
+      const MIN_LEARNING_TIME_MS = 5 * 60 * 1000;
+      const enrolledAt = enrollment.createdAt
+        ? new Date(enrollment.createdAt).getTime()
+        : 0;
+      if (
+        Date.now() - enrolledAt > 0 &&
+        Date.now() - enrolledAt < MIN_LEARNING_TIME_MS
+      ) {
+        throw new BadRequestException(
+          "Aún no puedes marcar el curso como completado. Avanza por los módulos e inténtalo más tarde.",
         );
       }
       enrollment.status = "COMPLETED";

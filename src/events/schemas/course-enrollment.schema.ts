@@ -28,6 +28,10 @@ export class CourseEnrollment {
 
   @Prop({ type: String, default: null })
   certificateId!: string | null;
+
+  createdAt!: Date;
+
+  updatedAt!: Date;
 }
 
 export const CourseEnrollmentSchema =

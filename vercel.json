@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/internal/cron/membership-expiration",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/membership/internal/cron/sweep-pending",
+      "schedule": "0 */12 * * *"
+    }
+  ]
+}

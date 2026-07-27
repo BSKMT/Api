@@ -18,4 +18,11 @@ export interface EnvironmentConfig {
   ZOHO_API_BASE: string;
   ZOHO_TOKEN_BASE: string;
   LANDING_PAGE_URL: string;
+  /**
+   * A-7: Secret shared between Vercel Cron and the `/api/internal/cron/*`
+   * and `/api/membership/internal/cron/*` endpoints. Without it (or if a
+   * request is missing the matching `X-Cron-Secret` header or
+   * `Authorization: Bearer <secret>`), the cron endpoint 400s.
+   */
+  CRON_SECRET: string;
 }

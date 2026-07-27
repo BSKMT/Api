@@ -141,6 +141,21 @@ export class MembershipExpirationService {
   ): Promise<void> {
     const creditAmount = partialRenewalCount * INSTALLMENT_AMOUNT;
 
+    // A-8: Precondition — refuse to overwrite any pre-existing credit on
+    // the user document. Previously the cron unconditionally wrote
+    // `partialPaymentCredit`, silently destroying credit that the user
+    // already held from an earlier flow. Skip with a warn so an
+    // administrator can manually reconcile the two balances.
+    if (member.partialPaymentCredit) {
+      this.logger.warn(
+        `Skipping credit grant for ${String(member._id)}: a credit already exists (${(member.partialPaymentCredit as { amount: number }).amount} COP, type ${(member.partialPaymentCredit as { type?: string }).type}). Manual reconciliation required.`,
+      );
+      // Fall back to the no-credit revoke path so the role & dates are
+      // still updated, but the existing credit is preserved.
+      await this.revokeWithoutCredit(member, now);
+      return;
+    }
+
     // M-8: Atomic precondition check — only revoke if not refreshed between
     //       find() and updateOne (prevents cron from destroying active renewal)
     const updateResult = await this.userModel.findOneAndUpdate(
@@ -148,6 +163,7 @@ export class MembershipExpirationService {
         _id: member._id,
         membershipExpired: false,
         membershipGracePeriodEnd: { $lt: now },
+        partialPaymentCredit: null,
       },
       {
         role: UserRole.USER,
@@ -176,7 +192,7 @@ export class MembershipExpirationService {
     );
     if (!updateResult) {
       this.logger.log(
-        `Skipping expiration for ${String(member._id)} — membership was renewed between find and update.`,
+        `Skipping expiration for ${String(member._id)} — membership was renewed between find and update, or a credit was set concurrently.`,
       );
       return;
     }

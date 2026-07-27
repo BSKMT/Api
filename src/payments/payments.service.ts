@@ -195,27 +195,46 @@ export class PaymentsService {
       throw new NotFoundException("Evento no encontrado");
     }
 
-    const basePrice = event.nonMemberPrice ?? 0;
-    const companionPrice = event.companionPrice ?? Math.round(basePrice * 0.5);
+    // M-21: Fail-closed pricing — when a non-member-tier (or member-tier
+    // with companion) requires a non-zero price we must reject the
+    // payment intent instead of silently accepting a $0 charge. The
+    // previous `?? 0` default enabled a misconfigured event (missing
+    // `nonMemberPrice`) to grant free entry to non-members.
+    const isNonMemberTier = !PaymentsService.MEMBER_TIERS.has(dto.tier);
+    const requiresPrice =
+      isNonMemberTier || dto.tier === "member-companion";
+    const basePrice = event.nonMemberPrice ?? null;
+    if (requiresPrice && (basePrice === null || basePrice <= 0)) {
+      throw new BadRequestException(
+        "El evento no tiene un precio configurado. Contacta al administrador.",
+      );
+    }
+    const safeBasePrice = basePrice ?? 0;
+    const companionPrice =
+      event.companionPrice ?? Math.round(safeBasePrice * 0.5);
 
     let amount: number;
     let description: string;
 
     switch (dto.tier) {
       case "member-solo":
-        amount = 0;
-        description = `Inscripción ${event.title} - Miembro (Solo)`;
+        // A-4: When the event explicitly opts members out of free entry
+        // (membersFree=false), the member pays the full non-member price.
+        amount = event.membersFree ? 0 : safeBasePrice;
+        description = `Inscripción ${event.title} - Miembro (Solo)${event.membersFree ? "" : " (Evento pago)"}`;
         break;
       case "member-companion":
-        amount = companionPrice;
+        // A-4: For non-free events, the member also pays the solo fare
+        // plus the companion fee.
+        amount = event.membersFree ? companionPrice : safeBasePrice + companionPrice;
         description = `Inscripción ${event.title} - Miembro (Con acompañante)`;
         break;
       case "non-member-solo":
-        amount = basePrice;
+        amount = safeBasePrice;
         description = `Inscripción ${event.title} - No Miembro (Solo)`;
         break;
       case "non-member-companion":
-        amount = basePrice + companionPrice;
+        amount = safeBasePrice + companionPrice;
         description = `Inscripción ${event.title} - No Miembro (Con acompañante)`;
         break;
       default:
@@ -271,7 +290,18 @@ export class PaymentsService {
       throw new NotFoundException("Curso no encontrado");
     }
 
-    const basePrice = course.nonMemberPrice ?? 0;
+    // M-21: Fail-closed pricing — only the member-virtual tier (which is
+    // explicitly free) tolerates an unconfigured `nonMemberPrice`. Any
+    // other tier requires a positive price on the course document.
+    const basePrice = course.nonMemberPrice ?? null;
+    if (dto.tier !== "course-member-virtual") {
+      if (basePrice === null || basePrice <= 0) {
+        throw new BadRequestException(
+          "El curso no tiene un precio configurado. Contacta al administrador.",
+        );
+      }
+    }
+    const safeBasePrice = basePrice ?? 0;
 
     let amount: number;
     let description: string;
@@ -283,18 +313,18 @@ export class PaymentsService {
         break;
       case "course-member-semipresencial":
         amount = Math.round(
-          basePrice * ((course.memberSemipresencialDiscount ?? 25) / 100),
+          safeBasePrice * ((course.memberSemipresencialDiscount ?? 25) / 100),
         );
         description = `Inscripción ${course.title} - Miembro (Semipresencial)`;
         break;
       case "course-member-presencial":
         amount = Math.round(
-          basePrice * ((course.memberPresencialDiscount ?? 50) / 100),
+          safeBasePrice * ((course.memberPresencialDiscount ?? 50) / 100),
         );
         description = `Inscripción ${course.title} - Miembro (Presencial)`;
         break;
       case "course-non-member":
-        amount = basePrice;
+        amount = safeBasePrice;
         description = `Inscripción ${course.title} - No Miembro`;
         break;
       default:
@@ -440,13 +470,29 @@ export class PaymentsService {
       return;
     }
 
-    this.applyWebhookStatusUpdate(transaction, parsed, statusFromEvent);
+    const didChange = this.applyWebhookStatusUpdate(
+      transaction,
+      parsed,
+      statusFromEvent,
+    );
     await transaction.save();
     this.logger.log(
       `Webhook processed: ${parsed.eventType} for reference: ${parsed.referenceId}`,
     );
 
-    if (statusFromEvent === "APPROVED") {
+    if (didChange && statusFromEvent === "APPROVED") {
+      // C-2: idempotent benefit link — claim atomically before invoking
+      // the side-effect so a duplicate webhook cannot double-link.
+      if (!transaction.benefitGranted) {
+        const claim = await this.transactionModel.updateOne(
+          { _id: transaction._id, benefitGranted: false },
+          { $set: { benefitGranted: true } },
+        );
+        if (claim.modifiedCount === 0) {
+          return;
+        }
+        transaction.benefitGranted = true;
+      }
       await this.linkPaymentByPurpose(transaction);
     }
   }
@@ -531,31 +577,32 @@ export class PaymentsService {
     transaction: TransactionDocument,
     parsed: ReturnType<PaymentsService["parseBoldWebhookEvent"]>,
     statusFromEvent: string | null,
-  ): void {
+  ): boolean {
     if (!statusFromEvent) {
       this.logger.log(
         `Unhandled webhook event type: ${parsed.eventType} for reference: ${parsed.referenceId}`,
       );
-      return;
+      return false;
     }
 
-    // A1: Don't overwrite a terminal status (e.g. APPROVED → VOIDED) without reversion.
-    // The payment was already linked; overwriting would corrupt state.
-    if (
-      PaymentsService.TERMINAL_STATUSES.has(transaction.status) &&
-      statusFromEvent !== transaction.status
-    ) {
+    // C-2: Block ALL transitions from a terminal status. Previously this
+    // blocked only *different* terminal-status transitions, which
+    // allowed a second APPROVED event ( SALE_APPROVED and
+    // PAYMENT_APPROVED — same mapped status, different notificationId)
+    // to slip past the guard and re-run linkPaymentByPurpose().
+    if (PaymentsService.TERMINAL_STATUSES.has(transaction.status)) {
       this.logger.warn(
         `Ignoring ${statusFromEvent} for already-${transaction.status} transaction ${parsed.referenceId}`,
       );
-      return;
+      return false;
     }
 
     transaction.status = statusFromEvent;
-    if (statusFromEvent !== "APPROVED") return;
+    if (statusFromEvent !== "APPROVED") return true;
 
     if (parsed.paymentMethod) transaction.paymentMethod = parsed.paymentMethod;
     if (parsed.payerEmail) transaction.payerEmail = parsed.payerEmail;
+    return true;
   }
 
   /** Verify the Bold webhook HMAC signature (throwing on mismatch). */
@@ -801,16 +848,34 @@ export class PaymentsService {
     }
 
     const mappedStatus = this.mapBoldVoucherStatus(boldStatus);
-    if (!mappedStatus || mappedStatus === transaction.status) {
+    if (!mappedStatus) {
       return;
     }
 
-    // A1: Don't downgrade from a terminal status (e.g. APPROVED → VOIDED)
+    // C-2/A-1: Block ALL transitions from a terminal status — sync must
+    // never override a terminal webhook outcome.
     if (PaymentsService.TERMINAL_STATUSES.has(transaction.status)) {
       this.logger.warn(
         `Bold sync: ignoring ${mappedStatus} for already-${transaction.status} reference ${transaction.reference}`,
       );
       return;
+    }
+
+    // A-9: Validate the voucher amount against the transaction amount
+    // before approving (mirrors the webhook path). Previously the sync
+    // route approved on `payment_status` alone.
+    if (mappedStatus === "APPROVED") {
+      const voucherAmount = this.parseBoldAmount(body["amount"]);
+      if (
+        voucherAmount !== undefined &&
+        transaction.amount > 0 &&
+        voucherAmount !== transaction.amount
+      ) {
+        this.logger.warn(
+          `Amount mismatch in Bold voucher sync for ref ${transaction.reference}: expected ${transaction.amount}, received ${voucherAmount}. Skipping approval.`,
+        );
+        return;
+      }
     }
 
     this.logger.log(
@@ -833,6 +898,17 @@ export class PaymentsService {
     await transaction.save();
 
     if (mappedStatus === "APPROVED") {
+      // C-2: idempotent benefit link for sync path.
+      if (!transaction.benefitGranted) {
+        const claim = await this.transactionModel.updateOne(
+          { _id: transaction._id, benefitGranted: false },
+          { $set: { benefitGranted: true } },
+        );
+        if (claim.modifiedCount === 0) {
+          return;
+        }
+        transaction.benefitGranted = true;
+      }
       await this.linkPaymentByPurpose(transaction);
     }
   }
