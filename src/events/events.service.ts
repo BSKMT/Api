@@ -245,8 +245,7 @@ export class EventsService {
     const isMemberPaidSolo =
       membershipStatus === "member-paid" && attendanceMode === "solo";
     const isMemberPaidWithCompanion =
-      membershipStatus === "member-paid" &&
-      attendanceMode === "with-companion";
+      membershipStatus === "member-paid" && attendanceMode === "with-companion";
     const isMemberFreeSolo =
       membershipStatus === "active-member" && attendanceMode === "solo";
     const isMemberFreeWithCompanion =

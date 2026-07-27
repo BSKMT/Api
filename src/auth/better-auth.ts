@@ -1,6 +1,6 @@
 import { MongoClient } from "mongodb";
 import type { EmailService } from "../zoho-mail/email.service";
-import { maskEmail, sanitizeForLog } from "../common/utils/log-redact.util";
+import { maskEmail } from "../common/utils/log-redact.util";
 
 /* ------------------------------------------------------------------ *
  * Dynamic import of ESM-only `better-auth` submodules.
@@ -496,12 +496,10 @@ async function initAuth(): Promise<AuthInstance> {
                 await mongoDb.collection("session").deleteMany({
                   userId: user.id,
                 });
-                await mongoDb
-                  .collection("user")
-                  .deleteOne({ id: user.id });
+                await mongoDb.collection("user").deleteOne({ id: user.id });
               } catch (cleanupErr) {
                 console.error(
-                  `[databaseHooks] Failed to cleanup orphan Better Auth user ${user.id}: ${cleanupErr instanceof Error ? (cleanupErr as Error).message : String(cleanupErr)}`,
+                  `[databaseHooks] Failed to cleanup orphan Better Auth user ${user.id}: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`,
                 );
               }
               throw new Error(

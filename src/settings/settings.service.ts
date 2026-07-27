@@ -10,7 +10,7 @@ import { User, UserDocument } from "../users/schemas/user.schema";
 import { getAuth, getMongoDb } from "../auth/better-auth";
 import { UpdateSettingsDto } from "./dto/update-settings.dto";
 import type { Request } from "express";
-import { maskEmail, sanitizeForLog } from "../common/utils/log-redact.util";
+import { sanitizeForLog } from "../common/utils/log-redact.util";
 
 const DEFAULT_SETTINGS = {
   notifications: {

@@ -206,9 +206,7 @@ export class AdminEventsService {
           delete redacted["phone"];
           delete redacted["email"];
           copy["companionData"] =
-            Object.keys(redacted).length > 0
-              ? redacted
-              : (copy["companionData"] as Record<string, unknown>);
+            Object.keys(redacted).length > 0 ? redacted : copy["companionData"];
           return copy as unknown as typeof r;
         }
         return r;

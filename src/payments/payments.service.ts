@@ -201,8 +201,7 @@ export class PaymentsService {
     // previous `?? 0` default enabled a misconfigured event (missing
     // `nonMemberPrice`) to grant free entry to non-members.
     const isNonMemberTier = !PaymentsService.MEMBER_TIERS.has(dto.tier);
-    const requiresPrice =
-      isNonMemberTier || dto.tier === "member-companion";
+    const requiresPrice = isNonMemberTier || dto.tier === "member-companion";
     const basePrice = event.nonMemberPrice ?? null;
     if (requiresPrice && (basePrice === null || basePrice <= 0)) {
       throw new BadRequestException(
@@ -226,7 +225,9 @@ export class PaymentsService {
       case "member-companion":
         // A-4: For non-free events, the member also pays the solo fare
         // plus the companion fee.
-        amount = event.membersFree ? companionPrice : safeBasePrice + companionPrice;
+        amount = event.membersFree
+          ? companionPrice
+          : safeBasePrice + companionPrice;
         description = `Inscripción ${event.title} - Miembro (Con acompañante)`;
         break;
       case "non-member-solo":

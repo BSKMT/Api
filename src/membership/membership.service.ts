@@ -763,8 +763,9 @@ export class MembershipService {
     status: string,
     parsed: ReturnType<MembershipService["parseBoldWebhookEvent"]>,
   ): boolean {
-    const wasTerminal =
-      MembershipService.TERMINAL_STATUSES.has(transaction.status);
+    const wasTerminal = MembershipService.TERMINAL_STATUSES.has(
+      transaction.status,
+    );
 
     if (wasTerminal) {
       this.logger.warn(
@@ -1413,19 +1414,18 @@ export class MembershipService {
     // time of the write. Use the precondition-aware helper so two
     // concurrent / double-tap chooseCreditOption calls cannot turn the
     // same pending credit into two different target types + ledger entries.
-    const didUpdate =
-      await this.usersService.updatePartialPaymentCreditIfType(
-        userId,
-        CreditType.PENDING,
-        {
-          ...credit,
-          type: newType,
-          convertedAt: now,
-          expiresAt: dto.choice !== "refund" ? expiresAt : null,
-          refundRequestedAt: dto.choice === "refund" ? now : null,
-          notes: description,
-        },
-      );
+    const didUpdate = await this.usersService.updatePartialPaymentCreditIfType(
+      userId,
+      CreditType.PENDING,
+      {
+        ...credit,
+        type: newType,
+        convertedAt: now,
+        expiresAt: dto.choice !== "refund" ? expiresAt : null,
+        refundRequestedAt: dto.choice === "refund" ? now : null,
+        notes: description,
+      },
+    );
     if (!didUpdate) {
       this.logger.warn(
         `chooseCreditOption race aborted: user=${maskUserId(userId)} (credit no longer PENDING)`,

@@ -53,9 +53,7 @@ export class MembershipExpirationController {
     const startedAt = Date.now();
     await this.expirationService.handleMembershipExpiration();
     const elapsed = Date.now() - startedAt;
-    this.logger.log(
-      `membership-expiration cron completed in ${elapsed}ms`,
-    );
+    this.logger.log(`membership-expiration cron completed in ${elapsed}ms`);
     return { ok: true, elapsedMs: elapsed };
   }
 

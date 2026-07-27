@@ -112,23 +112,22 @@ export class AdminSettingsService {
       );
       await db
         .collection("membershiptransactions")
-        .updateMany(
-          { userId },
-          { $unset: { payerEmail: "" } },
-        );
-      await db.collection("eventregistrations").updateMany(
-        { userId },
-        { $set: { companionData: null } },
-      );
+        .updateMany({ userId }, { $unset: { payerEmail: "" } });
+      await db
+        .collection("eventregistrations")
+        .updateMany({ userId }, { $set: { companionData: null } });
       await db
         .collection("courseenrollments")
-        .updateMany(
-          { userId },
-          { $set: { certificateId: null } },
-        );
+        .updateMany({ userId }, { $set: { certificateId: null } });
       await db.collection("arpha_requests").updateMany(
         { userId },
-        { $unset: { requesterEmail: "", requesterName: "", requesterPhone: "" } },
+        {
+          $unset: {
+            requesterEmail: "",
+            requesterName: "",
+            requesterPhone: "",
+          },
+        },
       );
       await db.collection("orders").updateMany(
         { userId },
