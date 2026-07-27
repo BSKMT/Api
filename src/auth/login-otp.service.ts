@@ -20,6 +20,7 @@ import {
 import { LoginOtp, LoginOtpDocument } from "./schemas/login-otp.schema";
 import { EmailService } from "../zoho-mail/email.service";
 import { getAuth } from "./better-auth";
+import { maskEmail } from "../common/utils/log-redact.util";
 
 /**
  * LoginOtpService — Implementa el flujo de verificacion por correo
@@ -342,8 +343,9 @@ export class LoginOtpService {
       createdAt: { $gt: new Date(Date.now() - this.EMAIL_INITIATE_WINDOW_MS) },
     });
     if (recentCount >= this.EMAIL_INITIATE_MAX) {
+      // M-17: mask the email in logs to avoid PII leaks into the log stream.
       this.logger.warn(
-        `Email throttle: ${userEmail} supero ${this.EMAIL_INITIATE_MAX} OTPs en ${this.EMAIL_INITIATE_WINDOW_MS / 1000}s`,
+        `Email throttle: ${maskEmail(userEmail)} supero ${this.EMAIL_INITIATE_MAX} OTPs en ${this.EMAIL_INITIATE_WINDOW_MS / 1000}s`,
       );
       throw new HttpException(
         "Has solicitado demasiados codigos de verificacion. Espera 5 minutos e intenta de nuevo.",
@@ -375,8 +377,9 @@ export class LoginOtpService {
       expiresInMinutes: 5,
     });
     if (!ok) {
+      // M-17: mask email in logs.
       this.logger.error(
-        `No se pudo enviar el codigo OTP de login a ${userEmail} (Zoho no configurado o fallo)`,
+        `No se pudo enviar el codigo OTP de login a ${maskEmail(userEmail)} (Zoho no configurado o fallo)`,
       );
       // Mascara: no revelar que las credenciales eran validas.
       throw new UnauthorizedException(LoginOtpService.GENERIC_AUTH_ERROR, {
@@ -421,7 +424,7 @@ export class LoginOtpService {
       otpRecord.status = "expired";
       await otpRecord.save();
       this.logger.warn(
-        `OTP supero el maximo de intentos: ${requestId} / ${otpRecord.email}`,
+        `OTP supero el maximo de intentos: ${requestId} / ${maskEmail(otpRecord.email ?? "")}`,
       );
       throw new HttpException(
         "Has superado el máximo de intentos. Solicita un nuevo código.",

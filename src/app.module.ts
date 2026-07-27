@@ -5,6 +5,7 @@ import { MongooseModule } from "@nestjs/mongoose";
 import { ScheduleModule } from "@nestjs/schedule";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { AuthModule } from "./auth/auth.module";
+import { SessionGuard } from "./auth/session.guard";
 import { B2bModule } from "./b2b/b2b.module";
 import { configValidationSchema } from "./config/config.validation";
 import { ContactModule } from "./contact/contact.module";
@@ -78,6 +79,17 @@ import { ZohoMailModule } from "./zoho-mail/zoho-mail.module";
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    /**
+     * M-12: SessionGuard runs as a global guard so any future controller
+     * that forgets `@UseGuards(SessionGuard)` defaults to requiring a
+     * valid session rather than defaulting open. Routes may opt out via
+     * `@Public()` (webhooks, login endpoints, Vercel-cron endpoints).
+     * The guard's canActivate already short-circuits on `@Public()`.
+     */
+    {
+      provide: APP_GUARD,
+      useClass: SessionGuard,
     },
   ],
 })
