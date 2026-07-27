@@ -103,7 +103,8 @@ async function bootstrap() {
       req.path === "/api/payments/webhook" ||
       req.path === "/api/membership/webhook" ||
       req.path.startsWith("/api/internal/cron/") ||
-      req.path === "/api/membership/internal/cron/sweep-pending"
+      req.path === "/api/membership/internal/cron/sweep-pending" ||
+      req.path === "/api/events/internal/cron/sweep-stale-registrations"
     ) {
       return next();
     }
@@ -147,7 +148,10 @@ async function bootstrap() {
     (await import("better-auth/node")) as BetterAuthNodeModule;
   const authHandler = toNodeHandler(auth);
   app.use("/api/auth", (req: Request, res: Response, next: NextFunction) => {
-    const path = req.path;
+    // M-13: normalize any literal `/` runs in the URL path so a
+    // request like `/api/auth//sign-in/email` (the double-slash
+    // trick) can't sneak past the exact-match comparisons below.
+    const path = req.path.replace(/\/{2,}/g, "/");
     if (path === "/me" || path === "/me/" || path.startsWith("/login-otp/")) {
       return next();
     }
@@ -163,6 +167,8 @@ async function bootstrap() {
 
     // Simple rate-limit for sensitive Better Auth endpoints (M-3).
     // The ThrottlerGuard does not cover these raw Express routes.
+    // M-13: keys on the normalized path against exact-match list so a
+    // request via `//sign-in/email` cannot tunnel past the rate limit.
     const sensitivePaths = [
       "/sign-in/email",
       "/sign-up/email",

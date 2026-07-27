@@ -6,11 +6,14 @@ import {
   Param,
   Query,
   Req,
+  Headers,
   UseGuards,
   HttpCode,
   HttpStatus,
   BadRequestException,
+  Logger,
 } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { Throttle } from "@nestjs/throttler";
 import type { Request } from "express";
 import { SessionGuard } from "../auth/session.guard";
@@ -22,6 +25,7 @@ import { AcceptWaiverDto } from "./dto/accept-waiver.dto";
 import { SubmitCompanionDto } from "./dto/submit-companion.dto";
 import { ConfirmEventDto } from "./dto/confirm-event.dto";
 import { CancelEventDto } from "./dto/cancel-event.dto";
+import type { EnvironmentConfig } from "../config/config.interface";
 
 interface AuthenticatedRequest extends Request {
   user: { userId: string; email?: string };
@@ -30,9 +34,12 @@ interface AuthenticatedRequest extends Request {
 @Controller("events")
 @UseGuards(SessionGuard)
 export class EventsController {
+  private readonly logger = new Logger(EventsController.name);
+
   constructor(
     private readonly eventsService: EventsService,
     private readonly usersService: UsersService,
+    private readonly configService: ConfigService<EnvironmentConfig>,
   ) {}
 
   @Public()
@@ -194,5 +201,52 @@ export class EventsController {
   ) {
     const { userId } = req.user;
     return this.eventsService.cancelRegistration(userId, dto.eventSlug);
+  }
+
+  /**
+   * M-5: Cron-triggered sweeper that releases seats held by abandoned
+   * PENDING event registrations and course enrollments (older than
+   * 48h, no paymentConfirmed and no transactionReference). Invoked by
+   * Vercel Cron (see `vercel.json`). Authenticated via
+   * `X-Cron-Secret` header or `Authorization: Bearer <secret>`.
+   */
+  @Public()
+  @Post("internal/cron/sweep-stale-registrations")
+  @HttpCode(HttpStatus.OK)
+  async sweepStaleRegistrations(
+    @Headers("x-cron-secret") headerSecret: string | undefined,
+    @Headers("authorization") authorization: string | undefined,
+  ) {
+    this.assertCronSecret(headerSecret, authorization);
+    const startedAt = Date.now();
+    const result = await this.eventsService.sweepStaleRegistrations();
+    const elapsed = Date.now() - startedAt;
+    this.logger.log(
+      `sweep-stale-registrations cron completed in ${elapsed}ms — ${result.eventsCancelled} events, ${result.coursesCancelled} courses`,
+    );
+    return { ok: true, ...result, elapsedMs: elapsed };
+  }
+
+  private assertCronSecret(
+    headerSecret: string | undefined,
+    authorization: string | undefined,
+  ): void {
+    const expected =
+      this.configService.get<string>("CRON_SECRET", { infer: true }) ?? "";
+    if (!expected) {
+      throw new BadRequestException("CRON_SECRET not configured");
+    }
+    const provided =
+      headerSecret ??
+      (authorization && authorization.startsWith("Bearer ")
+        ? authorization.slice("Bearer ".length)
+        : undefined) ??
+      "";
+    if (provided.length !== expected.length || provided !== expected) {
+      this.logger.warn(
+        "Unauthorized cron invocation — secret mismatch (or missing).",
+      );
+      throw new BadRequestException("Invalid or missing cron secret");
+    }
   }
 }

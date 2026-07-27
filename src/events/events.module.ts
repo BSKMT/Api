@@ -14,6 +14,10 @@ import { EventsController } from "./events.controller";
 import { CoursesController } from "./courses.controller";
 import { EventsService } from "./events.service";
 import { UsersModule } from "../users/users.module";
+// M-4: notifications service wiring so cancelRegistration /
+// cancelCourseEnrollment can emit a notification when a paid entry
+// is cancelled (refund pending admin review).
+import { NotificationsModule } from "../notifications/notifications.module";
 
 @Module({
   imports: [
@@ -24,6 +28,7 @@ import { UsersModule } from "../users/users.module";
       { name: CourseEnrollment.name, schema: CourseEnrollmentSchema },
     ]),
     UsersModule,
+    NotificationsModule,
   ],
   controllers: [EventsController, CoursesController],
   providers: [EventsService],

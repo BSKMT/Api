@@ -147,6 +147,9 @@ export class AdminEventsService {
     eventSlug: string,
     filters: {
       status?: string;
+      limit?: number;
+      page?: number;
+      actorRole?: string;
     },
   ) {
     const event = await this.eventModel.findOne({ slug: eventSlug }).lean();
@@ -157,10 +160,26 @@ export class AdminEventsService {
     const filter: Record<string, unknown> = { eventSlug };
     if (filters.status) filter.status = filters.status;
 
-    const items = await this.registrationModel
-      .find(filter)
-      .sort({ createdAt: -1 })
-      .lean();
+    // M-11: paginate the registrations listing (previously returned
+    // the full unbounded result, which could OOM on big events and
+    // also meant EVENT_MANAGER (e.g. the inductor) saw the full
+    // `companionData.{documentId, phone, email}` of every attendee —
+    // special-category PII under Ley 1581/GDPR Art.9.
+    const limit = Math.min(Math.max(filters.limit ?? 50, 1), 100);
+    const page = Math.max(filters.page ?? 1, 1);
+    const skip = (page - 1) * limit;
+
+    const [items, total] = await Promise.all([
+      this.registrationModel
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.registrationModel.countDocuments(filter),
+    ]);
+
+    const isAdmin = filters.actorRole === "admin";
 
     return {
       event: {
@@ -170,7 +189,34 @@ export class AdminEventsService {
         registeredCount: event.registeredCount,
         maxCapacity: event.maxCapacity,
       },
-      registrations: items,
+      registrations: items.map((r) => {
+        if (isAdmin) return r;
+        // EVENT_MANAGER: redact special-category companion PII.
+        if (
+          r &&
+          typeof r === "object" &&
+          "companionData" in r &&
+          (r as { companionData?: Record<string, unknown> }).companionData
+        ) {
+          const copy: Record<string, unknown> = { ...r };
+          const redacted: Record<string, unknown> = {
+            ...((copy["companionData"] as Record<string, unknown>) ?? {}),
+          };
+          delete redacted["documentId"];
+          delete redacted["phone"];
+          delete redacted["email"];
+          copy["companionData"] =
+            Object.keys(redacted).length > 0
+              ? redacted
+              : (copy["companionData"] as Record<string, unknown>);
+          return copy as unknown as typeof r;
+        }
+        return r;
+      }),
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
     };
   }
 

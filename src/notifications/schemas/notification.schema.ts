@@ -14,6 +14,10 @@ export enum NotificationType {
   PAYMENT_APPROVED = "payment_approved",
   PAYMENT_REJECTED = "payment_rejected",
   ACCOUNT_DELETION_REJECTED = "account_deletion_rejected",
+  // M-4: emitted when a user cancels a paid event registration or
+  // course enrollment; tells the user the refund is pending admin
+  // review and surfaces the request to admins via the notification feed.
+  CANCELLATION_REFUND_REQUESTED = "cancellation_refund_requested",
 }
 
 export enum NotificationPriority {

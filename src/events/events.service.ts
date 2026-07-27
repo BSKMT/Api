@@ -20,6 +20,13 @@ import {
 } from "./schemas/course-enrollment.schema";
 import { RegisterEventDto } from "./dto/register-event.dto";
 import { SubmitCompanionDto } from "./dto/submit-companion.dto";
+// M-4: emit refund-pending notifications when a paid registration /
+// course enrollment is cancelled.
+import { NotificationsService } from "../notifications/notifications.service";
+import {
+  NotificationType,
+  NotificationPriority,
+} from "../notifications/schemas/notification.schema";
 
 export interface CoursePricing {
   amount: number;
@@ -48,6 +55,7 @@ export class EventsService {
     private readonly courseModel: Model<CourseDocument>,
     @InjectModel(CourseEnrollment.name)
     private readonly courseEnrollmentModel: Model<CourseEnrollmentDocument>,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async registerForEvent(
@@ -346,20 +354,35 @@ export class EventsService {
     eventSlug: string,
     dto: SubmitCompanionDto,
   ): Promise<EventRegistrationDocument> {
+    const existing = await this.eventRegistrationModel.findOne({
+      userId,
+      eventSlug,
+    });
+    if (!existing) {
+      throw new NotFoundException("Registro no encontrado");
+    }
+    // M-10: refuse to overwrite an already-confirmed companion waiver
+    // audit trail. The companion's PII + waiver were collected and
+    // validated before confirmation; swapping them post-confirmation
+    // would defeat the audit trail and allow sneaking in an attendee
+    // who never went through the waiver/payment steps. To swap, the
+    // user must cancel and re-register (which re-runs validation).
+    if (existing.status === "CONFIRMED" && existing.companionData) {
+      throw new BadRequestException(
+        "El acompañante ya fue registrado en una inscripción confirmada. Cancela y vuelve a inscribirte para cambiarlo.",
+      );
+    }
+
     const registration = await this.eventRegistrationModel.findOneAndUpdate(
       { userId, eventSlug },
       { companionData: dto },
       { new: true },
     );
 
-    if (!registration) {
-      throw new NotFoundException("Registro no encontrado");
-    }
-
     this.logger.log(
       `Companion data submitted: user=${userId} event=${eventSlug}`,
     );
-    return registration;
+    return registration as EventRegistrationDocument;
   }
 
   async linkPayment(
@@ -511,6 +534,35 @@ export class EventsService {
       `Registration cancelled: user=${userId} event=${eventSlug}`,
     );
 
+    // M-4: If the registration had been paid, surface a refund-pending
+    // notification so the user knows we will issue a refund once an
+    // admin reviews it. The admin triages via the notification feed +
+    // server logs ("REFUND DUE"); a future dedicated admin refund list
+    // can filter by NotificationType.CANCELLATION_REFUND_REQUESTED.
+    if (registration.paymentConfirmed && registration.transactionReference) {
+      this.logger.warn(
+        `REFUND DUE — paid event registration cancelled: user=${userId} event=${eventSlug} ref=${registration.transactionReference}`,
+      );
+      try {
+        await this.notificationsService.create({
+          userId,
+          type: NotificationType.CANCELLATION_REFUND_REQUESTED,
+          title: "Cancelación de registro — reembolso en revisión",
+          message:
+            "Recibimos tu cancelación de un registro pago. Un administrador revisará el reembolso en los próximos días hábiles.",
+          priority: NotificationPriority.HIGH,
+          metadata: {
+            event: eventSlug,
+            transactionReference: registration.transactionReference,
+            refundPending: true,
+          },
+        });
+      } catch {
+        // notifications are best-effort; never break the cancellation
+        // flow if the notification system is down.
+      }
+    }
+
     return { message: "Registro cancelado exitosamente" };
   }
 
@@ -540,19 +592,13 @@ export class EventsService {
       if (existing.status !== "CANCELLED") {
         throw new ConflictException("Ya estás inscrito en este curso");
       }
-      // Re-activate cancelled enrollment, clear residual paymentConfirmed
-      existing.status = pricing.requiresPayment ? "PENDING" : "ACTIVE";
-      existing.progress = 0;
-      existing.paymentConfirmed = !pricing.requiresPayment;
-      existing.transactionReference = null;
-      existing.completedAt = null;
-      existing.certificateId = null;
-      await existing.save();
-
-      // Re-increment enrolledCount
+      // M-6: reserve the capacity FIRST so a full-course failure leaves
+      // the enrollment document in CANCELLED state (recoverable) and
+      // does NOT silently flip the user to PENDING-without-seat which
+      // would otherwise leave them permanently stuck.
       const maxCap = course.maxCapacity;
       if (maxCap != null && maxCap > 0) {
-        const updateResult = await this.courseModel.findOneAndUpdate(
+        const reserve = await this.courseModel.findOneAndUpdate(
           {
             slug: courseSlug,
             $expr: {
@@ -561,7 +607,7 @@ export class EventsService {
           },
           { $inc: { enrolledCount: 1 } },
         );
-        if (!updateResult) {
+        if (!reserve) {
           throw new BadRequestException(
             "El curso ha alcanzado su capacidad máxima",
           );
@@ -571,6 +617,25 @@ export class EventsService {
           { slug: courseSlug },
           { $inc: { enrolledCount: 1 } },
         );
+      }
+      // Re-activate cancelled enrollment, clear residual paymentConfirmed
+      existing.status = pricing.requiresPayment ? "PENDING" : "ACTIVE";
+      existing.progress = 0;
+      existing.paymentConfirmed = !pricing.requiresPayment;
+      existing.transactionReference = null;
+      existing.completedAt = null;
+      existing.certificateId = null;
+      try {
+        await existing.save();
+      } catch (saveErr) {
+        // M-6: roll back the seat we just reserved so the user can
+        // retry later; otherwise their second attempt would also see
+        // no capacity and be stuck as a cancelled enrollment.
+        await this.courseModel.findOneAndUpdate(
+          { slug: courseSlug, enrolledCount: { $gt: 0 } },
+          { $inc: { enrolledCount: -1 } },
+        );
+        throw saveErr;
       }
 
       this.logger.log(
@@ -719,6 +784,31 @@ export class EventsService {
       `Course enrollment cancelled: user=${userId} course=${courseSlug}`,
     );
 
+    // M-4: paid course cancellation → refund-pending notification +
+    // explicit server log so admins can see "REFUND DUE".
+    if (enrollment.paymentConfirmed && enrollment.transactionReference) {
+      this.logger.warn(
+        `REFUND DUE — paid course enrollment cancelled: user=${userId} course=${courseSlug} ref=${enrollment.transactionReference}`,
+      );
+      try {
+        await this.notificationsService.create({
+          userId,
+          type: NotificationType.CANCELLATION_REFUND_REQUESTED,
+          title: "Cancelación de curso — reembolso en revisión",
+          message:
+            "Recibimos tu cancelación de un curso pago. Un administrador revisará el reembolso en los próximos días hábiles.",
+          priority: NotificationPriority.HIGH,
+          metadata: {
+            course: courseSlug,
+            transactionReference: enrollment.transactionReference,
+            refundPending: true,
+          },
+        });
+      } catch {
+        // best-effort: don't break cancellation
+      }
+    }
+
     return { message: "Inscripción cancelada exitosamente" };
   }
 
@@ -830,5 +920,83 @@ export class EventsService {
     courseSlug: string,
   ): Promise<CourseEnrollmentDocument | null> {
     return this.courseEnrollmentModel.findOne({ userId, courseSlug });
+  }
+
+  /**
+   * M-5: Stale-registration sweeper. Atomically marks as CANCELLED any
+   * PENDING event-registration or course enrollment whose
+   * `paymentConfirmed` is still false AND no `transactionReference`
+   * has been recorded, AND which has been pending for at least
+   * `STALE_TTL_MS` (48h). Each successful cancellation also
+   * decrements the registered/enrolled count on the parent document
+   * with the `$gt: 0` floor so counts never go negative.
+   *
+   * Designed to be invoked by Vercel Cron every 12h — abandoned
+   * registrations otherwise retain their seat forever (a flock of
+   * throw-away sign-ups could starve a real attendee).
+   */
+  async sweepStaleRegistrations(now: Date = new Date()): Promise<{
+    eventsCancelled: number;
+    coursesCancelled: number;
+  }> {
+    const STALE_TTL_MS = 48 * 60 * 60 * 1000;
+    const cutoff = new Date(now.getTime() - STALE_TTL_MS);
+
+    // 1. Event registrations: PENDING + createdAt < cutoff + no
+    //    paymentConfirmed + no transactionReference.
+    const staleRegs = await this.eventRegistrationModel
+      .find({
+        status: "PENDING",
+        createdAt: { $lt: cutoff },
+        paymentConfirmed: { $ne: true },
+        transactionReference: null,
+      })
+      .limit(500);
+
+    let eventsCancelled = 0;
+    for (const reg of staleRegs) {
+      const cancelled = await this.eventRegistrationModel.findOneAndUpdate(
+        { _id: reg._id, status: "PENDING" },
+        { status: "CANCELLED", confirmedAt: null },
+        { new: true },
+      );
+      if (!cancelled) continue; // someone confirmed/cancelled concurrently
+      await this.eventModel.findOneAndUpdate(
+        { slug: reg.eventSlug, registeredCount: { $gt: 0 } },
+        { $inc: { registeredCount: -1 } },
+      );
+      eventsCancelled++;
+    }
+
+    // 2. Course enrollments: PENDING + createdAt < cutoff + no
+    //    paymentConfirmed + no transactionReference.
+    const staleEnrollments = await this.courseEnrollmentModel
+      .find({
+        status: "PENDING",
+        createdAt: { $lt: cutoff },
+        paymentConfirmed: { $ne: true },
+        transactionReference: null,
+      })
+      .limit(500);
+
+    let coursesCancelled = 0;
+    for (const enr of staleEnrollments) {
+      const cancelled = await this.courseEnrollmentModel.findOneAndUpdate(
+        { _id: enr._id, status: "PENDING" },
+        { status: "CANCELLED" },
+        { new: true },
+      );
+      if (!cancelled) continue;
+      await this.courseModel.findOneAndUpdate(
+        { slug: enr.courseSlug, enrolledCount: { $gt: 0 } },
+        { $inc: { enrolledCount: -1 } },
+      );
+      coursesCancelled++;
+    }
+
+    this.logger.log(
+      `sweepStaleRegistrations: ${eventsCancelled} events, ${coursesCancelled} courses released`,
+    );
+    return { eventsCancelled, coursesCancelled };
   }
 }
