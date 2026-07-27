@@ -25,4 +25,8 @@ export const configValidationSchema = Joi.object({
     .default("https://accounts.zoho.com/oauth/v2"),
   LANDING_PAGE_URL: Joi.string().uri().default("http://localhost:4321"),
   CRON_SECRET: Joi.string().min(16).required(),
+  // M-8: optional Cloudflare Turnstile secret. When set, the public
+  // /api/contact endpoint requires a `captchaToken` field verified
+  // server-side via Cloudflare siteverify.
+  TURNSTILE_SECRET_KEY: Joi.string().allow("").default(""),
 });

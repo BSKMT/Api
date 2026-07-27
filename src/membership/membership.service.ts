@@ -274,7 +274,12 @@ export class MembershipService {
 
     const timestamp = Date.now();
     const shortUserId = userId.slice(-8);
-    const creditRef = `CRU-${shortUserId}-${timestamp}`;
+    // M-22: include a random suffix so two concurrent ledger writes for
+    // the same user don't collide on the (userId,createdAt) unique-ish
+    // composite, which previously caused an E11000 thrown AFTER the
+    // credit $inc succeeded — leaving the user's balance and the ledger
+    // out of sync.
+    const creditRef = `CRU-${shortUserId}-${timestamp}-${crypto.randomBytes(4).toString("hex")}`;
     await this.creditTransactionModel.create({
       userId,
       reference: creditRef,
@@ -1404,16 +1409,33 @@ export class MembershipService {
         throw new BadRequestException("Opción de crédito inválida");
     }
 
-    await this.usersService.updatePartialPaymentCredit(userId, {
-      ...credit,
-      type: newType,
-      convertedAt: now,
-      expiresAt: dto.choice !== "refund" ? expiresAt : null,
-      refundRequestedAt: dto.choice === "refund" ? now : null,
-      notes: description,
-    });
+    // M-20: Atomic transition — the credit must still be PENDING at the
+    // time of the write. Use the precondition-aware helper so two
+    // concurrent / double-tap chooseCreditOption calls cannot turn the
+    // same pending credit into two different target types + ledger entries.
+    const didUpdate =
+      await this.usersService.updatePartialPaymentCreditIfType(
+        userId,
+        CreditType.PENDING,
+        {
+          ...credit,
+          type: newType,
+          convertedAt: now,
+          expiresAt: dto.choice !== "refund" ? expiresAt : null,
+          refundRequestedAt: dto.choice === "refund" ? now : null,
+          notes: description,
+        },
+      );
+    if (!didUpdate) {
+      this.logger.warn(
+        `chooseCreditOption race aborted: user=${maskUserId(userId)} (credit no longer PENDING)`,
+      );
+      throw new ConflictException(
+        "Tu crédito fue procesado concurrentemente. Refresca e intenta de nuevo.",
+      );
+    }
 
-    const reference = `CR-${creditSource.toUpperCase()}-${shortUserId}-${timestamp}`;
+    const reference = `CR-${creditSource.toUpperCase()}-${shortUserId}-${timestamp}-${crypto.randomBytes(4).toString("hex")}`;
     await this.creditTransactionModel.create({
       userId,
       reference,
@@ -1446,6 +1468,38 @@ export class MembershipService {
   async useCredit(userId: string, dto: UseCreditDto) {
     const user = await this.usersService.findById(userId);
     if (!user) throw new NotFoundException("Usuario no encontrado");
+
+    // M-18: idempotency — if the caller supplied an idempotencyKey,
+    // check the credit-transaction ledger for a prior CREDIT_USED
+    // entry tagged with the same key. Found → return the cached
+    // outcome instead of re-debiting. The lookup is on
+    // `metadata.idempotencyKey` which is set below when we create the
+    // ledger entry.
+    if (dto.idempotencyKey) {
+      const prior = await this.creditTransactionModel
+        .findOne({
+          userId,
+          transactionType: CreditTransactionType.CREDIT_USED,
+          "metadata.idempotencyKey": dto.idempotencyKey,
+        })
+        .lean();
+      if (prior) {
+        this.logger.log(
+          `Credit use idempotency hit: user=${maskUserId(userId)} ref=${prior.reference}`,
+        );
+        const fresh = await this.usersService.findById(userId);
+        const remainingCredit = fresh?.partialPaymentCredit
+          ? (fresh.partialPaymentCredit.amount ?? 0) -
+            (fresh.partialPaymentCredit.usedAmount ?? 0)
+          : 0;
+        return {
+          success: true,
+          amountUsed: prior.amount,
+          remainingCredit,
+          reference: prior.reference,
+        };
+      }
+    }
 
     const credit = user.partialPaymentCredit;
     if (!credit) {
@@ -1495,7 +1549,8 @@ export class MembershipService {
 
     const timestamp = Date.now();
     const shortUserId = userId.slice(-8);
-    const reference = `CRU-${shortUserId}-${timestamp}`;
+    // M-22: add random suffix (see CRU above).
+    const reference = `CRU-${shortUserId}-${timestamp}-${crypto.randomBytes(4).toString("hex")}`;
     await this.creditTransactionModel.create({
       userId,
       reference,
@@ -1503,6 +1558,9 @@ export class MembershipService {
       creditSource: dto.creditSource,
       amount: dto.amount,
       description: dto.description ?? `Uso de crédito ${dto.creditSource}`,
+      metadata: {
+        idempotencyKey: dto.idempotencyKey ?? null,
+      },
     });
 
     this.logger.log(
@@ -1646,9 +1704,26 @@ export class MembershipService {
       );
     }
 
+    // M-19: deduplicate — refuse if a pending-admin-approval ledger
+    // entry already exists for this user. Prevents double submissions.
+    const existing = await this.creditTransactionModel
+      .findOne({
+        userId,
+        transactionType: CreditTransactionType.CREDIT_REFUNDED,
+        "metadata.status": "pending-admin-approval",
+      })
+      .lean();
+    if (existing) {
+      throw new ConflictException(
+        `Ya tienes una solicitud de reembolso pendiente. Ref: ${existing.reference}`,
+      );
+    }
+
     const timestamp = Date.now();
     const shortUserId = userId.slice(-8);
-    const reference = `REF-${shortUserId}-${timestamp}`;
+    // M-22: random suffix to avoid collisions on the credit transaction
+    // ledger when a user double-submits a refund request in the same ms.
+    const reference = `REF-${shortUserId}-${timestamp}-${crypto.randomBytes(4).toString("hex")}`;
 
     await this.creditTransactionModel.create({
       userId,
@@ -1663,9 +1738,14 @@ export class MembershipService {
       },
     });
 
+    // M-19: Keep the credit type as REFUND_REQUESTED. The admin
+    // approveRefund flow transitions it to REFUNDED atomically; leaving
+    // it as REFUND_REQUESTED means the user-visible status stays
+    // "pending" and idempotency on follow-up requestRefund calls works
+    // via the dedup ledger query above.
     await this.usersService.updatePartialPaymentCredit(userId, {
       ...credit,
-      type: CreditType.REFUNDED,
+      type: CreditType.REFUND_REQUESTED,
       notes: `Reembolso solicitado - Pendiente aprobación admin. Ref: ${reference}`,
     });
 

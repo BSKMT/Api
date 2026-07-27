@@ -7,6 +7,9 @@ import type {
   ZohoSendEmailResponse,
   ZohoTokenResponse,
 } from "./zoho-mail.interfaces";
+// M-9: redact recipient email and strip CRLF in the subject so logs cannot
+// be poisoned via crafted input.
+import { maskEmail, sanitizeForLog } from "../common/utils/log-redact.util";
 
 /**
  * ZohoMailService - Servicio de bajo nivel para la integracion con la API
@@ -200,7 +203,10 @@ export class ZohoMailService {
       }
 
       this.logger.log(
-        `Correo enviado a ${params.toAddress} asunto "${params.subject}"`,
+        // M-9: mask recipient email + strip CRLF/control chars from
+        // the subject before logging to prevent PII leaks and log
+        // injection.
+        `Correo enviado a ${maskEmail(params.toAddress)} asunto "${sanitizeForLog(params.subject)}"`,
       );
       return {
         ok: true,

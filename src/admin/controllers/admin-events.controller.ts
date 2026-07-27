@@ -7,10 +7,12 @@ import {
   Body,
   Param,
   Query,
+  Req,
   UseGuards,
   HttpCode,
   HttpStatus,
 } from "@nestjs/common";
+import type { Request } from "express";
 import { SessionGuard } from "../../auth/session.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles, Role } from "../../common/decorators";
@@ -18,6 +20,10 @@ import { AdminEventsService } from "../services/admin-events.service";
 import { CreateEventDto } from "../dto/create-event.dto";
 import { UpdateEventDto } from "../dto/update-event.dto";
 import { EventStatus } from "../../events/schemas/event.schema";
+
+interface AuthenticatedRequest extends Request {
+  user: { userId: string; role?: string };
+}
 
 @Controller("admin/events")
 @UseGuards(SessionGuard, RolesGuard)
@@ -81,10 +87,20 @@ export class AdminEventsController {
 
   @Get(":slug/registrations")
   async listRegistrations(
+    @Req() req: AuthenticatedRequest,
     @Param("slug") slug: string,
     @Query("status") status?: string,
+    @Query("limit") limit?: string,
+    @Query("page") page?: string,
   ) {
-    return this.adminEventsService.listRegistrations(slug, { status });
+    return this.adminEventsService.listRegistrations(slug, {
+      status,
+      limit: limit ? Number.parseInt(limit, 10) : 50,
+      page: page ? Number.parseInt(page, 10) : 1,
+      // M-11: only ADMIN sees the full companion PII; EVENT_MANAGER
+      // (inductor) gets a redacted view that omits `companionData.{documentId,phone,email}`.
+      actorRole: req.user?.role ?? "",
+    });
   }
 
   @Post("registrations/:id/confirm")

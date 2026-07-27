@@ -257,6 +257,30 @@ export class UsersService {
   }
 
   /**
+   * M-20: Atomic precondition update — only writes `partialPaymentCredit`
+   * when its current `type` equals `expectedType`. Returns true when the
+   * write applied; false when a concurrent caller beat us (race
+   * protection for `chooseCreditOption` which previously did a
+   * non-atomic read+update, allowing two simultaneous calls to convert
+   * the same pending credit into two different target types and create
+   * two ledger entries).
+   */
+  async updatePartialPaymentCreditIfType(
+    userId: string,
+    expectedType: CreditType,
+    newCredit: PartialPaymentCredit,
+  ): Promise<boolean> {
+    const result = await this.userModel.updateOne(
+      {
+        _id: userId,
+        "partialPaymentCredit.type": expectedType,
+      },
+      { $set: { partialPaymentCredit: newCredit } },
+    );
+    return result.modifiedCount > 0;
+  }
+
+  /**
    * Atomically increment partialPaymentCredit.usedAmount by `increment`,
    * only if the current usedAmount matches `expectedUsedAmount` (optimistic lock).
    * Returns the updated document or null if the precondition failed.

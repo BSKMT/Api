@@ -88,6 +88,77 @@ export class AdminSettingsService {
       );
     }
 
+    // M-3: the previous implementation only dropped the Better Auth
+    // user + session; the user's PII persisted in every business
+    // collection (orders, event/couse registrations, transactions,
+    // ARPHA requests, notifications). Ley 1581 / GDPR Art. 17 right
+    // to erasure requires removal of personal data unless retention
+    // is legally required — so we redact PII fields ($unset
+    // payerEmail, companionData, shippingAddress) while KEEPING the
+    // bare-row audit trail keyed by userId (which no longer resolves
+    // to any user document).
+    try {
+      await db.collection("transactions").updateMany(
+        { userId },
+        {
+          $unset: {
+            payerEmail: "",
+            "companionData.fullName": "",
+            "companionData.documentId": "",
+            "companionData.phone": "",
+            "companionData.email": "",
+          },
+        },
+      );
+      await db
+        .collection("membershiptransactions")
+        .updateMany(
+          { userId },
+          { $unset: { payerEmail: "" } },
+        );
+      await db.collection("eventregistrations").updateMany(
+        { userId },
+        { $set: { companionData: null } },
+      );
+      await db
+        .collection("courseenrollments")
+        .updateMany(
+          { userId },
+          { $set: { certificateId: null } },
+        );
+      await db.collection("arpha_requests").updateMany(
+        { userId },
+        { $unset: { requesterEmail: "", requesterName: "", requesterPhone: "" } },
+      );
+      await db.collection("orders").updateMany(
+        { userId },
+        {
+          $unset: {
+            shippingAddress: "",
+            customerEmail: "",
+            customerPhone: "",
+          },
+        },
+      );
+      // Notifications are wholly personal — drop them since they have
+      // no audit value beyond informing the (now-deleted) user.
+      await db.collection("notifications").deleteMany({ userId });
+      // Service credit transactions: redact the description since it
+      // may contain PII; keep the amount / reference for audit.
+      await db
+        .collection("servicecredittransactions")
+        .updateMany(
+          { userId },
+          { $set: { description: "[redacted on account deletion]" } },
+        );
+    } catch (err) {
+      // Best-effort — log loudly but do NOT block the deletion; the
+      // critical step (removing the user record) already succeeded.
+      this.logger.error(
+        `approveDeletion: PII redaction partial failure for userId=${userId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
     await this.userModel.deleteOne({ _id: userId });
 
     this.logger.log(

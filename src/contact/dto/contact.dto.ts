@@ -1,4 +1,10 @@
-import { IsEmail, IsString, MinLength, MaxLength } from "class-validator";
+import {
+  IsEmail,
+  IsString,
+  MinLength,
+  MaxLength,
+  IsOptional,
+} from "class-validator";
 
 /**
  * ContactDto - Datos del formulario de contacto publico de la landing page.
@@ -23,4 +29,18 @@ export class ContactDto {
   @MinLength(10, { message: "El mensaje debe tener al menos 10 caracteres" })
   @MaxLength(2000, { message: "El mensaje no puede exceder 2000 caracteres" })
   message!: string;
+
+  /**
+   * M-8: Cloudflare Turnstile token (or equivalent CAPTCHA proof).
+   * Required when the `TURNSTILE_SECRET_KEY` env var is configured;
+   * verified server-side via the siteverify endpoint. Optional so the
+   * field stays backwards-compatible during rollout — the frontend
+   * Astro page must include the Turnstile widget before flipping the
+   * env switch on.
+   */
+  @IsString()
+  @IsOptional()
+  @MinLength(10)
+  @MaxLength(4096)
+  captchaToken?: string;
 }

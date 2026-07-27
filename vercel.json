@@ -8,6 +8,10 @@
     {
       "path": "/api/membership/internal/cron/sweep-pending",
       "schedule": "0 */12 * * *"
+    },
+    {
+      "path": "/api/events/internal/cron/sweep-stale-registrations",
+      "schedule": "30 */12 * * *"
     }
   ]
 }
