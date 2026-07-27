@@ -16,6 +16,7 @@ import { PaymentsService } from "./payments.service";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
 import { SubmitCompanionDto } from "./dto/submit-companion.dto";
 import { SessionGuard } from "../auth/session.guard";
+import { Public } from "../common/decorators";
 
 interface AuthenticatedRequest extends Request {
   user: { userId: string };
@@ -36,6 +37,7 @@ export class PaymentsController {
     return this.paymentsService.createPayment(userId, dto);
   }
 
+  @Public()
   @Post("webhook")
   @HttpCode(HttpStatus.OK)
   async handleWebhook(

@@ -202,6 +202,7 @@ export class AdminShopService {
     orderNumber: string,
     dto: UpdateOrderStatusDto,
     actorId?: string,
+    actorRole?: string,
   ): Promise<OrderDocument> {
     const order = await this.orderModel.findOne({ orderNumber });
     if (!order) {
@@ -224,6 +225,25 @@ export class AdminShopService {
     ) {
       throw new BadRequestException(
         `Transición de estado inválida: ${previousStatus} → ${dto.status}`,
+      );
+    }
+
+    // M-7: Only ADMIN may transition an order to PAID. EVENT_MANAGER
+    // (inductor de eventos) retains the ability to cancel or progress
+    // shipped orders, but cannot synthesize a payment record without
+    // evidence — historically this permitted a rogue event manager to
+    // mark an unpaid PENDING order as PAID, side-stepping the Bold
+    // fingerprint entirely.
+    if (
+      dto.status === OrderStatus.PAID &&
+      previousStatus !== OrderStatus.PAID &&
+      actorRole !== "admin"
+    ) {
+      this.logger.warn(
+        `Blocked order-to-PAID transition by non-admin actor: order=${orderNumber} actor=${actorId ?? "unknown"} role=${actorRole ?? "unknown"}`,
+      );
+      throw new BadRequestException(
+        "Solo un administrador puede marcar un pedido como pagado. Sube la evidencia del pago y pide a un admin que apruebe el cambio.",
       );
     }
 

@@ -10,6 +10,7 @@ import {
 import { ConfigService } from "@nestjs/config";
 import type { EnvironmentConfig } from "../config/config.interface";
 import { MembershipExpirationService } from "./services/membership-expiration.service";
+import { Public } from "../common/decorators";
 
 /**
  * MembershipExpirationController — HTTP entry point for Vercel Cron.
@@ -41,6 +42,7 @@ export class MembershipExpirationController {
     private readonly configService: ConfigService<EnvironmentConfig>,
   ) {}
 
+  @Public()
   @Post("membership-expiration")
   @HttpCode(HttpStatus.OK)
   async runMembershipExpiration(

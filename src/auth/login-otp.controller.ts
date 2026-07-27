@@ -2,6 +2,7 @@ import { Controller, Post, Body, HttpCode, HttpStatus } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import { LoginOtpService } from "./login-otp.service";
 import { LoginOtpInitiateDto, LoginOtpVerifyDto } from "./dto/login-otp.dto";
+import { Public } from "../common/decorators";
 
 /**
  * LoginOtpController — Endpoints para el flujo de verificacion de login
@@ -19,6 +20,7 @@ import { LoginOtpInitiateDto, LoginOtpVerifyDto } from "./dto/login-otp.dto";
 export class LoginOtpController {
   constructor(private readonly loginOtpService: LoginOtpService) {}
 
+  @Public()
   @Post("initiate")
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 60000, limit: 3 } })
@@ -32,6 +34,7 @@ export class LoginOtpController {
     );
   }
 
+  @Public()
   @Post("verify")
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 60000, limit: 10 } })

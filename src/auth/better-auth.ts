@@ -1,5 +1,6 @@
 import { MongoClient } from "mongodb";
 import type { EmailService } from "../zoho-mail/email.service";
+import { maskEmail, sanitizeForLog } from "../common/utils/log-redact.util";
 
 /* ------------------------------------------------------------------ *
  * Dynamic import of ESM-only `better-auth` submodules.
@@ -252,13 +253,14 @@ async function initAuth(): Promise<AuthInstance> {
             resetUrl,
           });
           if (!ok) {
+            // M-9: redact recipient email.
             console.warn(
-              `[Password Reset] No se pudo enviar el correo a ${user.email} (Zoho no configurado o fallo)`,
+              `[Password Reset] No se pudo enviar el correo a ${maskEmail(user.email)} (Zoho no configurado o fallo)`,
             );
           }
         } else {
           console.warn(
-            `[Password Reset] Email service not configured — reset email NOT sent to ${user.email}`,
+            `[Password Reset] Email service not configured — reset email NOT sent to ${maskEmail(user.email)}`,
           );
         }
       },
@@ -284,13 +286,14 @@ async function initAuth(): Promise<AuthInstance> {
             verificationUrl,
           });
           if (!ok) {
+            // M-9: redact recipient email.
             console.warn(
-              `[Email Verification] No se pudo enviar el correo a ${user.email} (Zoho no configurado o fallo)`,
+              `[Email Verification] No se pudo enviar el correo a ${maskEmail(user.email)} (Zoho no configurado o fallo)`,
             );
           }
         } else {
           console.warn(
-            `[Email Verification] Email service not configured — verification email NOT sent to ${user.email}`,
+            `[Email Verification] Email service not configured — verification email NOT sent to ${maskEmail(user.email)}`,
           );
         }
       },
@@ -475,7 +478,35 @@ async function initAuth(): Promise<AuthInstance> {
                 updatedAt: new Date(),
               });
             } catch (err) {
-              console.error("[databaseHooks] Failed to insert user:", err);
+              // M-15: previously this catch swallowed all errors silently —
+              // the user was left bricked (Better Auth account exists with
+              // the email but no Mongoose user doc, so SessionGuard 401s
+              // and there's no path for a re-signup because the email is
+              // already taken in Better Auth). Now we attempt to clean up
+              // the orphan Better Auth user and re-throw so the sign-up
+              // API surfaces a meaningful error to the client.
+              console.error(
+                `[databaseHooks] Failed to insert Mongoose user for betterAuthId=${user.id} email=${maskEmail(user.email)}: ${err instanceof Error ? err.message : String(err)}`,
+                err instanceof Error ? err.stack : "",
+              );
+              try {
+                await mongoDb.collection("account").deleteMany({
+                  userId: user.id,
+                });
+                await mongoDb.collection("session").deleteMany({
+                  userId: user.id,
+                });
+                await mongoDb
+                  .collection("user")
+                  .deleteOne({ id: user.id });
+              } catch (cleanupErr) {
+                console.error(
+                  `[databaseHooks] Failed to cleanup orphan Better Auth user ${user.id}: ${cleanupErr instanceof Error ? (cleanupErr as Error).message : String(cleanupErr)}`,
+                );
+              }
+              throw new Error(
+                "No se pudo crear el usuario. Intenta de nuevo en unos minutos.",
+              );
             }
           },
         },

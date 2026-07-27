@@ -23,7 +23,7 @@ import { UpdateOrderStatusDto } from "../dto/update-order-status.dto";
 import { ProductStatus } from "../../shop/schemas/product.schema";
 
 interface AuthenticatedRequest extends Request {
-  user: { userId: string; email?: string };
+  user: { userId: string; email?: string; role?: string };
 }
 
 @Controller("admin/shop")
@@ -118,6 +118,11 @@ export class AdminShopController {
       orderNumber,
       dto,
       req.user.userId,
+      // M-7: Provide the actor's role so the service can forbid
+      // EVENT_MANAGER from marking an order as PAID without payment
+      // evidence. Only ADMIN may clear a PENDING-to-PAID transition
+      // (e.g., to record an outside-collected payment).
+      req.user.role ?? "",
     );
   }
 }

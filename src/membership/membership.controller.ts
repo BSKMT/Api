@@ -19,6 +19,7 @@ import { MembershipService } from "./membership.service";
 import { CreateMembershipPaymentDto } from "./dto/create-membership-payment.dto";
 import { CreditChoiceDto } from "./dto/credit-choice.dto";
 import { UseCreditDto } from "./dto/use-credit.dto";
+import { Public } from "../common/decorators";
 import type { EnvironmentConfig } from "../config/config.interface";
 
 interface AuthenticatedRequest extends Request {
@@ -45,6 +46,7 @@ export class MembershipController {
     return this.membershipService.createMembershipPayment(userId, dto);
   }
 
+  @Public()
   @Post("webhook")
   @HttpCode(HttpStatus.OK)
   async handleWebhook(
@@ -126,6 +128,7 @@ export class MembershipController {
    * additionally exempt this membership-cron route below, which sits
    * under a different prefix).
    */
+  @Public()
   @Post("internal/cron/sweep-pending")
   @HttpCode(HttpStatus.OK)
   async sweepPending(

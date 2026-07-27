@@ -7,6 +7,7 @@ import {
   NotificationPriority,
 } from "./schemas/notification.schema";
 import { EmailService } from "../zoho-mail/email.service";
+import { maskEmail, sanitizeForLog } from "../common/utils/log-redact.util";
 
 /**
  * NotificationsService - Crea, consulta y marca como leídas las notificaciones
@@ -61,14 +62,17 @@ export class NotificationsService {
         })
         .then((ok) => {
           if (!ok) {
+            // M-9: redact recipient email from logs.
             this.logger.warn(
-              `No se pudo enviar el correo de notificacion a ${data.emailTo}`,
+              `No se pudo enviar el correo de notificacion a ${maskEmail(data.emailTo ?? "")}`,
             );
           }
         })
         .catch((err: unknown) => {
+          // M-9: redact recipient email and sanitize the error message
+          // (which a misbehaving transport could include CRLF in).
           this.logger.warn(
-            `Error enviando correo de notificacion a ${data.emailTo}: ${err instanceof Error ? err.message : String(err)}`,
+            `Error enviando correo de notificacion a ${maskEmail(data.emailTo ?? "")}: ${sanitizeForLog(err instanceof Error ? err.message : String(err))}`,
           );
         });
     }

@@ -10,6 +10,7 @@ import { User, UserDocument } from "../users/schemas/user.schema";
 import { getAuth, getMongoDb } from "../auth/better-auth";
 import { UpdateSettingsDto } from "./dto/update-settings.dto";
 import type { Request } from "express";
+import { maskEmail, sanitizeForLog } from "../common/utils/log-redact.util";
 
 const DEFAULT_SETTINGS = {
   notifications: {
@@ -285,8 +286,16 @@ export class SettingsService {
     user.accountDeletionRequestedAt = new Date();
     await user.save();
 
+    // M-2: Re-auth used `auth.api.signInEmail({ asResponse: true })` which
+    // mints a fresh session in the underlying auth DB even though we
+    // never delivered the cookie to the client. That orphan session
+    // would have lived for `session.expiresIn` (7 days). Discard it
+    // immediately by parsing the Set-Cookie headers from the response
+    // and deleting the matching sessions from the `session` collection.
+    await this.discardOrphanSessionFromAuthResponse(authResponse, user);
+
     this.logger.log(
-      `Account deletion requested by user ${userId}: ${reason ?? "no reason"}`,
+      `Account deletion requested by user ${userId}: ${sanitizeForLog(reason ?? "no reason")}`,
     );
     return {
       success: true,
@@ -383,7 +392,6 @@ export class SettingsService {
         body: { currentPassword, newPassword },
         headers: req.headers,
       });
-      return { success: true, message: "Contraseña actualizada correctamente" };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "";
       if (/password/i.test(msg)) {
@@ -393,6 +401,99 @@ export class SettingsService {
       }
       throw new BadRequestException(
         "No se pudo cambiar la contraseña. Inténtalo de nuevo.",
+      );
+    }
+
+    // M-1: Better Auth changePassword does NOT call revokeSessionsOnPasswordReset
+    // implicitly (only the `sendResetPassword` flow does, controlled via
+    // `revokeSessionsOnPasswordReset: true` in better-auth config which sets the
+    // reset flow). To stop other sessions (e.g., a stolen phone still logged in)
+    // after the user changes their password interactively, revoke every session
+    // except the one that issued this request.
+    const typedReq = req as Request & {
+      user?: { userId?: string; betterAuthId?: string };
+    };
+    const betterAuthId = typedReq.user?.betterAuthId;
+    const cookieHeader = req.headers.cookie ?? "";
+    const currentToken = this.extractSessionTokenFromCookie(cookieHeader);
+    if (betterAuthId && currentToken) {
+      try {
+        await this.revokeAllOtherSessions(betterAuthId, currentToken);
+      } catch (err: unknown) {
+        this.logger.warn(
+          `Failed to revoke other sessions after password change: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
+
+    return { success: true, message: "Contraseña actualizada correctamente" };
+  }
+
+  /**
+   * M-1: Extract the `better-auth.session_token` (or `__Secure-` variant)
+   * value from a Cookie header so we can revoke everyDidn't-other session
+   * while preserving the caller's own session.
+   */
+  private extractSessionTokenFromCookie(cookieHeader: string): string {
+    const cookies = cookieHeader.split(";").map((c) => c.trim());
+    for (const cookie of cookies) {
+      const eq = cookie.indexOf("=");
+      if (eq <= 0) continue;
+      const name = cookie.slice(0, eq).trim();
+      const value = cookie.slice(eq + 1).trim();
+      if (
+        name === "better-auth.session_token" ||
+        name === "__Secure-better-auth.session_token"
+      ) {
+        return value;
+      }
+    }
+    return "";
+  }
+
+  /**
+   * M-2: After `auth.api.signInEmail({ asResponse: true })` is used to
+   * re-authenticate (for the "request account deletion" flow), Better Auth
+   * creates a new session in the `session` collection — even though we
+   * never deliver the Set-Cookie header to the client. The new session
+   * would persist for `session.expiresIn` (7 days) unattached to any
+   * browser. This method parses the Set-Cookie header from the auth
+   * response, extracts the new session token, and deletes the matching
+   * row so no orphan sessions accumulate.
+   */
+  private async discardOrphanSessionFromAuthResponse(
+    authResponse: Response,
+    user: UserDocument,
+  ): Promise<void> {
+    try {
+      const setCookies = authResponse.headers.getSetCookie?.() ?? [];
+      for (const sc of setCookies) {
+        const semi = sc.indexOf(";");
+        const pair = (semi === -1 ? sc : sc.slice(0, semi)).trim();
+        const eq = pair.indexOf("=");
+        if (eq <= 0) continue;
+        const name = pair.slice(0, eq).trim();
+        const value = pair.slice(eq + 1).trim();
+        if (
+          name === "better-auth.session_token" ||
+          name === "__Secure-better-auth.session_token"
+        ) {
+          const db = getMongoDb();
+          await db
+            .collection("session")
+            .deleteOne({ userId: user.betterAuthId, token: value });
+          this.logger.log(
+            `Discarded orphan session after re-auth for user ${user.betterAuthId}`,
+          );
+        }
+      }
+    } catch (err: unknown) {
+      this.logger.warn(
+        `discardOrphanSessionFromAuthResponse failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
       );
     }
   }
