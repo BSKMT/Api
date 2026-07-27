@@ -1,4 +1,11 @@
-import { IsString, IsNotEmpty, IsEmail, MaxLength } from "class-validator";
+import {
+  IsString,
+  IsNotEmpty,
+  IsEmail,
+  IsBoolean,
+  IsOptional,
+  MaxLength,
+} from "class-validator";
 
 export class LoginOtpInitiateDto {
   @IsEmail()
@@ -10,9 +17,9 @@ export class LoginOtpInitiateDto {
   @MaxLength(128)
   password!: string;
 
-  @IsString()
-  @MaxLength(10)
-  rememberMe?: string;
+  @IsBoolean()
+  @IsOptional()
+  rememberMe?: boolean;
 }
 
 export class LoginOtpVerifyDto {

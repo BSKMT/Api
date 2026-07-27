@@ -221,9 +221,9 @@ export class LoginOtpService {
   async initiateLogin(
     email: string,
     password: string,
-    rememberMeStr?: string,
+    rememberMe?: boolean,
   ): Promise<{ requestId: string }> {
-    const rememberMe = rememberMeStr === "true" || rememberMeStr === "1";
+    const remember = rememberMe === true;
 
     /**
      * Llama a Better Auth **en proceso** (sin HTTP roundtrip) para
@@ -242,7 +242,7 @@ export class LoginOtpService {
     try {
       const auth = await getAuth();
       authResponse = await auth.api.signInEmail({
-        body: { email, password, rememberMe },
+        body: { email, password, rememberMe: remember },
         asResponse: true,
       });
     } catch (err) {
