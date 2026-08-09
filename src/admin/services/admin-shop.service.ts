@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
+import { KvCacheService } from "../../kv/kv-cache.service";
 import {
   Product,
   ProductDocument,
@@ -31,7 +32,14 @@ export class AdminShopService {
     private readonly productModel: Model<ProductDocument>,
     @InjectModel(Order.name)
     private readonly orderModel: Model<OrderDocument>,
+    private readonly kvCache: KvCacheService,
   ) {}
+
+  private async invalidateProductCache(slug?: string): Promise<void> {
+    await this.kvCache.invalidatePrefix("shop:products:");
+    await this.kvCache.invalidatePrefix("shop:upcoming:");
+    if (slug) await this.kvCache.delete(`shop:product:${slug}`);
+  }
 
   async listProducts(filters: {
     status?: string;
@@ -98,6 +106,7 @@ export class AdminShopService {
     )[0] as unknown as ProductDocument;
 
     this.logger.log(`Product created: slug=${dto.slug} by admin`);
+    await this.invalidateProductCache();
     return created;
   }
 
@@ -115,6 +124,7 @@ export class AdminShopService {
       throw new NotFoundException("Producto no encontrado");
     }
     this.logger.log(`Product updated: slug=${slug}`);
+    await this.invalidateProductCache(slug);
     return updated;
   }
 
@@ -134,6 +144,7 @@ export class AdminShopService {
       throw new NotFoundException("Producto no encontrado");
     }
     this.logger.log(`Product deleted: slug=${slug}`);
+    await this.invalidateProductCache(slug);
     return { message: "Producto eliminado exitosamente" };
   }
 
@@ -150,6 +161,7 @@ export class AdminShopService {
       throw new NotFoundException("Producto no encontrado");
     }
     this.logger.log(`Product status set: slug=${slug} status=${status}`);
+    await this.invalidateProductCache(slug);
     return product;
   }
 

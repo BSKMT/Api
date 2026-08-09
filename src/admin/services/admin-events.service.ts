@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
+import { KvCacheService } from "../../kv/kv-cache.service";
 import {
   Event,
   EventDocument,
@@ -28,7 +29,15 @@ export class AdminEventsService {
     private readonly eventModel: Model<EventDocument>,
     @InjectModel(EventRegistration.name)
     private readonly registrationModel: Model<EventRegistrationDocument>,
+    private readonly kvCache: KvCacheService,
   ) {}
+
+  private async invalidateEventCache(slug?: string): Promise<void> {
+    await this.kvCache.delete("events:stats");
+    await this.kvCache.invalidatePrefix("events:upcoming:");
+    await this.kvCache.invalidatePrefix("events:featured:");
+    if (slug) await this.kvCache.delete(`event:slug:${slug}`);
+  }
 
   async listEvents(filters: {
     status?: string;
@@ -86,6 +95,7 @@ export class AdminEventsService {
     });
 
     this.logger.log(`Event created: slug=${dto.slug} by admin`);
+    await this.invalidateEventCache();
     return created;
   }
 
@@ -109,6 +119,7 @@ export class AdminEventsService {
     );
 
     this.logger.log(`Event updated: slug=${slug}`);
+    await this.invalidateEventCache(slug);
     return updated as EventDocument;
   }
 
@@ -127,6 +138,7 @@ export class AdminEventsService {
       throw new NotFoundException("Evento no encontrado");
     }
     this.logger.log(`Event deleted: slug=${slug}`);
+    await this.invalidateEventCache(slug);
     return { message: "Evento eliminado exitosamente" };
   }
 
@@ -140,6 +152,7 @@ export class AdminEventsService {
       throw new NotFoundException("Evento no encontrado");
     }
     this.logger.log(`Event status set: slug=${slug} status=${status}`);
+    await this.invalidateEventCache(slug);
     return event;
   }
 

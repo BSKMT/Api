@@ -25,4 +25,11 @@ export interface EnvironmentConfig {
    * `Authorization: Bearer <secret>`), the cron endpoint 400s.
    */
   CRON_SECRET: string;
+  TURNSTILE_SECRET_KEY: string;
+
+  CF_KV_ENABLED: boolean;
+  CF_ACCOUNT_ID: string;
+  CF_KV_NAMESPACE_ID_PUBLIC: string;
+  CF_KV_NAMESPACE_ID_PRIVATE: string;
+  CF_KV_API_TOKEN: string;
 }
