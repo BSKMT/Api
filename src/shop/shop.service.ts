@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
+import { KvCacheService } from "../kv/kv-cache.service";
 import {
   Product,
   ProductDocument,
@@ -39,6 +40,7 @@ export class ShopService {
     private readonly orderModel: Model<OrderDocument>,
     @InjectModel(WishlistItem.name)
     private readonly wishlistModel: Model<WishlistItemDocument>,
+    private readonly kvCache: KvCacheService,
   ) {}
 
   async getProducts(
@@ -46,29 +48,50 @@ export class ShopService {
     featuredOnly = false,
     collection?: string,
   ): Promise<ProductDocument[]> {
+    const cacheKey = `shop:products:${limit}:${featuredOnly}:${collection ?? ""}`;
+    const cached = await this.kvCache.get<ProductDocument[]>(cacheKey);
+    if (cached) return cached;
+
     const filter: Record<string, unknown> = { status: ProductStatus.PUBLISHED };
     if (featuredOnly) filter.featured = true;
     if (collection) filter.collection = collection;
 
-    return this.productModel
+    const result = await this.productModel
       .find(filter)
       .sort({ featured: -1, createdAt: -1 })
       .limit(limit)
       .lean();
+
+    await this.kvCache.set(cacheKey, result, 300);
+    return result;
   }
 
   async getUpcomingReleases(limit = 10): Promise<ProductDocument[]> {
-    return this.productModel
+    const cacheKey = `shop:upcoming:${limit}`;
+    const cached = await this.kvCache.get<ProductDocument[]>(cacheKey);
+    if (cached) return cached;
+
+    const result = await this.productModel
       .find({ status: ProductStatus.PUBLISHED, isNew: true })
       .sort({ createdAt: -1 })
       .limit(limit)
       .lean();
+
+    await this.kvCache.set(cacheKey, result, 300);
+    return result;
   }
 
   async getProductBySlug(slug: string): Promise<ProductDocument | null> {
-    return this.productModel
+    const cacheKey = `shop:product:${slug}`;
+    const cached = await this.kvCache.get<ProductDocument>(cacheKey);
+    if (cached) return cached;
+
+    const result = await this.productModel
       .findOne({ slug, status: ProductStatus.PUBLISHED })
       .lean();
+
+    if (result) await this.kvCache.set(cacheKey, result, 300);
+    return result;
   }
 
   async createOrder(

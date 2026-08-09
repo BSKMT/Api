@@ -23,6 +23,7 @@ import { ArphaService } from "../arpha/arpha.service";
 import { ARPHA_PRICING } from "../arpha/schemas/arpha-request.schema";
 import { UsersService } from "../users/users.service";
 import { UserRole } from "../users/schemas/user.schema";
+import { KvCacheService } from "../kv/kv-cache.service";
 import {
   maskUserId,
   maskReference,
@@ -88,6 +89,7 @@ export class PaymentsService {
     private readonly shopService: ShopService,
     private readonly arphaService: ArphaService,
     private readonly usersService: UsersService,
+    private readonly kvCache: KvCacheService,
   ) {}
 
   private static readonly TERMINAL_STATUSES = new Set([
@@ -511,7 +513,19 @@ export class PaymentsService {
       return null;
     }
 
-    // Atomic find + dedup check to prevent race condition
+    if (parsed.notificationId) {
+      const kvSeen = await this.kvCache.get<number>(
+        `webhook:seen:${parsed.referenceId}:${parsed.notificationId}`,
+        true,
+      );
+      if (kvSeen !== null) {
+        this.logger.log(
+          `KV screener: duplicate webhook skipped: ${parsed.notificationId}, ${parsed.referenceId}`,
+        );
+        return null;
+      }
+    }
+
     const transaction = await this.transactionModel.findOne({
       reference: parsed.referenceId,
     });
@@ -527,6 +541,15 @@ export class PaymentsService {
         `Duplicate webhook ignored: ${parsed.notificationId ?? parsed.paymentId}, ${parsed.referenceId}`,
       );
       return null;
+    }
+
+    if (parsed.notificationId) {
+      await this.kvCache.set(
+        `webhook:seen:${parsed.referenceId}:${parsed.notificationId}`,
+        1,
+        7 * 24 * 60 * 60,
+        true,
+      );
     }
 
     // PAY-16: If notificationId is missing, use paymentId as fallback dedup
@@ -934,6 +957,26 @@ export class PaymentsService {
   }
 
   async getTransactionStatus(userId: string, reference: string) {
+    const statusCacheKey = `pay:status:${reference}`;
+    const cached = await this.kvCache.get<{
+      status: string;
+      requiresPayment: boolean;
+    }>(statusCacheKey, true);
+    if (cached && PaymentsService.TERMINAL_STATUSES.has(cached.status)) {
+      return {
+        reference,
+        status: cached.status,
+        amount: 0,
+        tier: "",
+        purpose: "",
+        boldPaymentId: null,
+        paymentMethod: null,
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+        requiresPayment: false,
+      };
+    }
+
     const transaction = await this.transactionModel.findOne({
       userId,
       reference,
@@ -986,6 +1029,15 @@ export class PaymentsService {
         transaction.reference,
         transaction.amount,
         transaction.description,
+      );
+    }
+
+    if (PaymentsService.TERMINAL_STATUSES.has(transaction.status)) {
+      await this.kvCache.set(
+        statusCacheKey,
+        { status: transaction.status, requiresPayment: false },
+        24 * 60 * 60,
+        true,
       );
     }
 

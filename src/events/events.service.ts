@@ -8,6 +8,7 @@ import {
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import * as crypto from "node:crypto";
+import { KvCacheService } from "../kv/kv-cache.service";
 import {
   EventRegistration,
   EventRegistrationDocument,
@@ -56,6 +57,7 @@ export class EventsService {
     @InjectModel(CourseEnrollment.name)
     private readonly courseEnrollmentModel: Model<CourseEnrollmentDocument>,
     private readonly notificationsService: NotificationsService,
+    private readonly kvCache: KvCacheService,
   ) {}
 
   async registerForEvent(
@@ -431,8 +433,12 @@ export class EventsService {
   }
 
   async getUpcomingEvents(limit: number = 6): Promise<EventDocument[]> {
+    const cacheKey = `events:upcoming:${limit}`;
+    const cached = await this.kvCache.get<EventDocument[]>(cacheKey);
+    if (cached) return cached;
+
     const now = new Date();
-    return this.eventModel
+    const result = await this.eventModel
       .find({
         status: EventStatus.PUBLISHED,
         date: { $gte: now },
@@ -440,11 +446,18 @@ export class EventsService {
       .sort({ date: 1 })
       .limit(limit)
       .lean();
+
+    await this.kvCache.set(cacheKey, result, 120);
+    return result;
   }
 
   async getFeaturedEvents(limit: number = 3): Promise<EventDocument[]> {
+    const cacheKey = `events:featured:${limit}`;
+    const cached = await this.kvCache.get<EventDocument[]>(cacheKey);
+    if (cached) return cached;
+
     const now = new Date();
-    return this.eventModel
+    const result = await this.eventModel
       .find({
         status: EventStatus.PUBLISHED,
         featured: true,
@@ -453,33 +466,63 @@ export class EventsService {
       .sort({ date: 1 })
       .limit(limit)
       .lean();
+
+    await this.kvCache.set(cacheKey, result, 120);
+    return result;
   }
 
   async getEventBySlug(slug: string): Promise<EventDocument | null> {
-    // EVT-15: Exclude internal metadata field from public endpoint
-    return this.eventModel
+    const cacheKey = `event:slug:${slug}`;
+    const cached = await this.kvCache.get<EventDocument>(cacheKey);
+    if (cached) return cached;
+
+    const result = await this.eventModel
       .findOne({ slug, status: EventStatus.PUBLISHED })
       .select("-metadata")
       .lean();
+
+    if (result) await this.kvCache.set(cacheKey, result, 300);
+    return result;
   }
 
   async getAvailableCourses(limit: number = 6): Promise<CourseDocument[]> {
-    return this.courseModel
+    const cacheKey = `courses:available:${limit}`;
+    const cached = await this.kvCache.get<CourseDocument[]>(cacheKey);
+    if (cached) return cached;
+
+    const result = await this.courseModel
       .find({ status: CourseStatus.PUBLISHED })
       .sort({ featured: -1, title: 1 })
       .limit(limit)
       .lean();
+
+    await this.kvCache.set(cacheKey, result, 120);
+    return result;
   }
 
   async getCourseBySlug(slug: string): Promise<CourseDocument | null> {
-    // EVT-15: Exclude internal metadata field from public endpoint
-    return this.courseModel
+    const cacheKey = `course:slug:${slug}`;
+    const cached = await this.kvCache.get<CourseDocument>(cacheKey);
+    if (cached) return cached;
+
+    const result = await this.courseModel
       .findOne({ slug, status: CourseStatus.PUBLISHED })
       .select("-metadata")
       .lean();
+
+    if (result) await this.kvCache.set(cacheKey, result, 300);
+    return result;
   }
 
   async getEventStats() {
+    const cacheKey = "events:stats";
+    const cached = await this.kvCache.get<{
+      totalEvents: number;
+      upcomingEvents: number;
+      totalCourses: number;
+    }>(cacheKey);
+    if (cached) return cached;
+
     const now = new Date();
     const totalEvents = await this.eventModel.countDocuments({
       status: EventStatus.PUBLISHED,
@@ -492,11 +535,14 @@ export class EventsService {
       status: CourseStatus.PUBLISHED,
     });
 
-    return {
+    const result = {
       totalEvents,
       upcomingEvents,
       totalCourses,
     };
+
+    await this.kvCache.set(cacheKey, result, 300);
+    return result;
   }
 
   async cancelRegistration(

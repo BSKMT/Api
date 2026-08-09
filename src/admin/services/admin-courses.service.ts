@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
+import { KvCacheService } from "../../kv/kv-cache.service";
 import {
   Course,
   CourseDocument,
@@ -28,7 +29,13 @@ export class AdminCoursesService {
     private readonly courseModel: Model<CourseDocument>,
     @InjectModel(CourseEnrollment.name)
     private readonly enrollmentModel: Model<CourseEnrollmentDocument>,
+    private readonly kvCache: KvCacheService,
   ) {}
+
+  private async invalidateCourseCache(slug?: string): Promise<void> {
+    await this.kvCache.invalidatePrefix("courses:available:");
+    if (slug) await this.kvCache.delete(`course:slug:${slug}`);
+  }
 
   async listCourses(filters: {
     status?: string;
@@ -86,6 +93,7 @@ export class AdminCoursesService {
     });
 
     this.logger.log(`Course created: slug=${dto.slug} by admin`);
+    await this.invalidateCourseCache();
     return created;
   }
 
@@ -103,6 +111,7 @@ export class AdminCoursesService {
       throw new NotFoundException("Curso no encontrado");
     }
     this.logger.log(`Course updated: slug=${slug}`);
+    await this.invalidateCourseCache(slug);
     return updated;
   }
 
@@ -122,6 +131,7 @@ export class AdminCoursesService {
       throw new NotFoundException("Curso no encontrado");
     }
     this.logger.log(`Course deleted: slug=${slug}`);
+    await this.invalidateCourseCache(slug);
     return { message: "Curso eliminado exitosamente" };
   }
 
@@ -135,6 +145,7 @@ export class AdminCoursesService {
       throw new NotFoundException("Curso no encontrado");
     }
     this.logger.log(`Course status set: slug=${slug} status=${status}`);
+    await this.invalidateCourseCache(slug);
     return course;
   }
 

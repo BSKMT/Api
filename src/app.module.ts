@@ -10,6 +10,7 @@ import { B2bModule } from "./b2b/b2b.module";
 import { configValidationSchema } from "./config/config.validation";
 import { ContactModule } from "./contact/contact.module";
 import { EventsModule } from "./events/events.module";
+import { KvModule } from "./kv/kv.module";
 import { MembershipModule } from "./membership/membership.module";
 import { MembershipExpirationModule } from "./membership/membership-expiration.module";
 import { NotificationsModule } from "./notifications/notifications.module";
@@ -36,6 +37,7 @@ import { ZohoMailModule } from "./zoho-mail/zoho-mail.module";
       }),
     }),
     ScheduleModule.forRoot(),
+    KvModule,
     ThrottlerModule.forRoot([
       {
         name: "default",

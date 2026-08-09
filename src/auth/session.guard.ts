@@ -9,6 +9,7 @@ import { getAuth } from "./better-auth";
 import type { AuthInstance, BetterAuthSessionData } from "./better-auth";
 import { UsersService } from "../users/users.service";
 import { IS_PUBLIC_KEY } from "../common/decorators/public.decorator";
+import { KvCacheService } from "../kv/kv-cache.service";
 
 /**
  * `better-auth/node` is published as an ES Module (`.mjs`). The project
@@ -49,6 +50,7 @@ export class SessionGuard {
   constructor(
     private readonly reflector: Reflector,
     private readonly usersService: UsersService,
+    private readonly kvCache: KvCacheService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -75,8 +77,39 @@ export class SessionGuard {
 
     const betterAuthUserId: string = session.user.id;
 
-    const mongooseUser =
-      await this.usersService.findByBetterAuthId(betterAuthUserId);
+    const cacheKey = `user:ba:${betterAuthUserId}`;
+    const cached = await this.kvCache.get<{
+      _id: string;
+      role: string;
+      isActive: boolean;
+      accountDeletionRequested: boolean;
+    }>(cacheKey, true);
+
+    let mongooseUser: Awaited<ReturnType<UsersService["findByBetterAuthId"]>> =
+      null;
+
+    if (cached) {
+      mongooseUser = cached as unknown as Awaited<
+        ReturnType<UsersService["findByBetterAuthId"]>
+      >;
+    } else {
+      mongooseUser =
+        await this.usersService.findByBetterAuthId(betterAuthUserId);
+      if (mongooseUser) {
+        await this.kvCache.set(
+          cacheKey,
+          {
+            _id: String(mongooseUser._id),
+            role: mongooseUser.role,
+            isActive: mongooseUser.isActive,
+            accountDeletionRequested:
+              mongooseUser.accountDeletionRequested ?? false,
+          },
+          120,
+          true,
+        );
+      }
+    }
 
     if (!mongooseUser) {
       throw new UnauthorizedException(
