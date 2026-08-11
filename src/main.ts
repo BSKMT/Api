@@ -24,6 +24,49 @@ const authRateLimit = new Map<string, { count: number; resetAt: number }>();
 // M20: Cap the map size to prevent unbounded memory growth on serverless
 const AUTH_RATE_LIMIT_MAX_SIZE = 5000;
 
+const SENSITIVE_AUTH_PATHS = [
+  "/sign-in/email",
+  "/sign-up/email",
+  "/reset-password",
+  "/request-password-reset",
+];
+
+function shouldSkipAuthRoute(path: string): boolean {
+  return path === "/me" || path === "/me/" || path.startsWith("/login-otp/");
+}
+
+function enforceAuthRateLimit(
+  req: Request,
+  res: Response,
+  path: string,
+): boolean {
+  const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
+  const key = `${ip}:${path}`;
+  const now = Date.now();
+  const windowMs = 60000;
+  const maxRequests = 10;
+  const entry = authRateLimit.get(key);
+  if (entry && entry.count >= maxRequests && now < entry.resetAt) {
+    res
+      .status(429)
+      .json({ message: "Too many requests. Please try again later." });
+    return false;
+  }
+  if (!entry || now >= entry.resetAt) {
+    authRateLimit.set(key, { count: 1, resetAt: now + windowMs });
+  } else {
+    entry.count++;
+  }
+  if (authRateLimit.size > AUTH_RATE_LIMIT_MAX_SIZE) {
+    for (const [k, v] of authRateLimit) {
+      if (now >= v.resetAt) {
+        authRateLimit.delete(k);
+      }
+    }
+  }
+  return true;
+}
+
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     cors: false,
@@ -163,61 +206,18 @@ async function bootstrap() {
     (await import("better-auth/node")) as BetterAuthNodeModule;
   const authHandler = toNodeHandler(auth);
   app.use("/api/auth", (req: Request, res: Response, next: NextFunction) => {
-    // M-13: normalize any literal `/` runs in the URL path so a
-    // request like `/api/auth//sign-in/email` (the double-slash
-    // trick) can't sneak past the exact-match comparisons below.
     const path = req.path.replace(/\/{2,}/g, "/");
-    if (path === "/me" || path === "/me/" || path.startsWith("/login-otp/")) {
+    if (shouldSkipAuthRoute(path)) {
       return next();
     }
-
-    // A-1: Defense-in-depth — native /sign-in/email is disabled in
-    // better-auth.ts (disabledPaths). Reject any direct HTTP hit to that
-    // route with a 404 so a misconfiguration of disabledPaths cannot
-    // silently re-enable the bypass route. The explicit message omits
-    // clues about the existence of the endpoint.
     if (path === "/sign-in/email") {
       return res.status(404).json({ message: "Not Found" });
     }
-
-    // Simple rate-limit for sensitive Better Auth endpoints (M-3).
-    // The ThrottlerGuard does not cover these raw Express routes.
-    // M-13: keys on the normalized path against exact-match list so a
-    // request via `//sign-in/email` cannot tunnel past the rate limit.
-    const sensitivePaths = [
-      "/sign-in/email",
-      "/sign-up/email",
-      "/reset-password",
-      "/request-password-reset",
-    ];
-    if (sensitivePaths.includes(path)) {
-      const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
-      const key = `${ip}:${path}`;
-      const now = Date.now();
-      const windowMs = 60000;
-      const maxRequests = 10;
-      const entry = authRateLimit.get(key);
-      if (entry && entry.count >= maxRequests && now < entry.resetAt) {
-        res
-          .status(429)
-          .json({ message: "Too many requests. Please try again later." });
+    if (SENSITIVE_AUTH_PATHS.includes(path)) {
+      if (!enforceAuthRateLimit(req, res, path)) {
         return;
       }
-      if (!entry || now >= entry.resetAt) {
-        authRateLimit.set(key, { count: 1, resetAt: now + windowMs });
-      } else {
-        entry.count++;
-      }
-      // M20: Periodic cleanup of expired entries to cap memory usage
-      if (authRateLimit.size > AUTH_RATE_LIMIT_MAX_SIZE) {
-        for (const [k, v] of authRateLimit) {
-          if (now >= v.resetAt) {
-            authRateLimit.delete(k);
-          }
-        }
-      }
     }
-
     return authHandler(req, res);
   });
 

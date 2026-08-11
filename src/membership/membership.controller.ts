@@ -162,7 +162,7 @@ export class MembershipController {
     }
     const provided =
       headerSecret ??
-      (authorization && authorization.startsWith("Bearer ")
+      (authorization?.startsWith("Bearer ")
         ? authorization.slice("Bearer ".length)
         : undefined) ??
       "";

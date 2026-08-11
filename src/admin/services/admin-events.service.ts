@@ -213,7 +213,7 @@ export class AdminEventsService {
         ) {
           const copy: Record<string, unknown> = { ...r };
           const redacted: Record<string, unknown> = {
-            ...((copy["companionData"] as Record<string, unknown>) ?? {}),
+            ...(copy["companionData"] as Record<string, unknown>),
           };
           delete redacted["documentId"];
           delete redacted["phone"];

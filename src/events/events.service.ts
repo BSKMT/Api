@@ -65,8 +65,47 @@ export class EventsService {
     dto: RegisterEventDto,
     membershipLevel: string | null,
   ): Promise<EventRegistrationDocument> {
-    // A-2: Verify the event exists and is PUBLISHED
-    const event = await this.eventModel.findOne({ slug: dto.eventSlug });
+    const event = await this.validateEventForRegistration(dto.eventSlug);
+    const existing = await this.eventRegistrationModel.findOne({
+      userId,
+      eventSlug: dto.eventSlug,
+    });
+    if (existing && existing.status !== "CANCELLED") {
+      throw new ConflictException("Ya estás registrado para este evento");
+    }
+
+    const isMember = MEMBER_LEVELS.has(membershipLevel ?? "");
+    const membershipStatus = this.determineMembershipStatus(
+      isMember,
+      dto,
+      event,
+    );
+    const status = this.determineInitialStatus(membershipStatus, dto);
+
+    if (existing) {
+      return this.updateCancelledRegistration(
+        existing,
+        dto,
+        status,
+        membershipStatus,
+        userId,
+        event,
+      );
+    }
+
+    return this.createNewRegistration(
+      userId,
+      dto,
+      status,
+      membershipStatus,
+      event,
+    );
+  }
+
+  private async validateEventForRegistration(
+    eventSlug: string,
+  ): Promise<EventDocument> {
+    const event = await this.eventModel.findOne({ slug: eventSlug });
     if (!event) {
       throw new NotFoundException("Evento no encontrado");
     }
@@ -75,67 +114,71 @@ export class EventsService {
         "El evento no está disponible para registro",
       );
     }
-
-    // M17: Prevent registration in past events
     if (new Date(event.date) < new Date()) {
       throw new BadRequestException(
         "No puedes registrarte en un evento que ya ocurrió",
       );
     }
+    return event;
+  }
 
-    const existing = await this.eventRegistrationModel.findOne({
-      userId,
-      eventSlug: dto.eventSlug,
-    });
-
-    if (existing && existing.status !== "CANCELLED") {
-      throw new ConflictException("Ya estás registrado para este evento");
-    }
-
-    const isMember = MEMBER_LEVELS.has(membershipLevel ?? "");
-
-    let membershipStatus: string;
-
-    // A4/A5: self-managed is only for non-members (always free);
-    // members use "active-member" which is free on `membersFree: true`
-    // events. On `membersFree: false` events, members are routed through
-    // `member-paid` which demands full payment before confirmation
-    // (closing the bypass reported in H-2/A-4).
+  private determineMembershipStatus(
+    isMember: boolean,
+    dto: RegisterEventDto,
+    event: EventDocument,
+  ): string {
     if (isMember) {
-      membershipStatus = event.membersFree ? "active-member" : "member-paid";
-    } else if (dto.registrationType === "managed") {
-      membershipStatus = "non-member-paid";
-    } else {
-      membershipStatus = "non-member-free";
+      return event.membersFree ? "active-member" : "member-paid";
     }
+    if (dto.registrationType === "managed") {
+      return "non-member-paid";
+    }
+    return "non-member-free";
+  }
 
-    let status = "PENDING";
-
-    // Only members on free events going solo are auto-confirmed.
+  private determineInitialStatus(
+    membershipStatus: string,
+    dto: RegisterEventDto,
+  ): string {
     if (membershipStatus === "active-member" && dto.attendanceMode === "solo") {
-      status = "CONFIRMED";
+      return "CONFIRMED";
     }
+    return "PENDING";
+  }
 
-    if (existing) {
-      existing.registrationType = dto.registrationType;
-      existing.attendanceMode = dto.attendanceMode;
-      existing.status = status;
-      existing.membershipStatus = membershipStatus;
-      existing.confirmedAt = status === "CONFIRMED" ? new Date() : null;
-      existing.paymentConfirmed = false;
-      existing.waiverAccepted = false;
-      existing.waiverAcceptedAt = null;
-      existing.transactionReference = null;
-      existing.companionData = null;
-      // A6: Increment counter BEFORE save to prevent ghost registrations on capacity full
-      await this.incrementEventRegisteredCount(dto.eventSlug, event);
-      const saved = await existing.save();
-      this.logger.log(
-        `Event re-registration after cancellation: user=${userId} event=${dto.eventSlug} status=${status}`,
-      );
-      return saved;
-    }
+  private async updateCancelledRegistration(
+    existing: EventRegistrationDocument,
+    dto: RegisterEventDto,
+    status: string,
+    membershipStatus: string,
+    userId: string,
+    event: EventDocument,
+  ): Promise<EventRegistrationDocument> {
+    existing.registrationType = dto.registrationType;
+    existing.attendanceMode = dto.attendanceMode;
+    existing.status = status;
+    existing.membershipStatus = membershipStatus;
+    existing.confirmedAt = status === "CONFIRMED" ? new Date() : null;
+    existing.paymentConfirmed = false;
+    existing.waiverAccepted = false;
+    existing.waiverAcceptedAt = null;
+    existing.transactionReference = null;
+    existing.companionData = null;
+    await this.incrementEventRegisteredCount(dto.eventSlug, event);
+    const saved = await existing.save();
+    this.logger.log(
+      `Event re-registration after cancellation: user=${userId} event=${dto.eventSlug} status=${status}`,
+    );
+    return saved;
+  }
 
+  private async createNewRegistration(
+    userId: string,
+    dto: RegisterEventDto,
+    status: string,
+    membershipStatus: string,
+    event: EventDocument,
+  ): Promise<EventRegistrationDocument> {
     const registration = new this.eventRegistrationModel({
       userId,
       eventSlug: dto.eventSlug,
@@ -147,12 +190,9 @@ export class EventsService {
     });
 
     const saved = await registration.save();
-    // A-10/A-1: Atomic counter increment with capacity check
     try {
       await this.incrementEventRegisteredCount(dto.eventSlug, event);
     } catch (err) {
-      // Race condition: capacity was reached between our check and the increment.
-      // Rollback the registration to maintain consistency.
       await this.eventRegistrationModel.deleteOne({ _id: saved._id }).exec();
       throw err;
     }
@@ -633,62 +673,59 @@ export class EventsService {
     const pricing = this.calculateCoursePricing(course, membershipLevel);
 
     if (existing) {
-      // EVT-16: Allow re-enrollment after cancellation, reject if still active
-      if (existing.status !== "CANCELLED") {
-        throw new ConflictException("Ya estás inscrito en este curso");
-      }
-      // M-6: reserve the capacity FIRST so a full-course failure leaves
-      // the enrollment document in CANCELLED state (recoverable) and
-      // does NOT silently flip the user to PENDING-without-seat which
-      // would otherwise leave them permanently stuck.
-      const maxCap = course.maxCapacity;
-      if (maxCap != null && maxCap > 0) {
-        const reserve = await this.courseModel.findOneAndUpdate(
-          {
-            slug: courseSlug,
-            $expr: {
-              $lt: [{ $ifNull: ["$enrolledCount", 0] }, maxCap],
-            },
-          },
-          { $inc: { enrolledCount: 1 } },
-        );
-        if (!reserve) {
-          throw new BadRequestException(
-            "El curso ha alcanzado su capacidad máxima",
-          );
-        }
-      } else {
-        await this.courseModel.updateOne(
-          { slug: courseSlug },
-          { $inc: { enrolledCount: 1 } },
-        );
-      }
-      // Re-activate cancelled enrollment, clear residual paymentConfirmed
-      existing.status = pricing.requiresPayment ? "PENDING" : "ACTIVE";
-      existing.progress = 0;
-      existing.paymentConfirmed = !pricing.requiresPayment;
-      existing.transactionReference = null;
-      existing.completedAt = null;
-      existing.certificateId = null;
-      try {
-        await existing.save();
-      } catch (saveErr) {
-        // M-6: roll back the seat we just reserved so the user can
-        // retry later; otherwise their second attempt would also see
-        // no capacity and be stuck as a cancelled enrollment.
-        await this.courseModel.findOneAndUpdate(
-          { slug: courseSlug, enrolledCount: { $gt: 0 } },
-          { $inc: { enrolledCount: -1 } },
-        );
-        throw saveErr;
-      }
-
-      this.logger.log(
-        `Course re-enrollment after cancellation: user=${userId} course=${courseSlug} status=${existing.status} amount=${pricing.amount}`,
+      return this.handleReEnrollment(
+        existing,
+        course,
+        courseSlug,
+        userId,
+        pricing,
       );
-      return { enrollment: existing, pricing };
     }
 
+    return this.handleNewEnrollment(userId, courseSlug, course, pricing);
+  }
+
+  private async handleReEnrollment(
+    existing: CourseEnrollmentDocument,
+    course: CourseDocument,
+    courseSlug: string,
+    userId: string,
+    pricing: CoursePricing,
+  ): Promise<{ enrollment: CourseEnrollmentDocument; pricing: CoursePricing }> {
+    if (existing.status !== "CANCELLED") {
+      throw new ConflictException("Ya estás inscrito en este curso");
+    }
+
+    await this.reserveCourseSeat(course, courseSlug);
+
+    existing.status = pricing.requiresPayment ? "PENDING" : "ACTIVE";
+    existing.progress = 0;
+    existing.paymentConfirmed = !pricing.requiresPayment;
+    existing.transactionReference = null;
+    existing.completedAt = null;
+    existing.certificateId = null;
+    try {
+      await existing.save();
+    } catch (saveErr) {
+      await this.courseModel.findOneAndUpdate(
+        { slug: courseSlug, enrolledCount: { $gt: 0 } },
+        { $inc: { enrolledCount: -1 } },
+      );
+      throw saveErr;
+    }
+
+    this.logger.log(
+      `Course re-enrollment after cancellation: user=${userId} course=${courseSlug} status=${existing.status} amount=${pricing.amount}`,
+    );
+    return { enrollment: existing, pricing };
+  }
+
+  private async handleNewEnrollment(
+    userId: string,
+    courseSlug: string,
+    course: CourseDocument,
+    pricing: CoursePricing,
+  ): Promise<{ enrollment: CourseEnrollmentDocument; pricing: CoursePricing }> {
     const enrollment = new this.courseEnrollmentModel({
       userId,
       courseSlug,
@@ -697,23 +734,62 @@ export class EventsService {
       paymentConfirmed: !pricing.requiresPayment,
     });
 
-    // M15: Handle E11000 race on unique index { userId, courseSlug }
     let saved: CourseEnrollmentDocument;
     try {
       saved = await enrollment.save();
     } catch (err: unknown) {
-      if (
-        err &&
-        typeof err === "object" &&
-        "code" in err &&
-        err.code === 11000
-      ) {
-        throw new ConflictException("Ya estás inscrito en este curso");
-      }
+      this.handleEnrollmentDuplicateError(err);
       throw err;
     }
 
-    // M15: Atomic capacity-aware increment with rollback on full
+    await this.incrementCourseEnrollmentCount(course, courseSlug, saved);
+
+    this.logger.log(
+      `Course enrollment: user=${userId} course=${courseSlug} status=${enrollment.status} amount=${pricing.amount}`,
+    );
+
+    return { enrollment: saved, pricing };
+  }
+
+  private handleEnrollmentDuplicateError(err: unknown): void {
+    if (err && typeof err === "object" && "code" in err && err.code === 11000) {
+      throw new ConflictException("Ya estás inscrito en este curso");
+    }
+  }
+
+  private async reserveCourseSeat(
+    course: CourseDocument,
+    courseSlug: string,
+  ): Promise<void> {
+    const maxCap = course.maxCapacity;
+    if (maxCap != null && maxCap > 0) {
+      const reserve = await this.courseModel.findOneAndUpdate(
+        {
+          slug: courseSlug,
+          $expr: {
+            $lt: [{ $ifNull: ["$enrolledCount", 0] }, maxCap],
+          },
+        },
+        { $inc: { enrolledCount: 1 } },
+      );
+      if (!reserve) {
+        throw new BadRequestException(
+          "El curso ha alcanzado su capacidad máxima",
+        );
+      }
+    } else {
+      await this.courseModel.updateOne(
+        { slug: courseSlug },
+        { $inc: { enrolledCount: 1 } },
+      );
+    }
+  }
+
+  private async incrementCourseEnrollmentCount(
+    course: CourseDocument,
+    courseSlug: string,
+    saved: CourseEnrollmentDocument,
+  ): Promise<void> {
     const maxCap = course.maxCapacity;
     if (maxCap != null && maxCap > 0) {
       const updateResult = await this.courseModel.findOneAndUpdate(
@@ -737,12 +813,6 @@ export class EventsService {
         { $inc: { enrolledCount: 1 } },
       );
     }
-
-    this.logger.log(
-      `Course enrollment: user=${userId} course=${courseSlug} status=${enrollment.status} amount=${pricing.amount}`,
-    );
-
-    return { enrollment: saved, pricing };
   }
 
   calculateCoursePricing(

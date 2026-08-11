@@ -603,28 +603,30 @@ export class MembershipService {
       didChange &&
       (statusFromEvent === "REJECTED" || statusFromEvent === "FAILED")
     ) {
-      // M9/C-3: Revert credit only on a genuine non-terminal → terminal
-      // transition (the flag is the idempotency key). The atomic floor in
-      // revertPartialPaymentCredit() prevents `usedAmount` from going
-      // negative so duplicate REJECTED events cannot inflate spendable
-      // credit.
-      if (transaction.creditUsedAmount > 0 && !transaction.creditReverted) {
-        const reverted = await this.usersService.revertPartialPaymentCredit(
-          transaction.userId,
-          transaction.creditUsedAmount,
-        );
-        if (reverted) {
-          await this.transactionModel.updateOne(
-            { _id: transaction._id, creditReverted: false },
-            { $set: { creditReverted: true } },
-          );
-          this.logger.log(
-            `Credit reverted: user=${maskUserId(transaction.userId)} amount=${maskAmount(transaction.creditUsedAmount)} ref=${maskReference(transaction.reference)}`,
-          );
-        }
-      }
-      await this.sendRejectionNotification(transaction, statusFromEvent);
+      await this.handleRejectedWebhook(transaction, statusFromEvent);
     }
+  }
+
+  private async handleRejectedWebhook(
+    transaction: MembershipTransactionDocument,
+    statusFromEvent: string,
+  ): Promise<void> {
+    if (transaction.creditUsedAmount > 0 && !transaction.creditReverted) {
+      const reverted = await this.usersService.revertPartialPaymentCredit(
+        transaction.userId,
+        transaction.creditUsedAmount,
+      );
+      if (reverted) {
+        await this.transactionModel.updateOne(
+          { _id: transaction._id, creditReverted: false },
+          { $set: { creditReverted: true } },
+        );
+        this.logger.log(
+          `Credit reverted: user=${maskUserId(transaction.userId)} amount=${maskAmount(transaction.creditUsedAmount)} ref=${maskReference(transaction.reference)}`,
+        );
+      }
+    }
+    await this.sendRejectionNotification(transaction, statusFromEvent);
   }
 
   /**
@@ -1144,8 +1146,6 @@ export class MembershipService {
       return;
     }
 
-    // C-2/A-1: Block ALL transitions from a terminal status — sync must
-    // never override a terminal webhook outcome (in either direction).
     if (MembershipService.TERMINAL_STATUSES.has(transaction.status)) {
       this.logger.warn(
         `Bold sync: ignoring ${mappedStatus} for already-${transaction.status} reference ${transaction.reference}`,
@@ -1153,22 +1153,11 @@ export class MembershipService {
       return;
     }
 
-    // A-9: Validate the voucher amount against the transaction amount
-    // before approving, mirroring the webhook path. This is the same
-    // flaw the user-flag report noted: previously the sync route
-    // approved on `payment_status` alone.
-    if (mappedStatus === "APPROVED") {
-      const voucherAmount = this.parseBoldAmount(body["amount"]);
-      if (
-        voucherAmount !== undefined &&
-        transaction.amount > 0 &&
-        voucherAmount !== transaction.amount
-      ) {
-        this.logger.warn(
-          `Amount mismatch in Bold voucher sync for ref ${transaction.reference}: expected ${transaction.amount}, received ${voucherAmount}. Skipping approval.`,
-        );
-        return;
-      }
+    if (
+      mappedStatus === "APPROVED" &&
+      this.isVoucherAmountMismatch(transaction, body)
+    ) {
+      return;
     }
 
     this.logger.log(
@@ -1178,15 +1167,7 @@ export class MembershipService {
     transaction.status = mappedStatus;
 
     if (mappedStatus === "APPROVED") {
-      transaction.paidAt = new Date();
-      const paymentMethod = body["payment_method"] as string | undefined;
-      const payerEmail = body["payer_email"] as string | undefined;
-      const boldPaymentId = body["transaction_id"] as string | undefined;
-      if (paymentMethod) transaction.paymentMethod = paymentMethod;
-      if (payerEmail) transaction.payerEmail = payerEmail;
-      if (boldPaymentId && !transaction.boldPaymentId) {
-        transaction.boldPaymentId = boldPaymentId;
-      }
+      this.applyApprovedVoucherFields(transaction, body);
     }
 
     await transaction.save();
@@ -1194,25 +1175,36 @@ export class MembershipService {
     if (mappedStatus === "APPROVED") {
       await this.processApprovedPayment(transaction);
     } else if (mappedStatus === "REJECTED" || mappedStatus === "FAILED") {
-      // M9/C-3: Revert credit only when the credit has not already been
-      // reverted. The atomic floor in users.service keeps usedAmount
-      // from going negative across duplicate REJECTED events.
-      if (transaction.creditUsedAmount > 0 && !transaction.creditReverted) {
-        const reverted = await this.usersService.revertPartialPaymentCredit(
-          transaction.userId,
-          transaction.creditUsedAmount,
-        );
-        if (reverted) {
-          await this.transactionModel.updateOne(
-            { _id: transaction._id, creditReverted: false },
-            { $set: { creditReverted: true } },
-          );
-          this.logger.log(
-            `Credit reverted: user=${maskUserId(transaction.userId)} amount=${maskAmount(transaction.creditUsedAmount)} ref=${maskReference(transaction.reference)}`,
-          );
-        }
-      }
-      await this.sendRejectionNotification(transaction, mappedStatus);
+      await this.handleRejectedWebhook(transaction, mappedStatus);
+    }
+  }
+
+  private isVoucherAmountMismatch(
+    transaction: MembershipTransactionDocument,
+    body: Record<string, unknown>,
+  ): boolean {
+    const voucherAmount = this.parseBoldAmount(body["amount"]);
+    if (voucherAmount === undefined) return false;
+    if (transaction.amount <= 0) return false;
+    if (voucherAmount === transaction.amount) return false;
+    this.logger.warn(
+      `Amount mismatch in Bold voucher sync for ref ${transaction.reference}: expected ${transaction.amount}, received ${voucherAmount}. Skipping approval.`,
+    );
+    return true;
+  }
+
+  private applyApprovedVoucherFields(
+    transaction: MembershipTransactionDocument,
+    body: Record<string, unknown>,
+  ): void {
+    transaction.paidAt = new Date();
+    const paymentMethod = body["payment_method"] as string | undefined;
+    const payerEmail = body["payer_email"] as string | undefined;
+    const boldPaymentId = body["transaction_id"] as string | undefined;
+    if (paymentMethod) transaction.paymentMethod = paymentMethod;
+    if (payerEmail) transaction.payerEmail = payerEmail;
+    if (boldPaymentId && !transaction.boldPaymentId) {
+      transaction.boldPaymentId = boldPaymentId;
     }
   }
 
