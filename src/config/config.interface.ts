@@ -32,4 +32,15 @@ export interface EnvironmentConfig {
   CF_KV_NAMESPACE_ID_PUBLIC: string;
   CF_KV_NAMESPACE_ID_PRIVATE: string;
   CF_KV_API_TOKEN: string;
+
+  /**
+   * AbuseIPDB — IP reputation checking.
+   * When ABUSEIPDB_ENABLED is true, the API rejects requests from IPs
+   * with an AbuseIPDB abuseConfidenceScore >= ABUSEIPDB_BLOCK_THRESHOLD.
+   * The API key is sent via the `Key` HTTP header (never in the query
+   * string) per AbuseIPDB security guidance.
+   */
+  ABUSEIPDB_ENABLED: boolean;
+  ABUSEIPDB_API_KEY: string;
+  ABUSEIPDB_BLOCK_THRESHOLD: number;
 }

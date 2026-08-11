@@ -23,6 +23,7 @@ import { ShopModule } from "./shop/shop.module";
 import { AdminModule } from "./admin/admin.module";
 import { SettingsModule } from "./settings/settings.module";
 import { ZohoMailModule } from "./zoho-mail/zoho-mail.module";
+import { AbuseIpDbModule } from "./abuseipdb/abuseipdb.module";
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { ZohoMailModule } from "./zoho-mail/zoho-mail.module";
     }),
     ScheduleModule.forRoot(),
     KvModule,
+    AbuseIpDbModule,
     ThrottlerModule.forRoot([
       {
         name: "default",
