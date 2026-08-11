@@ -24,12 +24,12 @@ const authRateLimit = new Map<string, { count: number; resetAt: number }>();
 // M20: Cap the map size to prevent unbounded memory growth on serverless
 const AUTH_RATE_LIMIT_MAX_SIZE = 5000;
 
-const SENSITIVE_AUTH_PATHS = [
+const SENSITIVE_AUTH_PATHS = new Set([
   "/sign-in/email",
   "/sign-up/email",
   "/reset-password",
   "/request-password-reset",
-];
+]);
 
 function shouldSkipAuthRoute(path: string): boolean {
   return path === "/me" || path === "/me/" || path.startsWith("/login-otp/");
@@ -213,7 +213,7 @@ async function bootstrap() {
     if (path === "/sign-in/email") {
       return res.status(404).json({ message: "Not Found" });
     }
-    if (SENSITIVE_AUTH_PATHS.includes(path)) {
+    if (SENSITIVE_AUTH_PATHS.has(path)) {
       if (!enforceAuthRateLimit(req, res, path)) {
         return;
       }
