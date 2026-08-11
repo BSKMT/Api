@@ -106,10 +106,13 @@ export class KvCacheService {
       await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload)),
     );
     let bin = "";
-    for (let i = 0; i < signature.length; i++) {
-      bin += String.fromCharCode(signature[i]);
+    for (const byte of signature) {
+      bin += String.fromCodePoint(byte);
     }
-    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    return btoa(bin)
+      .replaceAll("+", "-")
+      .replaceAll("/", "_")
+      .replace(/=+$/, "");
   }
 
   async get<T>(key: string, isPrivate = false): Promise<T | null> {

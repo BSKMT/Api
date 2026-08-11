@@ -876,8 +876,6 @@ export class PaymentsService {
       return;
     }
 
-    // C-2/A-1: Block ALL transitions from a terminal status — sync must
-    // never override a terminal webhook outcome.
     if (PaymentsService.TERMINAL_STATUSES.has(transaction.status)) {
       this.logger.warn(
         `Bold sync: ignoring ${mappedStatus} for already-${transaction.status} reference ${transaction.reference}`,
@@ -885,21 +883,11 @@ export class PaymentsService {
       return;
     }
 
-    // A-9: Validate the voucher amount against the transaction amount
-    // before approving (mirrors the webhook path). Previously the sync
-    // route approved on `payment_status` alone.
-    if (mappedStatus === "APPROVED") {
-      const voucherAmount = this.parseBoldAmount(body["amount"]);
-      if (
-        voucherAmount !== undefined &&
-        transaction.amount > 0 &&
-        voucherAmount !== transaction.amount
-      ) {
-        this.logger.warn(
-          `Amount mismatch in Bold voucher sync for ref ${transaction.reference}: expected ${transaction.amount}, received ${voucherAmount}. Skipping approval.`,
-        );
-        return;
-      }
+    if (
+      mappedStatus === "APPROVED" &&
+      this.isVoucherAmountMismatch(transaction, body)
+    ) {
+      return;
     }
 
     this.logger.log(
@@ -909,32 +897,60 @@ export class PaymentsService {
     transaction.status = mappedStatus;
 
     if (mappedStatus === "APPROVED") {
-      const paymentMethod = body["payment_method"] as string | undefined;
-      const payerEmail = body["payer_email"] as string | undefined;
-      const boldPaymentId = body["transaction_id"] as string | undefined;
-      if (paymentMethod) transaction.paymentMethod = paymentMethod;
-      if (payerEmail) transaction.payerEmail = payerEmail;
-      if (boldPaymentId && !transaction.boldPaymentId) {
-        transaction.boldPaymentId = boldPaymentId;
-      }
+      this.applyApprovedVoucherFields(transaction, body);
     }
 
     await transaction.save();
 
     if (mappedStatus === "APPROVED") {
-      // C-2: idempotent benefit link for sync path.
-      if (!transaction.benefitGranted) {
-        const claim = await this.transactionModel.updateOne(
-          { _id: transaction._id, benefitGranted: false },
-          { $set: { benefitGranted: true } },
-        );
-        if (claim.modifiedCount === 0) {
-          return;
-        }
-        transaction.benefitGranted = true;
-      }
-      await this.linkPaymentByPurpose(transaction);
+      await this.grantSyncBenefit(transaction);
     }
+  }
+
+  private isVoucherAmountMismatch(
+    transaction: TransactionDocument,
+    body: Record<string, unknown>,
+  ): boolean {
+    const voucherAmount = this.parseBoldAmount(body["amount"]);
+    if (voucherAmount === undefined) return false;
+    if (transaction.amount <= 0) return false;
+    if (voucherAmount === transaction.amount) return false;
+    this.logger.warn(
+      `Amount mismatch in Bold voucher sync for ref ${transaction.reference}: expected ${transaction.amount}, received ${voucherAmount}. Skipping approval.`,
+    );
+    return true;
+  }
+
+  private applyApprovedVoucherFields(
+    transaction: TransactionDocument,
+    body: Record<string, unknown>,
+  ): void {
+    const paymentMethod = body["payment_method"] as string | undefined;
+    const payerEmail = body["payer_email"] as string | undefined;
+    const boldPaymentId = body["transaction_id"] as string | undefined;
+    if (paymentMethod) transaction.paymentMethod = paymentMethod;
+    if (payerEmail) transaction.payerEmail = payerEmail;
+    if (boldPaymentId && !transaction.boldPaymentId) {
+      transaction.boldPaymentId = boldPaymentId;
+    }
+  }
+
+  private async grantSyncBenefit(
+    transaction: TransactionDocument,
+  ): Promise<void> {
+    if (transaction.benefitGranted) {
+      await this.linkPaymentByPurpose(transaction);
+      return;
+    }
+    const claim = await this.transactionModel.updateOne(
+      { _id: transaction._id, benefitGranted: false },
+      { $set: { benefitGranted: true } },
+    );
+    if (claim.modifiedCount === 0) {
+      return;
+    }
+    transaction.benefitGranted = true;
+    await this.linkPaymentByPurpose(transaction);
   }
 
   private mapBoldVoucherStatus(boldStatus: string): string | null {

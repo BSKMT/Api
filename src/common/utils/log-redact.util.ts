@@ -13,7 +13,7 @@ export function maskUserId(id: string): string {
 }
 
 export function maskEmail(email: string): string {
-  if (!email || !email.includes("@")) return "***";
+  if (!email?.includes("@")) return "***";
   const [local, domain] = email.split("@");
   if (local.length <= 2) return `***@${domain}`;
   return `${local.slice(0, 2)}***@${domain}`;
