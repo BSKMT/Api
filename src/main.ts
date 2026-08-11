@@ -11,6 +11,8 @@ import type { EnvironmentConfig } from "./config/config.interface";
 import { getAuth, setAuthDependencies } from "./auth/better-auth";
 import type { AuthInstance } from "./auth/better-auth";
 import { EmailService } from "./zoho-mail/email.service";
+import { AbuseIpDbService } from "./abuseipdb/abuseipdb.service";
+import { createAbuseIpDbMiddleware } from "./abuseipdb/abuseipdb.middleware";
 
 /** Typed shape of the `better-auth/node` module (avoids unsafe dynamic import). */
 interface BetterAuthNodeModule {
@@ -71,6 +73,19 @@ async function bootstrap() {
     );
     next();
   });
+
+  /**
+   * AbuseIPDB IP reputation middleware — blocks IPs flagged as malicious
+   * by AbuseIPDB before they reach the auth handler or any route.
+   * Mounted after helmet/CORS/Permissions-Policy but before the Better
+   * Auth handler and body parsers so malicious IPs are rejected early
+   * (OWASP A07 — Authentication Failures).
+   *
+   * Fail-open: when disabled, misconfigured, or the circuit breaker is
+   * open, the middleware passes through without blocking (OWASP A10).
+   */
+  const abuseIpDbService = app.get(AbuseIpDbService);
+  app.use(createAbuseIpDbMiddleware(abuseIpDbService));
 
   const emailService = app.get(EmailService);
   const landingPageUrl =

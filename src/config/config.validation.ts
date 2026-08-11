@@ -44,4 +44,11 @@ export const configValidationSchema = Joi.object({
     is: true,
     then: Joi.required(),
   }),
+
+  ABUSEIPDB_ENABLED: Joi.boolean().default(false),
+  ABUSEIPDB_API_KEY: Joi.string().allow("").when("ABUSEIPDB_ENABLED", {
+    is: true,
+    then: Joi.required(),
+  }),
+  ABUSEIPDB_BLOCK_THRESHOLD: Joi.number().min(25).max(100).default(75),
 });
