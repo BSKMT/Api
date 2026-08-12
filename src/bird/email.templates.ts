@@ -1,7 +1,14 @@
 /**
- * Plantillas HTML para los correos transaccionales enviados a traves de
- * Zoho Mail. Todas usan un diseno minimalista, accesible y responsivo,
- * alineado con la identidad visual de BSK Motorcycle Team.
+ * Plantillas HTML y SMS para los mensajes transaccionales enviados a
+ * traves de Bird. Todas usan un diseno minimalista, accesible y
+ * responsivo, alineado con la identidad visual de BSK Motorcycle Team.
+ *
+ * Seguridad (OWASP A05:2025 — Injection):
+ *  - Todas las funciones de plantilla escapan los metacaracteres HTML
+ *    con `escapeHtml()` para prevenir XSS en el contenido del correo.
+ *  - Las URL pasadas a atributos `href` tambien se escapan.
+ *  - Las plantillas SMS son texto plano (sin HTML) y se truncan a 160
+ *    caracteres para mantenerse en un segmento GSM-7.
  */
 
 const HTML_ESCAPE_MAP: Record<string, string> = {
@@ -14,7 +21,6 @@ const HTML_ESCAPE_MAP: Record<string, string> = {
 
 const HTML_ESCAPE_PATTERN = /[&<>"']/g;
 
-/** Escape HTML metacharacters in user-provided strings to prevent XSS in email templates. */
 function escapeHtml(str: string): string {
   return str.replace(
     HTML_ESCAPE_PATTERN,
@@ -64,29 +70,8 @@ const PARAGRAPH = (text: string): string =>
 const META_ROW = (label: string, value: string): string =>
   `<tr><td style="padding:6px 12px;font-size:13px;font-weight:600;color:#0f172a;background:#f1f5f9;border:1px solid #e2e8f0;white-space:nowrap;">${escapeHtml(label)}</td><td style="padding:6px 12px;font-size:13px;color:#334155;border:1px solid #e2e8f0;">${escapeHtml(value)}</td></tr>`;
 
-/**
- * Correo de confirmacion (auto-respuesta) para quien envia el formulario
- * de contacto de la landing page.
- */
-export function contactAutoReplyTemplate(name: string): string {
-  const heading = HEADING(`Hola ${name}, gracias por escribirnos`);
-  return SHELL(
-    "Hemos recibido tu mensaje",
-    `${heading}
-    ${PARAGRAPH("Hemos recibido tu mensaje correctamente. Nuestro equipo revisara tu solicitud y te contactara en un maximo de 48 horas habiles.")}
-    ${PARAGRAPH("Si tu consulta es urgente, escribenos directamente a nuestros canales oficiales.")}
-    <table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0 0;border-collapse:collapse;">
-      ${META_ROW("Asunto", "Confirmacion de recepcion")}
-      ${META_ROW("Tiempo estimado", "48 horas habiles")}
-    </table>
-    <p style="margin:24px 0 0;font-size:15px;line-height:1.6;color:#334155;">&iexcl;Gracias por parte del motoclub!</p>`,
-  );
-}
+// ── HTML Email Templates ───────────────────────────────────────────
 
-/**
- * Correo interno que recibe el equipo BSK con los datos del contacto enviado
- * desde la landing page.
- */
 export function contactInternalTemplate(data: {
   name: string;
   email: string;
@@ -114,10 +99,6 @@ export function contactInternalTemplate(data: {
   );
 }
 
-/**
- * Plantilla generica para correos transaccionales asociados a una notificacion
- * del sistema (membresia, pagos, etc.).
- */
 export function notificationTemplate(data: {
   title: string;
   message: string;
@@ -125,10 +106,6 @@ export function notificationTemplate(data: {
   return SHELL(data.title, `${HEADING(data.title)}${PARAGRAPH(data.message)}`);
 }
 
-/**
- * Correo de verificacion de correo electronico enviado por Better Auth.
- * Contiene un enlace con el token para verificar la cuenta.
- */
 export function emailVerificationTemplate(data: {
   name: string;
   verificationUrl: string;
@@ -150,10 +127,6 @@ export function emailVerificationTemplate(data: {
   );
 }
 
-/**
- * Correo de restablecimiento de contrasena enviado por Better Auth.
- * Contiene un enlace con el token para restablecer la contrasena.
- */
 export function passwordResetTemplate(data: {
   name: string;
   resetUrl: string;
@@ -175,25 +148,20 @@ export function passwordResetTemplate(data: {
   );
 }
 
-/**
- * Correo con el codigo OTP de login (verificacion por correo obligatoria).
- * El codigo es alfanumerico de 6 caracteres y expira en 5 minutos.
- */
-export function loginOtpTemplate(data: {
-  name: string;
-  code: string;
-  expiresInMinutes: number;
+// ── SMS Text Templates ─────────────────────────────────────────────
+//
+// SMS messages are billed per segment (160 GSM-7 chars, 70 UCS-2).
+// Keep templates under 160 chars to stay in one segment.
+const SMS_MAX_LEN = 160;
+
+function truncateSms(text: string): string {
+  if (text.length <= SMS_MAX_LEN) return text;
+  return text.slice(0, SMS_MAX_LEN - 3) + "...";
+}
+
+export function notificationSmsTemplate(data: {
+  title: string;
+  message: string;
 }): string {
-  const heading = HEADING(`Hola ${data.name}`);
-  const codeHtml = escapeHtml(data.code);
-  return SHELL(
-    "Codigo de verificacion de inicio de sesion",
-    `${heading}
-    ${PARAGRAPH("Has solicitado iniciar sesion en BSK Motorcycle Team. Usa el siguiente codigo de verificacion para completar el inicio de sesion:")}
-    <div style="margin:24px 0;text-align:center;">
-      <span style="display:inline-block;font-size:32px;font-weight:700;letter-spacing:0.3em;color:#dc2626;background:#fef2f2;border:2px solid #fecaca;border-radius:12px;padding:16px 40px;font-family:'Courier New',Courier,monospace;">${codeHtml}</span>
-    </div>
-    ${PARAGRAPH(`Este codigo expirara en ${data.expiresInMinutes} minutos por razones de seguridad.`)}
-    ${PARAGRAPH("Si no solicitaste iniciar sesion, puedes ignorar este correo de forma segura. Tu cuenta esta protegida.")}`,
-  );
+  return truncateSms(`BSKMT: ${data.title}. ${data.message}`);
 }

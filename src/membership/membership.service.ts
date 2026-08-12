@@ -350,7 +350,7 @@ export class MembershipService {
         status: mappedStatus,
       },
       relatedReference: transaction.reference,
-      emailTo: rejectedUser?.email,
+      notifyCategory: "Membresia y pagos",
     });
   }
 
@@ -884,7 +884,7 @@ export class MembershipService {
           installmentTotal: INSTALLMENTS_TOTAL,
           isRenewal: true,
         },
-        emailTo: user.email,
+        notifyCategory: "Membresia y pagos",
         relatedReference: transaction.reference,
       });
       return;
@@ -932,7 +932,7 @@ export class MembershipService {
         newExpiry: newExpiry.toISOString(),
       },
       relatedReference: transaction.reference,
-      emailTo: user.email,
+      notifyCategory: "Membresia y pagos",
     });
   }
 
@@ -975,7 +975,7 @@ export class MembershipService {
         newExpiry: expiry.toISOString(),
       },
       relatedReference: transaction.reference,
-      emailTo: user.email,
+      notifyCategory: "Membresia y pagos",
     });
   }
 
@@ -1010,7 +1010,7 @@ export class MembershipService {
           amount: transaction.amount,
         },
         relatedReference: transaction.reference,
-        emailTo: user.email,
+        notifyCategory: "Membresia y pagos",
       });
     }
   }
@@ -1045,7 +1045,7 @@ export class MembershipService {
         newExpiry: expiry.toISOString(),
       },
       relatedReference: transaction.reference,
-      emailTo: user.email,
+      notifyCategory: "Membresia y pagos",
     });
   }
 

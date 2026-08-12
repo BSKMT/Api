@@ -9,14 +9,17 @@ export interface EnvironmentConfig {
   BOLD_SECRET_KEY: string;
   BOLD_PUBLIC_KEY: string;
   BOLD_ENVIRONMENT: string;
-  ZOHO_CLIENT_ID: string;
-  ZOHO_CLIENT_SECRET: string;
-  ZOHO_REFRESH_TOKEN: string;
-  ZOHO_ACCOUNT_ID: string;
-  ZOHO_FROM_ADDRESS: string;
-  ZOHO_TEAM_EMAIL: string;
-  ZOHO_API_BASE: string;
-  ZOHO_TOKEN_BASE: string;
+
+  /**
+   * Bird — API unificada para email, SMS y verify.
+   * La key (bk_{region}_...) selecciona la region automaticamente.
+   */
+  BIRD_API_KEY: string;
+  BIRD_FROM_EMAIL: string;
+  BIRD_FROM_NAME: string;
+  BIRD_TEAM_EMAIL: string;
+  BIRD_SMS_SENDER: string;
+
   LANDING_PAGE_URL: string;
   /**
    * A-7: Secret shared between Vercel Cron and the `/api/internal/cron/*`

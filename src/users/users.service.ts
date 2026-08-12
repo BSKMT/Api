@@ -104,6 +104,27 @@ export class UsersService {
       throw new NotFoundException("Usuario no encontrado");
     }
 
+    // Detect phone changes in the "contacto" section — if the user
+    // modifies their phone number (telefono/celular/whatsapp/phone),
+    // reset `phoneVerified` to false and sync the top-level `phone`
+    // field so SMS notifications use the latest number. The user must
+    // re-verify via the OTP flow before SMS notifications resume.
+    if (sectionId === "contacto") {
+      const oldPhone = this.extractPhoneFromContacto(
+        user.profile?.["contacto"],
+      );
+      const newPhone = this.extractPhoneFromContacto(sanitizedData);
+
+      if (newPhone && newPhone !== oldPhone) {
+        user.phone = newPhone;
+        user.phoneVerified = false;
+        user.phoneVerifiedAt = null;
+        user.pendingPhone = null;
+      } else if (newPhone && newPhone === oldPhone && user.phone !== newPhone) {
+        user.phone = newPhone;
+      }
+    }
+
     const profile = user.profile ?? {};
     // A-12: For membresia-ecosistema, merge with existing data to preserve numeroMiembro
     if (sectionId === "membresia-ecosistema") {
@@ -358,5 +379,18 @@ export class UsersService {
       { $set: { "partialPaymentCredit.usedAmount": 0 } },
     );
     return false;
+  }
+
+  private extractPhoneFromContacto(
+    contacto: Record<string, unknown> | undefined,
+  ): string | null {
+    if (!contacto) return null;
+    const tel =
+      contacto["telefono"] ??
+      contacto["celular"] ??
+      contacto["whatsapp"] ??
+      contacto["phone"];
+    if (typeof tel === "string" && tel.trim()) return tel.trim();
+    return null;
   }
 }

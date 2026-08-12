@@ -1,14 +1,14 @@
 import { Module } from "@nestjs/common";
-import { ZohoMailModule } from "../zoho-mail/zoho-mail.module";
+import { BirdModule } from "../bird/bird.module";
 import { ContactController } from "./contact.controller";
 import { ContactService } from "./contact.service";
 
 /**
  * ContactModule - Modulo del formulario de contacto publico.
- * Depende de ZohoMailModule para el envio real de los correos.
+ * Depende de BirdModule para el envio real de los correos.
  */
 @Module({
-  imports: [ZohoMailModule],
+  imports: [BirdModule],
   controllers: [ContactController],
   providers: [ContactService],
 })

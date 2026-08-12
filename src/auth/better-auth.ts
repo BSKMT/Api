@@ -1,5 +1,5 @@
 import { MongoClient } from "mongodb";
-import type { EmailService } from "../zoho-mail/email.service";
+import type { BirdEmailService } from "../bird/bird-email.service";
 import { maskEmail } from "../common/utils/log-redact.util";
 
 /* ------------------------------------------------------------------ *
@@ -177,20 +177,20 @@ export function getMongoDb() {
 
 let authInstance: AuthInstance | null = null;
 let authPromise: Promise<AuthInstance> | null = null;
-let injectedEmailService: EmailService | null = null;
+let injectedEmailService: BirdEmailService | null = null;
 let injectedLandingPageUrl: string | null = null;
 
 /**
- * Inyecta el EmailService (Zoho) para que los callbacks de correo de Better Auth
+ * Inyecta el BirdEmailService para que los callbacks de correo de Better Auth
  * (envío de verificación y restablecimiento de contraseña) puedan enviar correos
- * reales a través de Zoho Mail.
+ * reales a través de Bird Email API.
  *
  * Debe llamarse desde `main.ts` despues de que el contenedor de NestJS este listo,
  * y **antes** de que se inicialice la instancia de Better Auth (es decir, antes
  * de la primera llamada a `getAuth()`).
  */
 export function setAuthDependencies(
-  emailService: EmailService,
+  emailService: BirdEmailService,
   landingPageUrl: string,
 ): void {
   injectedEmailService = emailService;
@@ -255,7 +255,7 @@ async function initAuth(): Promise<AuthInstance> {
           if (!ok) {
             // M-9: redact recipient email.
             console.warn(
-              `[Password Reset] No se pudo enviar el correo a ${maskEmail(user.email)} (Zoho no configurado o fallo)`,
+              `[Password Reset] No se pudo enviar el correo a ${maskEmail(user.email)} (Bird no configurado o fallo)`,
             );
           }
         } else {
@@ -288,7 +288,7 @@ async function initAuth(): Promise<AuthInstance> {
           if (!ok) {
             // M-9: redact recipient email.
             console.warn(
-              `[Email Verification] No se pudo enviar el correo a ${maskEmail(user.email)} (Zoho no configurado o fallo)`,
+              `[Email Verification] No se pudo enviar el correo a ${maskEmail(user.email)} (Bird no configurado o fallo)`,
             );
           }
         } else {
@@ -455,6 +455,11 @@ async function initAuth(): Promise<AuthInstance> {
                 emailVerified: user.emailVerified ?? false,
                 legalConsentAccepted: false,
                 isActive: true,
+                phone: null,
+                phoneVerified: false,
+                phoneVerifiedAt: null,
+                pendingPhone: null,
+                pendingEmail: null,
                 completedSections: tieneDatosPersonales
                   ? ["datos-personales"]
                   : [],

@@ -11,144 +11,103 @@ import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import {
   randomBytes,
-  createHmac,
-  timingSafeEqual,
   createCipheriv,
   createDecipheriv,
   scryptSync,
 } from "node:crypto";
 import { LoginOtp, LoginOtpDocument } from "./schemas/login-otp.schema";
-import { EmailService } from "../zoho-mail/email.service";
+import { BirdVerifyService } from "../bird-verify/bird-verify.service";
 import { getAuth } from "./better-auth";
 import { maskEmail } from "../common/utils/log-redact.util";
 
 /**
- * LoginOtpService — Implementa el flujo de verificacion por correo
- * obligatorio (login en dos pasos: credenciales + codigo OTP por email).
+ * LoginOtpService — Implementa el flujo de verificacion por codigo (login en
+ * dos pasos: credenciales + codigo OTP por correo) usando **Bird Verify**.
  *
  * Flujo:
  *  1. `initiateLogin()` — Valida las credenciales del usuario llamando
  *     **en proceso** a Better Auth `auth.api.signInEmail()` (sin HTTP
  *     roundtrip). Si la autenticacion es exitosa, captura las cookies de
- *     sesion, las **cifra con AES-256-GCM** antes de persistirlas,
- *     genera un codigo alfanumerico de 6 caracteres (hasheado con
- *     **HMAC-SHA-256 + server key**), aplica **throttle per-email**
- *     (anti mailbox flooding) y envia el codigo por correo.
- *     La sesion NO se entrega al cliente en este punto.
- *  2. `verifyOtp()` — Verifica el codigo (comparacion **timing-safe**).
- *     Si es correcto, **desencripta** y devuelve las cookies de sesion
- *     para que el proxy las establezca en el navegador del cliente.
+ *     sesion, las **cifra con AES-256-GCM** antes de persistirlas, llama
+ *     a Bird Verify `POST /v1/verify/verifications` para que Bird genere
+ *     y envie un codigo numerico de un solo uso, aplica **throttle per-email**
+ *     (anti mailbox flooding) y devuelve `{ requestId }`. La sesion NO se
+ *     entrega al cliente en este punto.
+ *  2. `verifyOtp()` — Llama a Bird Verify `POST /v1/verify/verifications/check`
+ *     con el codigo ingresado por el usuario. Si Bird devuelve `success: true`,
+ *     **desencripta** y devuelve las cookies de sesion para que el proxy las
+ *     establezca en el navegador del cliente. Si Bird devuelve `success: false`,
+ *     mapea el `reason` a HTTP status semanticos.
+ *
+ * Cambios respecto a la version Zoho:
+ *  - Ya no se genera, hashea, ni compara el codigo localmente — Bird Verify
+ *    hace todo eso. La app nunca maneja el codigo en texto plano.
+ *  - Ya no se envia el correo manualmente — Bird lo entrega.
+ *  - Se mantiene el cifrado AES-256-GCM de las cookies de sesion.
+ *  - Se mantiene el throttle per-email (capa adicional sobre el cap de
+ *    Bird de 5 sends/recipient/hora).
+ *  - Se mantiene la mascara anti-enumeracion (mensaje generico unico).
  *
  * Seguridad (alineado con OWASP A07:2025 — Authentication Failures y
  * A04:2025 — Cryptographic Failures):
  *
  *  - **Throttle per-IP** en los endpoints del controller (ThrottlerGuard).
  *  - **Throttle per-email** dentro del servicio: max 3 solicitudes / 5 min,
- *    defensa contra mailbox flooding con rotacion de IPs.
- *  - Codigo hasheado con **HMAC-SHA-256 + server key** (derivada via
- *    scrypt de `BETTER_AUTH_SECRET`). Sin la server key, un atacante con
- *    acceso de lectura a la coleccion no puede brute-forcear el hash
- *    offline (CWE-256/CWE-327, A04:2025).
- *  - Comparacion del hash con **timingSafeEqual** (timing-attack safe).
+ *    defensa contra mailbox flooding con rotacion de IPs. Capa adicional sobre
+ *    el cap nativo de Bird (5 sends/recipient/hora).
+ *  - El codigo OTP nunca se almacena en MongoDB (Bird guarda solo un hash).
  *  - Cookies de sesion **cifradas en reposo** con AES-256-GCM (no se
  *    almacenan cookies raw en MongoDB; un breach de BD solo no las revela).
  *  - **Mascara anti-enumeracion**: todos los errores post-autenticacion
- *    (fallo de envio de email, ID usuario faltante) se devuelven con el
- *    mismo mensaje generico "Credenciales invalidas" para cerrar el
- *    oracle de enumeracion de cuentas.
- *  - Expiracion automatica a los 5 minutos (TTL index en MongoDB).
- *  - Maximo 5 intentos de verificacion por OTP.
+ *    (fallo de envio de Bird, ID usuario faltante) se devuelven con el mismo
+ *    mensaje generico "Credenciales invalidas" para cerrar el oracle de
+ *    enumeracion de cuentas (OWASP A07:2025 line 101).
  *  - HTTP status semanticamente precisos:
- *    `GoneException` (410) para codigo expirado/consumido,
- *    `UnauthorizedException` (401) para codigo incorrecto,
- *    `HttpException` 429 para maximo de intentos / email throttle.
+ *    `GoneException` (410) para codigo expirado / verificacion ya resuelta,
+ *    `UnauthorizedException` (401) para codigo incorrecto (con intentos
+ *    restantes),
+ *    `HttpException` 429 para rate-limit de Bird o throttle per-email.
  *  - `cause` en excepciones para error chaining (NestJS exception-filters).
- *  - **trust proxy** habilitado en `main.ts` para obtener la IP real
- *    del cliente detras de Cloudflare.
+ *  - **trust proxy** habilitado en `main.ts` para obtener la IP real del
+ *    cliente detras de Cloudflare.
  *  - Email no revelado si el usuario no existe (mensaje generico).
  *  - Cookies de sesion no expuestas hasta verificacion exitosa.
- *  - Cleanup automatico: MongoDB elimina documentos expirados via TTL
- *    index.
+ *  - Cleanup automatico: MongoDB elimina documentos expirados via TTL index.
  */
 @Injectable()
 export class LoginOtpService {
   private readonly logger = new Logger(LoginOtpService.name);
-  private readonly MAX_ATTEMPTS = 5;
-  private readonly OTP_LENGTH = 6;
-  private readonly OTP_TTL_SECONDS = 300;
 
   /** Ventana de throttle per-email para initiate. */
   private readonly EMAIL_INITIATE_WINDOW_MS = 5 * 60 * 1000;
-  /** Maximo de solicitudes OTP por email dentro de la ventana. */
+  /** Maximo de solicitudes OTP por email dentro de la ventana (capa sobre Bird). */
   private readonly EMAIL_INITIATE_MAX = 3;
 
-  /** Clave HMAC para hashear codigos OTP (32 bytes). */
-  private readonly otpHmacKey: Buffer;
   /** Clave AES-256-GCM para cifrar cookies de sesion (32 bytes). */
   private readonly sessionEncKey: Buffer;
 
   constructor(
     @InjectModel(LoginOtp.name)
     private readonly otpModel: Model<LoginOtpDocument>,
-    private readonly emailService: EmailService,
+    private readonly birdVerifyService: BirdVerifyService,
   ) {
     const secret = process.env.BETTER_AUTH_SECRET;
     if (!secret) {
       throw new Error(
-        "BETTER_AUTH_SECRET environment variable is required for OTP hashing and session encryption",
+        "BETTER_AUTH_SECRET environment variable is required for session encryption",
       );
     }
-    this.otpHmacKey = scryptSync(secret, "otp-hmac-v1", 32);
     this.sessionEncKey = scryptSync(secret, "session-cookies-v1", 32);
-  }
-
-  /**
-   * Genera un codigo alfanumerico de 6 caracteres (solo mayusculas +
-   * digitos, sin caracteres ambiguos como 0/O, 1/I/l).
-   * Entropia: 32^6 ~= 2^30 bits — suficiente con HMAC + throttle.
-   */
-  private generateOtpCode(): string {
-    const charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    const chars: string[] = [];
-    const bytes = randomBytes(this.OTP_LENGTH);
-    for (let i = 0; i < this.OTP_LENGTH; i++) {
-      chars.push(charset[bytes[i] % charset.length]);
-    }
-    return chars.join("");
-  }
-
-  /**
-   * Hashea el codigo con **HMAC-SHA-256 + server key** antes de guardarlo.
-   *
-   * A diferencia de `createHash("sha256")` (SHA-256 puro), HMAC requiere
-   * la server key (derivada via scrypt de `BETTER_AUTH_SECRET`). Sin la
-   * key, un atacante con acceso de lectura a la coleccion no puede
-   * brute-forcear el hash offline aunque conozca el charset y longitud
-   * (CWE-256/CWE-327, OWASP A04:2025).
-   */
-  private hashCode(code: string): string {
-    return createHmac("sha256", this.otpHmacKey).update(code).digest("hex");
-  }
-
-  /**
-   * Comparacion **timing-safe** de dos hashes hex — evita timing attacks
-   * en la verificacion del codigo OTP (CWE-208).
-   */
-  private safeHashEqual(inputHash: string, storedHash: string): boolean {
-    const a = Buffer.from(inputHash, "hex");
-    const b = Buffer.from(storedHash, "hex");
-    if (a.length !== b.length) return false;
-    return timingSafeEqual(a, b);
   }
 
   /**
    * Cifra el array de cookies de sesion con **AES-256-GCM** antes de
    * persistirlo en MongoDB.
    *
-   * Formato almacenado: `iv:tag:ciphertext` (hex). El tag de
-   * autenticaciondetecta tampering. Sin la server key (derivada de
-   * `BETTER_AUTH_SECRET` via scrypt), un atacante con acceso de lectura
-   * a la BD no puede obtener las cookies validas.
+   * Formato almacenado: `iv:tag:ciphertext` (hex). El tag de autenticacion
+   * detecta tampering. Sin la server key (derivada de `BETTER_AUTH_SECRET`
+   * via scrypt), un atacante con acceso de lectura a la BD no puede obtener
+   * las cookies validas (OWASP A04:2025).
    */
   private encryptSessionCookies(cookies: string[]): string {
     const plaintext = JSON.stringify(cookies);
@@ -208,14 +167,16 @@ export class LoginOtpService {
 
   /**
    * Mensaje generico unico para todos los errores de credenciales y
-   * post-autenticacion. Mismo mensaje para cerrar el oracle de
-   * enumeracion de cuentas (OWASP A07:2025 — line 101).
+   * post-autenticacion. Mismo mensaje para cerrar el oracle de enumeracion
+   * de cuentas (OWASP A07:2025 — line 101).
    */
   private static readonly GENERIC_AUTH_ERROR =
     "Credenciales inválidas. Verifica tu correo y contraseña.";
 
   /**
-   * Inicia el login OTP — Valida credenciales, genera codigo y envia correo.
+   * Inicia el login OTP — Valida credenciales, cifra las cookies de sesion,
+   * persiste el registro en MongoDB y pide a Bird Verify que genere y envie
+   * un codigo numerico al correo del usuario.
    *
    * @returns `{ requestId }` — el cliente usa este ID en el paso de verificacion.
    */
@@ -227,17 +188,17 @@ export class LoginOtpService {
     const remember = rememberMe === true;
 
     /**
-     * Llama a Better Auth **en proceso** (sin HTTP roundtrip) para
-     * validar credenciales y obtener las cookies de sesion.
+     * Llama a Better Auth **en proceso** (sin HTTP roundtrip) para validar
+     * credenciales y obtener las cookies de sesion.
      *
-     * Antes se usaba `fetch(...)`, pero en produccion esa peticion salia
-     * por el proxy de Cloudflare que la bloqueaba con un challenge
-     * ("Just a moment..."), devolviendo un 403 con HTML.
+     * Antes se usaba `fetch(...)`, pero en produccion esa peticion salia por
+     * el proxy de Cloudflare que la bloqueaba con un challenge ("Just a
+     * moment..."), devolviendo un 403 con HTML.
      *
-     * La API en proceso `auth.api.signInEmail({ asResponse: true })`
-     * ejecuta el mismo handler pero sin red, evitando Cloudflare, el
-     * middleware CSRF (que se omite cuando no hay `request`) y los
-     * problemas con undici (`Sec-Fetch-Mode: cors`).
+     * La API en proceso `auth.api.signInEmail({ asResponse: true })` ejecuta
+     * el mismo handler pero sin red, evitando Cloudflare, el middleware CSRF
+     * (que se omite cuando no hay `request`) y los problemas con undici
+     * (`Sec-Fetch-Mode: cors`).
      */
     let authResponse: Response;
     try {
@@ -320,9 +281,9 @@ export class LoginOtpService {
     const userName = body.user?.name ?? userEmail;
 
     /**
-     * Mascara anti-enumeracion: si Better Auth autentico pero no
-     * devolvio userId o cookies, se enmascara como "credenciales
-     * invalidas" — no revela que las credenciales eran validas.
+     * Mascara anti-enumeracion: si Better Auth autentico pero no devolvio
+     * userId o cookies, se enmascara como "credenciales invalidas" — no
+     * revela que las credenciales eran validas.
      */
     if (!betterAuthId || sessionCookies.length === 0) {
       this.logger.error(
@@ -334,9 +295,10 @@ export class LoginOtpService {
     }
 
     /**
-     * Throttle per-email (defensa contra mailbox flooding con rotacion
-     * de IPs). Cuenta cuantas OTPs se han creado para este email en
-     * los ultimos 5 minutos.
+     * Throttle per-email (defensa contra mailbox flooding con rotacion de
+     * IPs). Cuenta cuantas OTPs se han creado para este email en los
+     * ultimos 5 minutos. Capa adicional sobre el cap nativo de Bird de
+     * 5 sends/recipient/hora.
      */
     const recentCount = await this.otpModel.countDocuments({
       email: userEmail,
@@ -353,47 +315,103 @@ export class LoginOtpService {
       );
     }
 
-    const code = this.generateOtpCode();
-    const codeHash = this.hashCode(code);
+    /**
+     * Si Bird Verify no esta configurado (falta BIRD_API_KEY), se enmascara
+     * como "credenciales invalidas" — cerrar el oracle de enumeracion y no
+     * revelar el estado interno del servicio de verificacion.
+     */
+    if (!this.birdVerifyService.isConfigured()) {
+      this.logger.error(
+        "Bird Verify no configurado (BIRD_API_KEYausente) — initiate bloqueado",
+      );
+      throw new UnauthorizedException(LoginOtpService.GENERIC_AUTH_ERROR, {
+        cause: "Bird Verify not configured",
+      });
+    }
+
     const requestId = this.generateRequestId();
-    const expiresAt = new Date(Date.now() + this.OTP_TTL_SECONDS * 1000);
+    const expiresAt = new Date(Date.now() + 3600 * 1000);
     const encryptedCookies = this.encryptSessionCookies(sessionCookies);
 
-    await this.otpModel.create({
+    /**
+     * Persistir primero el registro en MongoDB antes de llamar a Bird,
+     * para que exista siempre un slot donde recuperar las cookies al
+     * verificar. Si Bird falla, se marcara el registro como expired.
+     */
+    const otpRecord = await this.otpModel.create({
       requestId,
       email: userEmail,
       betterAuthId,
-      codeHash,
       sessionCookies: encryptedCookies,
       status: "pending",
       attempts: 0,
       expiresAt,
     });
 
-    const ok = await this.emailService.sendLoginOtpEmail({
-      to: userEmail,
-      name: userName,
-      code,
-      expiresInMinutes: 5,
-    });
-    if (!ok) {
-      // M-17: mask email in logs.
-      this.logger.error(
-        `No se pudo enviar el codigo OTP de login a ${maskEmail(userEmail)} (Zoho no configurado o fallo)`,
+    /**
+     * Llama a Bird Verify `POST /v1/verify/verifications` para que Bird
+     * genere un codigo numerico y lo envie al correo del usuario. Bird
+     * identifica la verificacion por `to.email_address`, asi que el check
+     * posterior se hara con el mismo email.
+     *
+     * El SDK inyecta `Idempotency-Key` automaticamente, asi que un timeout
+     * que reintentara la llamada no enviara dos codigos al usuario.
+     */
+    let birdId: string | undefined;
+    try {
+      const birdResult = await this.birdVerifyService.createEmailVerification(
+        userEmail,
+        {
+          requestId,
+          betterAuthId,
+        },
       );
-      // Mascara: no revelar que las credenciales eran validas.
+      birdId = birdResult.id;
+      this.logger.log(
+        `Bird verification created: ${birdId} for ${maskEmail(userEmail)} (status: ${birdResult.status})`,
+      );
+    } catch (err) {
+      /**
+       * Bird rechazo la peticion (rate-limit, dest no valido, etc.) o fallo
+       * la red. Marcar el registro como expired (no verificable) y devolver
+       * un error generico al cliente (cierre del oracle de enumeracion).
+       */
+      otpRecord.status = "expired";
+      await otpRecord.save();
+      this.logger.error(
+        `Bird createEmailVerification failed for ${maskEmail(userEmail)}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      // Detectar rate-limit especifico de Bird para devolver 429
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (/rate|429|too many|retry/i.test(errMsg)) {
+        throw new HttpException(
+          "El servicio de verificacion estan saturado. Intenta de nuevo en un minuto.",
+          HttpStatus.TOO_MANY_REQUESTS,
+          { cause: err },
+        );
+      }
       throw new UnauthorizedException(LoginOtpService.GENERIC_AUTH_ERROR, {
-        cause: "Email send failure",
+        cause: "Bird Verify send failure",
       });
     }
+
+    if (birdId) {
+      otpRecord.birdVerificationId = birdId;
+      await otpRecord.save();
+    }
+
+    // `userName` se mantiene para compatibilidad futura (logs / metricas);
+    // Bird envia el correo bajo su propio template de Authifly OTP, asi que
+    // no se necesita aqui.
+    void userName;
 
     return { requestId };
   }
 
   /**
-   * Verifica el codigo OTP y, si es valido, desencripta y devuelve las
-   * cookies de sesion para que el proxy las establezca en el navegador
-   * del cliente.
+   * Verifica el codigo OTP via Bird Verify y, si es valido, desencripta y
+   * devuelve las cookies de sesion para que el proxy las establezca en el
+   * navegador del cliente.
    *
    * @returns `{ cookies: string[] }` — pares `name=value` de las cookies.
    */
@@ -412,51 +430,126 @@ export class LoginOtpService {
       );
     }
 
-    if (otpRecord.expiresAt.getTime() < Date.now()) {
-      otpRecord.status = "expired";
-      await otpRecord.save();
-      throw new GoneException(
-        "El código de verificación ha expirado. Solicita uno nuevo.",
+    /**
+     * Llama a Bird Verify `POST /v1/verify/verifications/check` con el
+     * codigo que el usuario ingreso. Bird identifica la verificacion por
+     * el mismo `to.email_address` usado al crearla, asi que no se necesita
+     * el `birdVerificationId` (pero se loguea si esta disponible).
+     *
+     * Bird devuelve:
+     *  - `200` con `success: true/false` (los codigos incorrectos son 200,
+     *    no errores).
+     *  - `404` si la verificacion ya resolvio (verified/expired/failed).
+     *  - `429` si el caller supera el rate cap (10 checks/recipient/min).
+     */
+    let birdResult;
+    try {
+      birdResult = await this.birdVerifyService.checkEmailVerification(
+        otpRecord.email,
+        code,
+      );
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+
+      /**
+       * 404 de Bird = verificacion ya resuelta o expirada. Marcar el
+       * registro como expired y devolver 410 al cliente.
+       */
+      if (/404|not found|no verification/i.test(errMsg)) {
+        otpRecord.status = "expired";
+        await otpRecord.save();
+        this.logger.warn(
+          `Bird check returned 404 (resolved/expired) for requestId=${requestId} birdId=${otpRecord.birdVerificationId ?? "n/a"}`,
+        );
+        throw new GoneException(
+          "El código de verificación no existe, ya fue utilizado o ha expirado.",
+          { cause: err },
+        );
+      }
+
+      /**
+       * 429 de Bird = rate-limit (10 checks/recipient/min). Devolver 429
+       * al cliente con el mensaje apropiado.
+       */
+      if (/429|rate|too many|retry/i.test(errMsg)) {
+        this.logger.warn(
+          `Bird check rate-limited for requestId=${requestId}: ${errMsg}`,
+        );
+        throw new HttpException(
+          "Has realizado demasiados intentos. Espera un minuto e intenta de nuevo.",
+          HttpStatus.TOO_MANY_REQUESTS,
+          { cause: err },
+        );
+      }
+
+      /**
+       * Otros errores (red, 5xx, etc.) — no marcar el registro como
+       * expired (puede ser un fallo transitorio). Devolver 503.
+       */
+      this.logger.error(
+        `Bird checkEmailVerification failed for requestId=${requestId}: ${errMsg}`,
+      );
+      throw new HttpException(
+        "El servicio de verificacion no esta disponible. Intenta de nuevo.",
+        HttpStatus.SERVICE_UNAVAILABLE,
+        { cause: err },
       );
     }
 
-    if (otpRecord.attempts >= this.MAX_ATTEMPTS) {
+    if (birdResult.success) {
+      otpRecord.status = "verified";
+      await otpRecord.save();
+
+      const cookies = this.decryptSessionCookies(otpRecord.sessionCookies);
+      if (cookies.length === 0) {
+        this.logger.error(
+          `Failed to decrypt session cookies for verified OTP: ${requestId}`,
+        );
+        throw new GoneException(
+          "El código de verificación ha expirado. Solicita uno nuevo.",
+        );
+      }
+      return { cookies };
+    }
+
+    /**
+     * Bird devolvio `success: false` con un `reason`:
+     *  - `incorrect_code`    → 401 Unauthorized (con intentos restantes)
+     *  - `expired`           → 410 Gone
+     *  - `attempts_exhausted` → 410 Gone (verificacion fallida)
+     *  - otro (open enum)    → tratar como terminal = 410 Gone
+     */
+    otpRecord.attempts += 1;
+    const reason = birdResult.reason;
+    const isTerminal =
+      reason === "expired" ||
+      reason === "attempts_exhausted" ||
+      birdResult.status === "expired" ||
+      birdResult.status === "failed" ||
+      birdResult.status === "blocked" ||
+      birdResult.status === "canceled";
+
+    if (isTerminal) {
       otpRecord.status = "expired";
       await otpRecord.save();
       this.logger.warn(
-        `OTP supero el maximo de intentos: ${requestId} / ${maskEmail(otpRecord.email ?? "")}`,
+        `Bird verification resolved terminally: requestId=${requestId} reason=${reason} status=${birdResult.status}`,
       );
-      throw new HttpException(
-        "Has superado el máximo de intentos. Solicita un nuevo código.",
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
+      const userMsg =
+        reason === "attempts_exhausted" || birdResult.status === "failed"
+          ? "Has superado el máximo de intentos. Solicita un nuevo código."
+          : "El código de verificación ha expirado. Solicita uno nuevo.";
+      throw new GoneException(userMsg);
     }
 
-    const inputHash = this.hashCode(code.toUpperCase());
-
-    if (!this.safeHashEqual(inputHash, otpRecord.codeHash)) {
-      otpRecord.attempts += 1;
-      await otpRecord.save();
-      const remaining = this.MAX_ATTEMPTS - otpRecord.attempts;
-      throw new UnauthorizedException(
-        `Código incorrecto. Te quedan ${remaining} intento(s).`,
-      );
-    }
-
-    otpRecord.status = "verified";
+    // incorrect_code (o reason no terminal)
     await otpRecord.save();
-
-    const cookies = this.decryptSessionCookies(otpRecord.sessionCookies);
-    if (cookies.length === 0) {
-      this.logger.error(
-        `Failed to decrypt session cookies for verified OTP: ${requestId}`,
-      );
-      throw new GoneException(
-        "El código de verificación ha expirado. Solicita uno nuevo.",
-      );
-    }
-
-    return { cookies };
+    const remaining = birdResult.attemptsRemaining;
+    const remainingMsg =
+      typeof remaining === "number" && remaining > 0
+        ? `Código incorrecto. Te quedan ${remaining} intento(s).`
+        : "Código incorrecto.";
+    throw new UnauthorizedException(remainingMsg);
   }
 
   /**

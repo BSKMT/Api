@@ -1,6 +1,6 @@
 import { Module, Global } from "@nestjs/common";
 import { UsersModule } from "../users/users.module";
-import { ZohoMailModule } from "../zoho-mail/zoho-mail.module";
+import { BirdModule } from "../bird/bird.module";
 import { AuthController } from "./auth.controller";
 import { SessionGuard } from "./session.guard";
 import { LoginOtpModule } from "./login-otp.module";
@@ -13,7 +13,7 @@ import { LoginOtpModule } from "./login-otp.module";
  */
 @Global()
 @Module({
-  imports: [UsersModule, ZohoMailModule, LoginOtpModule],
+  imports: [UsersModule, BirdModule, LoginOtpModule],
   controllers: [AuthController],
   providers: [SessionGuard],
   exports: [SessionGuard],
