@@ -13,16 +13,14 @@ export const configValidationSchema = Joi.object({
   BOLD_ENVIRONMENT: Joi.string()
     .valid("sandbox", "production", "test")
     .default("sandbox"),
-  ZOHO_CLIENT_ID: Joi.string().allow("").default(""),
-  ZOHO_CLIENT_SECRET: Joi.string().allow("").default(""),
-  ZOHO_REFRESH_TOKEN: Joi.string().allow("").default(""),
-  ZOHO_ACCOUNT_ID: Joi.string().allow("").default(""),
-  ZOHO_FROM_ADDRESS: Joi.string().allow("").default(""),
-  ZOHO_TEAM_EMAIL: Joi.string().allow("").default(""),
-  ZOHO_API_BASE: Joi.string().uri().default("https://mail.zoho.com"),
-  ZOHO_TOKEN_BASE: Joi.string()
-    .uri()
-    .default("https://accounts.zoho.com/oauth/v2"),
+
+  // Bird — email, SMS y verify
+  BIRD_API_KEY: Joi.string().allow("").default(""),
+  BIRD_FROM_EMAIL: Joi.string().email().allow("").default("no-reply@bskmt.com"),
+  BIRD_FROM_NAME: Joi.string().allow("").default("BSK Motorcycle Team"),
+  BIRD_TEAM_EMAIL: Joi.string().email().allow("").default("contacto@bskmt.com"),
+  BIRD_SMS_SENDER: Joi.string().allow("").default("BSKMT"),
+
   LANDING_PAGE_URL: Joi.string().uri().default("http://localhost:4321"),
   CRON_SECRET: Joi.string().min(16).required(),
   TURNSTILE_SECRET_KEY: Joi.string().allow("").default(""),

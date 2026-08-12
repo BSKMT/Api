@@ -14,6 +14,13 @@ import { SessionGuard } from "../auth/session.guard";
 import { UsersService } from "../users/users.service";
 import { UpdateProfileSectionDto } from "./dto/update-profile-section.dto";
 import { DeleteProfileSectionDto } from "./dto/delete-profile-section.dto";
+import {
+  InitiatePhoneVerifyDto,
+  CheckPhoneVerifyDto,
+  InitiateEmailChangeDto,
+  CheckEmailChangeDto,
+} from "./dto/verify-channel.dto";
+import { ChannelVerificationService } from "./channel-verification.service";
 import { REQUIRED_PROFILE_SECTIONS } from "../users/schemas/user.schema";
 
 interface AuthenticatedRequest extends Request {
@@ -23,7 +30,10 @@ interface AuthenticatedRequest extends Request {
 @Controller("profile")
 @UseGuards(SessionGuard)
 export class ProfileController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly verificationService: ChannelVerificationService,
+  ) {}
 
   @Get()
   async getProfile(@Req() req: AuthenticatedRequest) {
@@ -45,6 +55,11 @@ export class ProfileController {
       membershipLevel: fullUser.membershipLevel,
       role: fullUser.role,
       email: fullUser.email,
+      emailVerified: fullUser.emailVerified ?? false,
+      phone: fullUser.phone ?? null,
+      phoneVerified: fullUser.phoneVerified ?? false,
+      pendingPhone: fullUser.pendingPhone ?? null,
+      pendingEmail: fullUser.pendingEmail ?? null,
       legalConsentAccepted: fullUser.legalConsentAccepted ?? false,
     };
   }
@@ -90,5 +105,63 @@ export class ProfileController {
       completedSections: updated.completedSections,
       profileCompleted: updated.profileCompleted,
     };
+  }
+
+  // ── Phone (SMS) verification ───────────────────────────────────────
+
+  @Post("verify-phone/initiate")
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
+  async initiatePhoneVerification(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: InitiatePhoneVerifyDto,
+  ) {
+    await this.verificationService.initiatePhoneVerification(
+      req.user.userId,
+      dto.phone,
+    );
+    return { message: "Codigo SMS enviado" };
+  }
+
+  @Post("verify-phone/verify")
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  async verifyPhone(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: CheckPhoneVerifyDto,
+  ) {
+    await this.verificationService.verifyPhone(
+      req.user.userId,
+      dto.phone,
+      dto.code,
+    );
+    return { message: "Telefono verificado", phoneVerified: true };
+  }
+
+  // ── Email change verification ───────────────────────────────────────
+
+  @Post("change-email/initiate")
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
+  async initiateEmailChange(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: InitiateEmailChangeDto,
+  ) {
+    await this.verificationService.initiateEmailChange(
+      req.user.userId,
+      dto.newEmail,
+    );
+    return { message: "Codigo de verificacion enviado al nuevo correo" };
+  }
+
+  @Post("change-email/verify")
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  async verifyEmailChange(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: CheckEmailChangeDto,
+  ) {
+    await this.verificationService.verifyEmailChange(
+      req.user.userId,
+      dto.newEmail,
+      dto.code,
+    );
+    return { message: "Correo actualizado y verificado", emailVerified: true };
   }
 }

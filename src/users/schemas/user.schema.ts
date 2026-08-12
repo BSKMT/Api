@@ -139,6 +139,21 @@ export class User {
   })
   partialPaymentCredit?: PartialPaymentCredit | null;
 
+  @Prop({ type: String, default: null })
+  phone?: string | null;
+
+  @Prop({ default: false })
+  phoneVerified!: boolean;
+
+  @Prop({ type: Date, default: null })
+  phoneVerifiedAt?: Date | null;
+
+  @Prop({ type: String, default: null })
+  pendingPhone?: string | null;
+
+  @Prop({ type: String, default: null })
+  pendingEmail?: string | null;
+
   @Prop({ type: Object, default: {} })
   settings?: Record<string, unknown>;
 

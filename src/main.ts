@@ -10,7 +10,7 @@ import { GlobalExceptionFilter } from "./common/filters/global-exception.filter"
 import type { EnvironmentConfig } from "./config/config.interface";
 import { getAuth, setAuthDependencies } from "./auth/better-auth";
 import type { AuthInstance } from "./auth/better-auth";
-import { EmailService } from "./zoho-mail/email.service";
+import { BirdEmailService } from "./bird/bird-email.service";
 import { AbuseIpDbService } from "./abuseipdb/abuseipdb.service";
 import { createAbuseIpDbMiddleware } from "./abuseipdb/abuseipdb.middleware";
 
@@ -130,7 +130,7 @@ async function bootstrap() {
   const abuseIpDbService = app.get(AbuseIpDbService);
   app.use(createAbuseIpDbMiddleware(abuseIpDbService));
 
-  const emailService = app.get(EmailService);
+  const emailService = app.get(BirdEmailService);
   const landingPageUrl =
     configService.get<string>("LANDING_PAGE_URL", { infer: true }) ??
     "http://localhost:4321";

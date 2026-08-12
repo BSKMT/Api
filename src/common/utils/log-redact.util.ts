@@ -19,6 +19,12 @@ export function maskEmail(email: string): string {
   return `${local.slice(0, 2)}***@${domain}`;
 }
 
+/** Enmascara un numero de telefono E.164 para logs: +57300***567 */
+export function maskPhone(phone: string): string {
+  if (!phone || phone.length < 6) return "***";
+  return `${phone.slice(0, 5)}***${phone.slice(-3)}`;
+}
+
 /** M18: Strip CRLF and other control chars to prevent log injection. */
 export function sanitizeForLog(value: string): string {
   return value.replace(/[\r\n\t]/g, " ").slice(0, 200);

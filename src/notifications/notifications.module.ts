@@ -7,7 +7,7 @@ import {
 import { NotificationsService } from "./notifications.service";
 import { NotificationsController } from "./notifications.controller";
 import { UsersModule } from "../users/users.module";
-import { ZohoMailModule } from "../zoho-mail/zoho-mail.module";
+import { BirdModule } from "../bird/bird.module";
 
 @Module({
   imports: [
@@ -15,7 +15,7 @@ import { ZohoMailModule } from "../zoho-mail/zoho-mail.module";
       { name: Notification.name, schema: NotificationSchema },
     ]),
     UsersModule,
-    ZohoMailModule,
+    BirdModule,
   ],
   controllers: [NotificationsController],
   providers: [NotificationsService],

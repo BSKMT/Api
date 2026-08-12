@@ -6,13 +6,15 @@ import {
   NotificationDocument,
   NotificationPriority,
 } from "./schemas/notification.schema";
-import { EmailService } from "../zoho-mail/email.service";
-import { maskEmail, sanitizeForLog } from "../common/utils/log-redact.util";
+import { BirdNotifyService } from "../bird/bird-notify.service";
+import { sanitizeForLog } from "../common/utils/log-redact.util";
 
 /**
- * NotificationsService - Crea, consulta y marca como leídas las notificaciones
- * a nivel de sistema. Adicionalmente, cuando se provee `emailTo`, envia una
- * copia del mensaje por correo electronico a traves de Zoho Mail.
+ * NotificationsService - Crea, consulta y marca como leidas las
+ * notificaciones a nivel de sistema. Adicionalmente, cuando el usuario
+ * tiene canales activados, envia una copia del mensaje por correo y/o
+ * SMS a traves de BirdNotifyService, respetando las preferencias del
+ * usuario (email/SMS on/off, overrides por categoria).
  */
 @Injectable()
 export class NotificationsService {
@@ -21,7 +23,7 @@ export class NotificationsService {
   constructor(
     @InjectModel(Notification.name)
     private readonly notificationModel: Model<NotificationDocument>,
-    private readonly emailService: EmailService,
+    private readonly birdNotifyService: BirdNotifyService,
   ) {}
 
   async create(data: {
@@ -32,8 +34,8 @@ export class NotificationsService {
     priority?: string;
     metadata?: Record<string, unknown>;
     relatedReference?: string;
-    /** Destinatario de correo opcional; si se omite no se envia correo. */
-    emailTo?: string;
+    /** Categoria para overrides por canal (ej: "Membresia y pagos"). */
+    notifyCategory?: string;
   }): Promise<NotificationDocument | null> {
     let created: NotificationDocument | null = null;
     try {
@@ -52,27 +54,17 @@ export class NotificationsService {
       );
     }
 
-    if (data.emailTo && created) {
-      // El envio de correo es best-effort: nunca debe romper el flujo principal.
-      this.emailService
-        .sendNotificationEmail({
-          to: data.emailTo,
+    if (created && data.userId) {
+      this.birdNotifyService
+        .notify({
+          userId: data.userId,
           title: data.title,
           message: data.message,
-        })
-        .then((ok) => {
-          if (!ok) {
-            // M-9: redact recipient email from logs.
-            this.logger.warn(
-              `No se pudo enviar el correo de notificacion a ${maskEmail(data.emailTo ?? "")}`,
-            );
-          }
+          category: data.notifyCategory,
         })
         .catch((err: unknown) => {
-          // M-9: redact recipient email and sanitize the error message
-          // (which a misbehaving transport could include CRLF in).
           this.logger.warn(
-            `Error enviando correo de notificacion a ${maskEmail(data.emailTo ?? "")}: ${sanitizeForLog(err instanceof Error ? err.message : String(err))}`,
+            `Error en dispatch multicanal para usuario ${data.userId}: ${sanitizeForLog(err instanceof Error ? err.message : String(err))}`,
           );
         });
     }
@@ -86,7 +78,6 @@ export class NotificationsService {
   ): Promise<NotificationDocument[]> {
     const filter: Record<string, unknown> = { userId };
     if (opts.onlyUnread) filter["read"] = false;
-    // M-6: Clamp limit to [1, 100] to prevent limit=-1 (no-limit Mongo)
     const limit = Math.min(Math.max(opts.limit ?? 50, 1), 100);
     return this.notificationModel
       .find(filter)

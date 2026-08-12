@@ -36,6 +36,11 @@ export class AuthController {
     return {
       userId: user.userId,
       email: user.email,
+      emailVerified: fullUser?.emailVerified ?? false,
+      phone: fullUser?.phone ?? null,
+      phoneVerified: fullUser?.phoneVerified ?? false,
+      pendingPhone: fullUser?.pendingPhone ?? null,
+      pendingEmail: fullUser?.pendingEmail ?? null,
       profileCompleted: fullUser?.profileCompleted ?? false,
       membershipLevel: fullUser?.membershipLevel ?? null,
       membershipExpired: fullUser?.membershipExpired ?? true,

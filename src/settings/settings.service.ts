@@ -12,6 +12,9 @@ import { UpdateSettingsDto } from "./dto/update-settings.dto";
 import type { Request } from "express";
 import { sanitizeForLog } from "../common/utils/log-redact.util";
 
+/** Canales de notificacion disponibles. */
+const NOTIF_CHANNELS = ["email", "sms", "whatsapp", "push"] as const;
+
 const DEFAULT_SETTINGS = {
   notifications: {
     channels: { email: true, sms: true, whatsapp: false, push: false },
@@ -173,11 +176,17 @@ export class SettingsService {
     const settings = user.settings ?? {};
     for (const key of ["notifications", "privacy", "appearance", "dashboard"]) {
       if (dto[key]) {
-        // M-12: pass section name to apply per-section whitelist
         const incoming = UpdateSettingsDto.sanitize(
           dto[key] as Record<string, unknown>,
           key,
         );
+
+        if (key === "notifications" && incoming["channels"]) {
+          this.validateAtLeastOneChannel(
+            incoming["channels"] as Record<string, unknown>,
+          );
+        }
+
         settings[key] = {
           ...(settings[key] as Record<string, unknown>),
           ...incoming,
@@ -190,6 +199,22 @@ export class SettingsService {
     await user.save();
     this.logger.log(`Settings updated for user ${userId.slice(0, 8)}...`);
     return { ...DEFAULT_SETTINGS, ...settings };
+  }
+
+  /**
+   * Valida que al menos un canal de notificacion quede activo.
+   * OWASP A06:2025 — Insecure Design: prevenir que el usuario
+   * desactive todos los canales y quede incomunicado.
+   */
+  private validateAtLeastOneChannel(channels: Record<string, unknown>): void {
+    const anyEnabled = NOTIF_CHANNELS.some(
+      (ch) => channels[ch] === true || channels[ch] === "true",
+    );
+    if (!anyEnabled) {
+      throw new BadRequestException(
+        "Debes mantener al menos un canal de notificacion activo (correo, SMS, WhatsApp o push).",
+      );
+    }
   }
 
   async getSessions(
