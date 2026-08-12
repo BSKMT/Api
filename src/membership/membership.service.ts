@@ -336,7 +336,6 @@ export class MembershipService {
       mappedStatus === "REJECTED"
         ? "Tu pago fue rechazado por la pasarela. Puedes intentarlo de nuevo."
         : "Ocurrió un fallo procesando tu pago. Revisa tu método de pago e intenta nuevamente.";
-    const rejectedUser = await this.usersService.findById(transaction.userId);
     await this.notificationsService.create({
       userId: transaction.userId,
       type: NotificationType.MEMBERSHIP_PAYMENT_REJECTED,
@@ -949,7 +948,7 @@ export class MembershipService {
   /** Activate a brand-new single-payment membership and notify. */
   private async processSingleNewPaymentActivation(
     transaction: MembershipTransactionDocument,
-    user: { email: string },
+    _user: { email: string },
   ): Promise<void> {
     const now = new Date();
     const expiry = new Date(now.getTime() + MEMBERSHIP_DURATION_MS);
