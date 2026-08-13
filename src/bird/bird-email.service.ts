@@ -58,11 +58,28 @@ export class BirdEmailService {
     if (err instanceof Error) {
       const parts: string[] = [err.message];
       const errAny = err as unknown as Record<string, unknown>;
-      if (typeof errAny["status"] === "number") {
+      if (typeof errAny["statusCode"] === "number") {
+        parts.push(`(HTTP ${errAny["statusCode"]})`);
+      } else if (typeof errAny["status"] === "number") {
         parts.push(`(HTTP ${errAny["status"]})`);
       }
       if (typeof errAny["code"] === "string") {
         parts.push(`[code: ${errAny["code"]}]`);
+      }
+      if (typeof errAny["type"] === "string") {
+        parts.push(`[type: ${errAny["type"]}]`);
+      }
+      const details = errAny["details"];
+      if (Array.isArray(details)) {
+        const detailStrs = details.map((d) => {
+          const dEl = d as Record<string, unknown>;
+          const dParamRaw = dEl?.["param"];
+          const dMsgRaw = dEl?.["message"];
+          const dParam = typeof dParamRaw === "string" ? dParamRaw : "?";
+          const dMsg = typeof dMsgRaw === "string" ? dMsgRaw : "?";
+          return 'param="' + dParam + '" msg="' + dMsg + '"';
+        });
+        parts.push("| details: " + detailStrs.join("; "));
       }
       if (
         typeof errAny["response"] === "object" &&
