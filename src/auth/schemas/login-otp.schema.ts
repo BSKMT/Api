@@ -37,7 +37,7 @@ export class LoginOtp {
 
   /**
    * Email del usuario que solicita el login (minusculas).
-   * Se almacena para poder llamar a Bird `check` con el mismo `to.email_address`
+   * Se almacena para poder llamar a Bird `check` con el mismo `to.email`
    * usado en el `create` (Bird identifica la verificacion por el destinatario).
    */
   @Prop({ type: String, required: true, index: true })

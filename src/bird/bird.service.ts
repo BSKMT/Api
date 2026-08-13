@@ -116,13 +116,13 @@ export interface BirdSmsMessage {
 export type BirdVerifyRecipient<TRecipient = unknown> = TRecipient;
 
 export interface BirdVerifyCreateParams {
-  to: { email_address: string } | { phone_number: string };
+  to: { email: string } | { phone_number: string };
   options?: { code_length?: number; channels?: string[] };
   metadata?: Record<string, unknown>;
 }
 
 export interface BirdVerifyCheckParams {
-  to: { email_address: string } | { phone_number: string };
+  to: { email: string } | { phone_number: string };
   code: string;
 }
 
