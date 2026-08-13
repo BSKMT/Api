@@ -371,27 +371,74 @@ export class LoginOtpService {
         `Bird verification created: ${birdId} for ${maskEmail(userEmail)} (status: ${birdResult.status})`,
       );
     } catch (err) {
-      /**
-       * Bird rechazo la peticion (rate-limit, dest no valido, etc.) o fallo
-       * la red. Marcar el registro como expired (no verificable) y devolver
-       * un error generico al cliente (cierre del oracle de enumeracion).
-       */
       otpRecord.status = "expired";
       await otpRecord.save();
-      this.logger.error(
-        `Bird createEmailVerification failed for ${maskEmail(userEmail)}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      // Detectar rate-limit especifico de Bird para devolver 429
-      const errMsg = err instanceof Error ? err.message : String(err);
-      if (/rate|429|too many|retry/i.test(errMsg)) {
+
+      const errAny = err as unknown as Record<string, unknown>;
+      const detailStrs: string[] = [];
+      const detailsArr = errAny["details"];
+      if (Array.isArray(detailsArr)) {
+        for (const d of detailsArr) {
+          const dEl = d as Record<string, unknown>;
+          const dParam =
+            typeof dEl?.["param"] === "string" ? dEl["param"] : "?";
+          const dMsg =
+            typeof dEl?.["message"] === "string" ? dEl["message"] : "?";
+          detailStrs.push('param="' + dParam + '" message="' + dMsg + '"');
+        }
+      }
+      const statusCode = errAny["statusCode"];
+      const errorCode = errAny["code"];
+      const errorType = errAny["type"];
+      const errParam = errAny["param"];
+      const errRemediation = errAny["remediation"];
+      const errMsgRaw = err instanceof Error ? err.message : String(err);
+      const logParts: string[] = [
+        "Bird createEmailVerification failed for " +
+          maskEmail(userEmail) +
+          ": " +
+          errMsgRaw,
+      ];
+      if (typeof statusCode === "number") {
+        logParts.push("(HTTP " + statusCode + ")");
+      }
+      if (typeof errorCode === "string") {
+        logParts.push("[code: " + errorCode + "]");
+      }
+      if (typeof errorType === "string") {
+        logParts.push("[type: " + errorType + "]");
+      }
+      if (detailStrs.length > 0) {
+        logParts.push("| details: " + detailStrs.join("; "));
+      }
+      if (typeof errParam === "string") {
+        logParts.push("| param: " + errParam);
+      }
+      if (typeof errRemediation === "string") {
+        logParts.push("| remediation: " + errRemediation);
+      }
+      this.logger.error(logParts.join(" "));
+
+      if (typeof statusCode === "number" && statusCode === 429) {
         throw new HttpException(
           "El servicio de verificacion estan saturado. Intenta de nuevo en un minuto.",
           HttpStatus.TOO_MANY_REQUESTS,
           { cause: err },
         );
       }
+      if (/rate|429|too many|retry/i.test(errMsgRaw)) {
+        throw new HttpException(
+          "El servicio de verificacion estan saturado. Intenta de nuevo en un minuto.",
+          HttpStatus.TOO_MANY_REQUESTS,
+          { cause: err },
+        );
+      }
+      const causeMsg =
+        "Bird Verify send failure: " +
+        errMsgRaw +
+        (detailStrs.length > 0 ? " | details: " + detailStrs.join("; ") : "");
       throw new UnauthorizedException(LoginOtpService.GENERIC_AUTH_ERROR, {
-        cause: "Bird Verify send failure",
+        cause: causeMsg,
       });
     }
 
