@@ -104,25 +104,8 @@ export class UsersService {
       throw new NotFoundException("Usuario no encontrado");
     }
 
-    // Detect phone changes in the "contacto" section — if the user
-    // modifies their phone number (telefono/celular/whatsapp/phone),
-    // reset `phoneVerified` to false and sync the top-level `phone`
-    // field so SMS notifications use the latest number. The user must
-    // re-verify via the OTP flow before SMS notifications resume.
     if (sectionId === "contacto") {
-      const oldPhone = this.extractPhoneFromContacto(
-        user.profile?.["contacto"],
-      );
-      const newPhone = this.extractPhoneFromContacto(sanitizedData);
-
-      if (newPhone && newPhone !== oldPhone) {
-        user.phone = newPhone;
-        user.phoneVerified = false;
-        user.phoneVerifiedAt = null;
-        user.pendingPhone = null;
-      } else if (newPhone && newPhone === oldPhone && user.phone !== newPhone) {
-        user.phone = newPhone;
-      }
+      this.syncPhoneIfChanged(user, sanitizedData);
     }
 
     const profile = user.profile ?? {};
@@ -392,5 +375,31 @@ export class UsersService {
       contacto["phone"];
     if (typeof tel === "string" && tel.trim()) return tel.trim();
     return null;
+  }
+
+  /**
+   * Sincroniza el campo top-level `user.phone` cuando se actualiza la
+   * seccion "contacto".
+   *
+   * Si el telefono nuevo difiere del anterior, ademas resetea
+   * `phoneVerified`/`phoneVerifiedAt`/`pendingPhone` para obligar al
+   * usuario a re-verificarlo via el flujo de OTP antes de reanudar las
+   * notificaciones por SMS.
+   */
+  private syncPhoneIfChanged(
+    user: UserDocument,
+    sanitizedData: Record<string, unknown>,
+  ): void {
+    const oldPhone = this.extractPhoneFromContacto(user.profile?.["contacto"]);
+    const newPhone = this.extractPhoneFromContacto(sanitizedData);
+
+    if (newPhone && newPhone !== oldPhone) {
+      user.phone = newPhone;
+      user.phoneVerified = false;
+      user.phoneVerifiedAt = null;
+      user.pendingPhone = null;
+    } else if (newPhone && newPhone === oldPhone && user.phone !== newPhone) {
+      user.phone = newPhone;
+    }
   }
 }

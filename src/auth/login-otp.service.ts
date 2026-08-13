@@ -16,7 +16,10 @@ import {
   scryptSync,
 } from "node:crypto";
 import { LoginOtp, LoginOtpDocument } from "./schemas/login-otp.schema";
-import { BirdVerifyService } from "../bird-verify/bird-verify.service";
+import {
+  BirdVerifyService,
+  type BirdCheckResult,
+} from "../bird-verify/bird-verify.service";
 import { getAuth } from "./better-auth";
 import { maskEmail } from "../common/utils/log-redact.util";
 
@@ -41,7 +44,7 @@ import { maskEmail } from "../common/utils/log-redact.util";
  *
  * Cambios respecto a la version Zoho:
  *  - Ya no se genera, hashea, ni compara el codigo localmente — Bird Verify
- *    hace todo eso. La app nunca maneja el codigo en texto plano.
+ *    gestiona el proceso completo. La app nunca maneja el codigo en texto plano.
  *  - Ya no se envia el correo manualmente — Bird lo entrega.
  *  - Se mantiene el cifrado AES-256-GCM de las cookies de sesion.
  *  - Se mantiene el throttle per-email (capa adicional sobre el cap de
@@ -187,19 +190,75 @@ export class LoginOtpService {
   ): Promise<{ requestId: string }> {
     const remember = rememberMe === true;
 
-    /**
-     * Llama a Better Auth **en proceso** (sin HTTP roundtrip) para validar
-     * credenciales y obtener las cookies de sesion.
-     *
-     * Antes se usaba `fetch(...)`, pero en produccion esa peticion salia por
-     * el proxy de Cloudflare que la bloqueaba con un challenge ("Just a
-     * moment..."), devolviendo un 403 con HTML.
-     *
-     * La API en proceso `auth.api.signInEmail({ asResponse: true })` ejecuta
-     * el mismo handler pero sin red, evitando Cloudflare, el middleware CSRF
-     * (que se omite cuando no hay `request`) y los problemas con undici
-     * (`Sec-Fetch-Mode: cors`).
-     */
+    const session = await this.authenticateAndExtractSession(
+      email,
+      password,
+      remember,
+    );
+
+    await this.assertEmailThrottle(session.userEmail);
+
+    if (!this.birdVerifyService.isConfigured()) {
+      this.logger.error(
+        "Bird Verify no configurado (BIRD_API_KEYausente) — initiate bloqueado",
+      );
+      throw new UnauthorizedException(LoginOtpService.GENERIC_AUTH_ERROR, {
+        cause: "Bird Verify not configured",
+      });
+    }
+
+    const requestId = this.generateRequestId();
+    const expiresAt = new Date(Date.now() + 3600 * 1000);
+    const encryptedCookies = this.encryptSessionCookies(session.sessionCookies);
+
+    const otpRecord = await this.otpModel.create({
+      requestId,
+      email: session.userEmail,
+      betterAuthId: session.betterAuthId,
+      sessionCookies: encryptedCookies,
+      status: "pending",
+      attempts: 0,
+      expiresAt,
+    });
+
+    await this.dispatchBirdVerification(
+      otpRecord,
+      session.userEmail,
+      requestId,
+      session.betterAuthId,
+    );
+
+    return { requestId };
+  }
+
+  /**
+   * Llama a Better Auth **en proceso** (sin HTTP roundtrip) para validar
+   * credenciales y obtener las cookies de sesion.
+   *
+   * Antes se usaba `fetch(...)`, pero en produccion esa peticion salia por
+   * el proxy de Cloudflare que la bloqueaba con un challenge ("Just a
+   * moment..."), devolviendo un 403 con HTML.
+   *
+   * La API en proceso `auth.api.signInEmail({ asResponse: true })` ejecuta
+   * el mismo handler pero sin red, evitando Cloudflare, el middleware CSRF
+   * (que se omite cuando no hay `request`) y los problemas con undici
+   * (`Sec-Fetch-Mode: cors`).
+   *
+   * @throws {BadRequestException} si la llamada a Better Auth lanzo una
+   *         excepcion en proceso.
+   * @throws {UnauthorizedException} con mensaje generico si las
+   *         credenciales son invalidas, el correo no esta verificado o
+   *         Better Auth no devolvio cookies / userId.
+   */
+  private async authenticateAndExtractSession(
+    email: string,
+    password: string,
+    remember: boolean,
+  ): Promise<{
+    sessionCookies: string[];
+    betterAuthId: string;
+    userEmail: string;
+  }> {
     let authResponse: Response;
     try {
       const auth = await getAuth();
@@ -217,74 +276,49 @@ export class LoginOtpService {
       );
     }
 
-    if (!authResponse.ok) {
-      const rawBody = await authResponse.text().catch(() => "");
-      this.logger.warn(
-        `Better Auth signInEmail returned ${authResponse.status} — body: ${rawBody.slice(0, 300)}`,
-      );
-      let errorBody: Record<string, unknown> = {};
-      try {
-        errorBody = JSON.parse(rawBody) as Record<string, unknown>;
-      } catch {
-        // Body is not JSON — leave errorBody empty
-      }
-      const errorCode = errorBody["code"] as string | undefined;
-      const message = errorBody["message"] as string | undefined;
-
-      if (errorCode === "EMAIL_NOT_VERIFIED") {
-        /**
-         * M-14: EMAIL_NOT_VERIFIED is only emitted after Better Auth has
-         * already validated the password — so it leaks valid credentials
-         * to an attacker probing accounts. Mask it externally as the
-         * generic auth failure but tag the cause server-side for ops
-         * triage. The legitimate user can still trigger a fresh
-         * verification link via the dedicated "Verificar correo" flow
-         * on the landing page.
-         */
-        this.logger.warn(
-          `Account email not verified (masked as generic auth error to close credential oracle)`,
-        );
-        throw new UnauthorizedException(LoginOtpService.GENERIC_AUTH_ERROR, {
-          cause: "EMAIL_NOT_VERIFIED",
-        });
-      }
-
-      // Todos los demas errores (credenciales invalidas, usuario no
-      // encontrado, etc.) se mapean al mismo mensaje generico para
-      // prevenir enumeracion de cuentas.
-      if (
-        errorCode === "INVALID_PASSWORD" ||
-        errorCode === "INVALID_EMAIL_OR_PASSWORD" ||
-        errorCode === "USER_NOT_FOUND" ||
-        errorCode === "CREDENTIAL_ACCOUNT_NOT_FOUND" ||
-        (message && /invalid|incorrect|not found/i.test(message)) ||
-        !errorCode
-      ) {
-        throw new UnauthorizedException(LoginOtpService.GENERIC_AUTH_ERROR, {
-          cause: rawBody,
-        });
-      }
-
-      throw new UnauthorizedException(LoginOtpService.GENERIC_AUTH_ERROR, {
-        cause: rawBody,
-      });
+    if (authResponse.ok) {
+      return await this.extractSessionFromAuthResponse(authResponse, email);
     }
 
+    /**
+     * Mascara anti-enumeracion: cualquier error de credenciales (incluido
+     * EMAIL_NOT_VERIFIED, que solo se emite tras validar la password) se
+     * mapea al mismo mensaje generico — el legitimo usuario puede
+     * re-emitir un enlace de verificacion desde el flujo "Verificar
+     * correo" de la landing page.
+     */
+    const rawBody = await authResponse.text().catch(() => "");
+    this.logger.warn(
+      `Better Auth signInEmail returned ${authResponse.status} — body: ${rawBody.slice(0, 300)}`,
+    );
+    throw new UnauthorizedException(LoginOtpService.GENERIC_AUTH_ERROR, {
+      cause: rawBody,
+    });
+  }
+
+  /**
+   * Procesa una respuesta exitosa (HTTP 2xx) de Better Auth `signInEmail`:
+   * extrae Set-Cookie y el `{ id, email }` del body. Si faltan cookies o
+   * `userId`, enmascara como "credenciales invalidas" para cerrar el
+   * oracle de enumeracion.
+   */
+  private async extractSessionFromAuthResponse(
+    authResponse: Response,
+    email: string,
+  ): Promise<{
+    sessionCookies: string[];
+    betterAuthId: string;
+    userEmail: string;
+  }> {
     const setCookieHeaders = authResponse.headers.getSetCookie();
     const sessionCookies = this.extractCookies(setCookieHeaders);
 
     const body = (await authResponse.json().catch(() => ({}))) as {
-      user?: { id?: string; email?: string; name?: string };
+      user?: { id?: string; email?: string };
     };
     const betterAuthId = body.user?.id ?? "";
     const userEmail = body.user?.email ?? email.toLowerCase();
-    const userName = body.user?.name ?? userEmail;
 
-    /**
-     * Mascara anti-enumeracion: si Better Auth autentico pero no devolvio
-     * userId o cookies, se enmascara como "credenciales invalidas" — no
-     * revela que las credenciales eran validas.
-     */
     if (!betterAuthId || sessionCookies.length === 0) {
       this.logger.error(
         `Post-auth error: betterAuthId=${betterAuthId || "MISSING"} cookies=${sessionCookies.length}`,
@@ -294,18 +328,21 @@ export class LoginOtpService {
       });
     }
 
-    /**
-     * Throttle per-email (defensa contra mailbox flooding con rotacion de
-     * IPs). Cuenta cuantas OTPs se han creado para este email en los
-     * ultimos 5 minutos. Capa adicional sobre el cap nativo de Bird de
-     * 5 sends/recipient/hora.
-     */
+    return { sessionCookies, betterAuthId, userEmail };
+  }
+
+  /**
+   * Throttle per-email (defensa contra mailbox flooding con rotacion de
+   * IPs). Cuenta cuantas OTPs se han creado para este email en los
+   * ultimos 5 minutos. Capa adicional sobre el cap nativo de Bird de
+   * 5 sends/recipient/hora.
+   */
+  private async assertEmailThrottle(userEmail: string): Promise<void> {
     const recentCount = await this.otpModel.countDocuments({
       email: userEmail,
       createdAt: { $gt: new Date(Date.now() - this.EMAIL_INITIATE_WINDOW_MS) },
     });
     if (recentCount >= this.EMAIL_INITIATE_MAX) {
-      // M-17: mask the email in logs to avoid PII leaks into the log stream.
       this.logger.warn(
         `Email throttle: ${maskEmail(userEmail)} supero ${this.EMAIL_INITIATE_MAX} OTPs en ${this.EMAIL_INITIATE_WINDOW_MS / 1000}s`,
       );
@@ -314,74 +351,42 @@ export class LoginOtpService {
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
+  }
 
-    /**
-     * Si Bird Verify no esta configurado (falta BIRD_API_KEY), se enmascara
-     * como "credenciales invalidas" — cerrar el oracle de enumeracion y no
-     * revelar el estado interno del servicio de verificacion.
-     */
-    if (!this.birdVerifyService.isConfigured()) {
-      this.logger.error(
-        "Bird Verify no configurado (BIRD_API_KEYausente) — initiate bloqueado",
-      );
-      throw new UnauthorizedException(LoginOtpService.GENERIC_AUTH_ERROR, {
-        cause: "Bird Verify not configured",
-      });
-    }
-
-    const requestId = this.generateRequestId();
-    const expiresAt = new Date(Date.now() + 3600 * 1000);
-    const encryptedCookies = this.encryptSessionCookies(sessionCookies);
-
-    /**
-     * Persistir primero el registro en MongoDB antes de llamar a Bird,
-     * para que exista siempre un slot donde recuperar las cookies al
-     * verificar. Si Bird falla, se marcara el registro como expired.
-     */
-    const otpRecord = await this.otpModel.create({
-      requestId,
-      email: userEmail,
-      betterAuthId,
-      sessionCookies: encryptedCookies,
-      status: "pending",
-      attempts: 0,
-      expiresAt,
-    });
-
-    /**
-     * Llama a Bird Verify `POST /v1/verify/verifications` para que Bird
-     * genere un codigo numerico y lo envie al correo del usuario. Bird
-     * identifica la verificacion por `to.email`, asi que el check
-     * posterior se hara con el mismo email.
-     *
-     * El SDK inyecta `Idempotency-Key` automaticamente, asi que un timeout
-     * que reintentara la llamada no enviara dos codigos al usuario.
-     */
-    let birdId: string | undefined;
+  /**
+   * Invoca Bird Verify para generar y enviar un codigo numerico al correo
+   * del usuario. Bird identifica la verificacion por `to.email`, asi que
+   * el check posterior se hara con el mismo email. El SDK inyecta
+   * `Idempotency-Key` automaticamente.
+   *
+   * @throws {HttpException} 429 si Bird reporta rate-limit.
+   * @throws {UnauthorizedException} con mensaje generico para cualquier
+   *         otro fallo (cierre del oracle de enumeracion). Marca el
+   *         registro como `expired` (no verificable) antes de lanzar.
+   */
+  private async dispatchBirdVerification(
+    otpRecord: LoginOtpDocument,
+    userEmail: string,
+    requestId: string,
+    betterAuthId: string,
+  ): Promise<void> {
     try {
       const birdResult = await this.birdVerifyService.createEmailVerification(
         userEmail,
-        {
-          requestId,
-          betterAuthId,
-        },
+        { requestId, betterAuthId },
       );
-      birdId = birdResult.id;
+      otpRecord.birdVerificationId = birdResult.id;
+      await otpRecord.save();
       this.logger.log(
-        `Bird verification created: ${birdId} for ${maskEmail(userEmail)} (status: ${birdResult.status})`,
+        `Bird verification created: ${birdResult.id} for ${maskEmail(userEmail)} (status: ${birdResult.status})`,
       );
     } catch (err) {
-      /**
-       * Bird rechazo la peticion (rate-limit, dest no valido, etc.) o fallo
-       * la red. Marcar el registro como expired (no verificable) y devolver
-       * un error generico al cliente (cierre del oracle de enumeracion).
-       */
       otpRecord.status = "expired";
       await otpRecord.save();
-      this.logger.error(
-        `Bird createEmailVerification failed for ${maskEmail(userEmail)}: ${err instanceof Error ? err.message : String(err)}`,
-      );
       const errMsg = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `Bird createEmailVerification failed for ${maskEmail(userEmail)}: ${errMsg}`,
+      );
       if (/rate|429|too many|retry/i.test(errMsg)) {
         throw new HttpException(
           "El servicio de verificacion estan saturado. Intenta de nuevo en un minuto.",
@@ -393,18 +398,6 @@ export class LoginOtpService {
         cause: "Bird Verify send failure",
       });
     }
-
-    if (birdId) {
-      otpRecord.birdVerificationId = birdId;
-      await otpRecord.save();
-    }
-
-    // `userName` se mantiene para compatibilidad futura (logs / metricas);
-    // Bird envia el correo bajo su propio template de Authifly OTP, asi que
-    // no se necesita aqui.
-    void userName;
-
-    return { requestId };
   }
 
   /**
@@ -441,60 +434,91 @@ export class LoginOtpService {
      *  - `404` si la verificacion ya resolvio (verified/expired/failed).
      *  - `429` si el caller supera el rate cap (10 checks/recipient/min).
      */
-    let birdResult;
+    let birdResult: BirdCheckResult;
     try {
       birdResult = await this.birdVerifyService.checkEmailVerification(
         otpRecord.email,
         code,
       );
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
+      return await this.handleBirdCheckError(err, otpRecord, requestId);
+    }
 
-      /**
-       * 404 de Bird = verificacion ya resuelta o expirada. Marcar el
-       * registro como expired y devolver 410 al cliente.
-       */
-      if (/404|not found|no verification/i.test(errMsg)) {
-        otpRecord.status = "expired";
-        await otpRecord.save();
-        this.logger.warn(
-          `Bird check returned 404 (resolved/expired) for requestId=${requestId} birdId=${otpRecord.birdVerificationId ?? "n/a"}`,
-        );
-        throw new GoneException(
-          "El código de verificación no existe, ya fue utilizado o ha expirado.",
-          { cause: err },
-        );
-      }
+    return await this.processBirdCheckResult(otpRecord, requestId, birdResult);
+  }
 
-      /**
-       * 429 de Bird = rate-limit (10 checks/recipient/min). Devolver 429
-       * al cliente con el mensaje apropiado.
-       */
-      if (/429|rate|too many|retry/i.test(errMsg)) {
-        this.logger.warn(
-          `Bird check rate-limited for requestId=${requestId}: ${errMsg}`,
-        );
-        throw new HttpException(
-          "Has realizado demasiados intentos. Espera un minuto e intenta de nuevo.",
-          HttpStatus.TOO_MANY_REQUESTS,
-          { cause: err },
-        );
-      }
+  /**
+   * Maneja los errores que lanza `checkEmailVerification` de Bird:
+   *
+   *  - `404` / `not found` / `no verification` → la verificacion ya se
+   *    resolvio o expiro. Marca el registro como `expired` y devuelve 410
+   *    Gone.
+   *  - `429` / `rate` / `too many` / `retry` → rate-cap de Bird (10
+   *    checks/recipient/min). Devuelve 429 al cliente sin marcar el
+   *    registro como expirado.
+   *  - Cualquier otro error (red, 5xx, etc.) → no marca el registro como
+   *    expirado (puede ser transitorio) y devuelve 503 Service
+   *    Unavailable.
+   *
+   * Siempre termina lanzando una excepcion (tipo de retorno `never`).
+   */
+  private async handleBirdCheckError(
+    err: unknown,
+    otpRecord: LoginOtpDocument,
+    requestId: string,
+  ): Promise<never> {
+    const errMsg = err instanceof Error ? err.message : String(err);
 
-      /**
-       * Otros errores (red, 5xx, etc.) — no marcar el registro como
-       * expired (puede ser un fallo transitorio). Devolver 503.
-       */
-      this.logger.error(
-        `Bird checkEmailVerification failed for requestId=${requestId}: ${errMsg}`,
+    if (/404|not found|no verification/i.test(errMsg)) {
+      otpRecord.status = "expired";
+      await otpRecord.save();
+      this.logger.warn(
+        `Bird check returned 404 (resolved/expired) for requestId=${requestId} birdId=${otpRecord.birdVerificationId ?? "n/a"}`,
       );
-      throw new HttpException(
-        "El servicio de verificacion no esta disponible. Intenta de nuevo.",
-        HttpStatus.SERVICE_UNAVAILABLE,
+      throw new GoneException(
+        "El código de verificación no existe, ya fue utilizado o ha expirado.",
         { cause: err },
       );
     }
 
+    if (/429|rate|too many|retry/i.test(errMsg)) {
+      this.logger.warn(
+        `Bird check rate-limited for requestId=${requestId}: ${errMsg}`,
+      );
+      throw new HttpException(
+        "Has realizado demasiados intentos. Espera un minuto e intenta de nuevo.",
+        HttpStatus.TOO_MANY_REQUESTS,
+        { cause: err },
+      );
+    }
+
+    this.logger.error(
+      `Bird checkEmailVerification failed for requestId=${requestId}: ${errMsg}`,
+    );
+    throw new HttpException(
+      "El servicio de verificacion no esta disponible. Intenta de nuevo.",
+      HttpStatus.SERVICE_UNAVAILABLE,
+      { cause: err },
+    );
+  }
+
+  /**
+   * Procesa el resultado `BirdCheckResult`:
+   *
+   *  - `success: true` → marca el registro como `verified`, desencripta y
+   *    devuelve las cookies de sesion.
+   *  - `success: false` + `reason` terminal (`expired`, `attempts_exhausted`
+   *    o cualquier `status` de finalizacion) → marca el registro como
+   *    `expired` y devuelve 410 Gone con mensaje apropiado.
+   *  - `success: false` + `reason` no terminal (tipicamente
+   *    `incorrect_code`) → guarda el contador de intentos y devuelve 401
+   *    con el numero de intentos restantes.
+   */
+  private async processBirdCheckResult(
+    otpRecord: LoginOtpDocument,
+    requestId: string,
+    birdResult: BirdCheckResult,
+  ): Promise<{ cookies: string[] }> {
     if (birdResult.success) {
       otpRecord.status = "verified";
       await otpRecord.save();
@@ -511,37 +535,9 @@ export class LoginOtpService {
       return { cookies };
     }
 
-    /**
-     * Bird devolvio `success: false` con un `reason`:
-     *  - `incorrect_code`    → 401 Unauthorized (con intentos restantes)
-     *  - `expired`           → 410 Gone
-     *  - `attempts_exhausted` → 410 Gone (verificacion fallida)
-     *  - otro (open enum)    → tratar como terminal = 410 Gone
-     */
     otpRecord.attempts += 1;
-    const reason = birdResult.reason;
-    const isTerminal =
-      reason === "expired" ||
-      reason === "attempts_exhausted" ||
-      birdResult.status === "expired" ||
-      birdResult.status === "failed" ||
-      birdResult.status === "blocked" ||
-      birdResult.status === "canceled";
+    await this.assertNotTerminalOrThrow(otpRecord, requestId, birdResult);
 
-    if (isTerminal) {
-      otpRecord.status = "expired";
-      await otpRecord.save();
-      this.logger.warn(
-        `Bird verification resolved terminally: requestId=${requestId} reason=${reason} status=${birdResult.status}`,
-      );
-      const userMsg =
-        reason === "attempts_exhausted" || birdResult.status === "failed"
-          ? "Has superado el máximo de intentos. Solicita un nuevo código."
-          : "El código de verificación ha expirado. Solicita uno nuevo.";
-      throw new GoneException(userMsg);
-    }
-
-    // incorrect_code (o reason no terminal)
     await otpRecord.save();
     const remaining = birdResult.attemptsRemaining;
     const remainingMsg =
@@ -549,6 +545,43 @@ export class LoginOtpService {
         ? `Código incorrecto. Te quedan ${remaining} intento(s).`
         : "Código incorrecto.";
     throw new UnauthorizedException(remainingMsg);
+  }
+
+  /**
+   * Comprueba si el resultado de Bird es terminal (verificacion expirada,
+   * agotada o cancelada) y, si lo es, marca el registro como `expired` y
+   * lanza `GoneException` con el mensaje apropiado.
+   *
+   * Si el resultado NO es terminal (incorrect_code, etc.), simplemente
+   * retorna para que el caller persista el intento y devuelva 401.
+   */
+  private async assertNotTerminalOrThrow(
+    otpRecord: LoginOtpDocument,
+    requestId: string,
+    birdResult: BirdCheckResult,
+  ): Promise<void> {
+    const reason = birdResult.reason;
+    const status = birdResult.status;
+    const isTerminal =
+      reason === "expired" ||
+      reason === "attempts_exhausted" ||
+      status === "expired" ||
+      status === "failed" ||
+      status === "blocked" ||
+      status === "canceled";
+
+    if (!isTerminal) return;
+
+    otpRecord.status = "expired";
+    await otpRecord.save();
+    this.logger.warn(
+      `Bird verification resolved terminally: requestId=${requestId} reason=${reason} status=${status}`,
+    );
+    const userMsg =
+      reason === "attempts_exhausted" || status === "failed"
+        ? "Has superado el máximo de intentos. Solicita un nuevo código."
+        : "El código de verificación ha expirado. Solicita uno nuevo.";
+    throw new GoneException(userMsg);
   }
 
   /**

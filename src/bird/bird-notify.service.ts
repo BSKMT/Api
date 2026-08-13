@@ -106,7 +106,8 @@ export class BirdNotifyService {
       phone?: string | null;
       profile?: Record<string, Record<string, unknown>>;
     };
-    if (u.phone && u.phone.trim()) return u.phone.trim();
+    const trimmedPhone = u.phone?.trim();
+    if (trimmedPhone) return trimmedPhone;
     const contacto = u.profile?.["contacto"];
     if (contacto) {
       const tel =

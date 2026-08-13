@@ -220,9 +220,7 @@ export class BirdService {
         "Bird no esta configurado (falta BIRD_API_KEY o formato invalido)",
       );
     }
-    if (!this.sdkPromise) {
-      this.sdkPromise = import("@messagebird/sdk");
-    }
+    this.sdkPromise ??= import("@messagebird/sdk");
     const sdk = await this.sdkPromise;
     this.client = new sdk.BirdClient({
       apiKey: this.apiKey,
