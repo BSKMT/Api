@@ -163,19 +163,47 @@ export class BirdService {
   /** API key leida de `BIRD_API_KEY`. */
   private readonly apiKey: string | undefined;
 
+  /**
+   * Valida que la API key tenga el formato correcto de Bird.
+   * Las keys reales tienen prefijo `bk_us1_` o `bk_eu1_` (region-prefixed).
+   * Un placeholder como `bk_xxxxxxxxx` o una key vacia NO pasa esta validacion.
+   */
+  private isValidKeyFormat(key: string): boolean {
+    return /^bk_(us1|eu1)_\S+$/.test(key);
+  }
+
   constructor() {
-    this.apiKey = process.env.BIRD_API_KEY;
-    if (!this.apiKey) {
-      this.logger.warn(
+    const rawKey = process.env.BIRD_API_KEY;
+    if (!rawKey) {
+      this.logger.error(
         "BIRD_API_KEY no esta configurada — los servicios de Bird " +
-          "(email, SMS, verify) no estaran disponibles.",
+          "(email, SMS, verify) NO funcionaran. Configura la env var " +
+          "en Vercel con una key real (formato: bk_us1_... o bk_eu1_...).",
       );
+      this.apiKey = undefined;
+      return;
     }
+    if (!this.isValidKeyFormat(rawKey)) {
+      this.logger.error(
+        `BIRD_API_KEY tiene formato invalido "${rawKey.slice(0, 7)}..." — ` +
+          "debe empezar con bk_us1_ o bk_eu1_ seguido del secret. " +
+          "Obten una key real desde Bird dashboard > Developers > API keys.",
+      );
+      this.apiKey = undefined;
+      return;
+    }
+    this.apiKey = rawKey;
+    const region = rawKey.startsWith("bk_us1_") ? "us1" : "eu1";
+    this.logger.log(
+      `Bird API configurada (region: ${region}) — email, SMS y verify activos.`,
+    );
   }
 
   /** Indica si el cliente Bird esta configurado y listo para usarse. */
   isConfigured(): boolean {
-    return typeof this.apiKey === "string" && this.apiKey.length > 0;
+    return (
+      typeof this.apiKey === "string" && this.isValidKeyFormat(this.apiKey)
+    );
   }
 
   /**
@@ -188,7 +216,9 @@ export class BirdService {
   async getClient(): Promise<BirdClientInstance> {
     if (this.client) return this.client;
     if (!this.isConfigured() || !this.apiKey) {
-      throw new Error("Bird no esta configurado (falta BIRD_API_KEY)");
+      throw new Error(
+        "Bird no esta configurado (falta BIRD_API_KEY o formato invalido)",
+      );
     }
     if (!this.sdkPromise) {
       this.sdkPromise = import("@messagebird/sdk");
