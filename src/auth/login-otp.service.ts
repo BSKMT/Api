@@ -351,7 +351,7 @@ export class LoginOtpService {
     /**
      * Llama a Bird Verify `POST /v1/verify/verifications` para que Bird
      * genere un codigo numerico y lo envie al correo del usuario. Bird
-     * identifica la verificacion por `to.email_address`, asi que el check
+     * identifica la verificacion por `to.email`, asi que el check
      * posterior se hara con el mismo email.
      *
      * El SDK inyecta `Idempotency-Key` automaticamente, asi que un timeout
@@ -480,7 +480,7 @@ export class LoginOtpService {
     /**
      * Llama a Bird Verify `POST /v1/verify/verifications/check` con el
      * codigo que el usuario ingreso. Bird identifica la verificacion por
-     * el mismo `to.email_address` usado al crearla, asi que no se necesita
+     * el mismo `to.email` usado al crearla, asi que no se necesita
      * el `birdVerificationId` (pero se loguea si esta disponible).
      *
      * Bird devuelve:

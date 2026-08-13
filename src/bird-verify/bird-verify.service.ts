@@ -67,7 +67,7 @@ export class BirdVerifyService {
   ): Promise<BirdCreateResult> {
     const client = await this.birdService.getClient();
     const params: BirdVerifyCreateParams = {
-      to: { email_address: email },
+      to: { email },
       ...(metadata ? { metadata } : {}),
     };
     const response: BirdVerificationResponse =
@@ -86,7 +86,7 @@ export class BirdVerifyService {
   ): Promise<BirdCheckResult> {
     const client = await this.birdService.getClient();
     const params: BirdVerifyCheckParams = {
-      to: { email_address: email },
+      to: { email },
       code,
     };
     const result: BirdVerificationCheckResult =
