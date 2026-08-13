@@ -112,7 +112,7 @@ export class KvCacheService {
     return btoa(bin)
       .replaceAll("+", "-")
       .replaceAll("/", "_")
-      .replace(/=+$/, "");
+      .replace(/={1,2}$/, "");
   }
 
   async get<T>(key: string, isPrivate = false): Promise<T | null> {

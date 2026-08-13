@@ -34,7 +34,7 @@ export class InitiateEmailChangeDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(254)
-  @Matches(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, {
+  @Matches(/^[^\s@]{1,64}@[^\s@]{1,189}\.[^\s@]{2,63}$/, {
     message: "El correo electronico no es valido",
   })
   newEmail!: string;
@@ -44,7 +44,7 @@ export class CheckEmailChangeDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(254)
-  @Matches(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, {
+  @Matches(/^[^\s@]{1,64}@[^\s@]{1,189}\.[^\s@]{2,63}$/, {
     message: "El correo electronico no es valido",
   })
   newEmail!: string;

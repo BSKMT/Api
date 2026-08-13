@@ -250,7 +250,7 @@ export class AbuseIpDbService {
     return btoa(bin)
       .replaceAll("+", "-")
       .replaceAll("/", "_")
-      .replace(/=+$/, "");
+      .replace(/={1,2}$/, "");
   }
 
   private async getHmacKey(): Promise<CryptoKey> {
