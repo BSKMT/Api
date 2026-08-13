@@ -15,8 +15,22 @@ export const configValidationSchema = Joi.object({
     .default("sandbox"),
 
   // Bird — email, SMS y verify
-  BIRD_API_KEY: Joi.string().allow("").default(""),
-  BIRD_FROM_EMAIL: Joi.string().email().allow("").default("no-reply@bskmt.com"),
+  BIRD_API_KEY: Joi.string()
+    .allow("")
+    .default("")
+    .custom((value: string) => {
+      if (value && !/^bk_(us1|eu1)_\S+$/.test(value)) {
+        throw new Error(
+          "BIRD_API_KEY debe tener formato bk_us1_... o bk_eu1_... " +
+            "(key real desde Bird dashboard > Developers > API keys)",
+        );
+      }
+      return value;
+    }),
+  BIRD_FROM_EMAIL: Joi.string()
+    .email()
+    .allow("")
+    .default("no_responder@bskmt.com"),
   BIRD_FROM_NAME: Joi.string().allow("").default("BSK Motorcycle Team"),
   BIRD_TEAM_EMAIL: Joi.string().email().allow("").default("contacto@bskmt.com"),
   BIRD_SMS_SENDER: Joi.string().allow("").default("BSKMT"),

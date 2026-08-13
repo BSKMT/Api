@@ -1,4 +1,5 @@
 import { MongoClient } from "mongodb";
+import { Logger } from "@nestjs/common";
 import type { BirdEmailService } from "../bird/bird-email.service";
 import { maskEmail } from "../common/utils/log-redact.util";
 
@@ -180,6 +181,8 @@ let authPromise: Promise<AuthInstance> | null = null;
 let injectedEmailService: BirdEmailService | null = null;
 let injectedLandingPageUrl: string | null = null;
 
+const authLogger = new Logger("BetterAuth");
+
 /**
  * Inyecta el BirdEmailService para que los callbacks de correo de Better Auth
  * (envío de verificación y restablecimiento de contraseña) puedan enviar correos
@@ -196,8 +199,8 @@ export function setAuthDependencies(
   injectedEmailService = emailService;
   injectedLandingPageUrl = landingPageUrl;
   if (authInstance) {
-    console.warn(
-      "[better-auth] setAuthDependencies se llamo despues de la inicializacion. " +
+    authLogger.warn(
+      "setAuthDependencies se llamo despues de la inicializacion. " +
         "Los callbacks de correo ya fueron configurados sin EmailService.",
     );
   }
@@ -253,14 +256,16 @@ async function initAuth(): Promise<AuthInstance> {
             resetUrl,
           });
           if (!ok) {
-            // M-9: redact recipient email.
-            console.warn(
-              `[Password Reset] No se pudo enviar el correo a ${maskEmail(user.email)} (Bird no configurado o fallo)`,
+            authLogger.error(
+              `Password Reset: No se pudo enviar el correo a ${maskEmail(user.email)} — ` +
+                "Bird no configurado (revisa BIRD_API_KEY en Vercel) o la API rechazo el envio. " +
+                "El usuario no podra restablecer su contrasena hasta que se resuelva.",
             );
           }
         } else {
-          console.warn(
-            `[Password Reset] Email service not configured — reset email NOT sent to ${maskEmail(user.email)}`,
+          authLogger.error(
+            `Password Reset: Email service no inyectado — reset email NOT sent to ${maskEmail(user.email)}. ` +
+              "Verifica que setAuthDependencies() se llame en main.ts antes del primer request.",
           );
         }
       },
@@ -286,14 +291,17 @@ async function initAuth(): Promise<AuthInstance> {
             verificationUrl,
           });
           if (!ok) {
-            // M-9: redact recipient email.
-            console.warn(
-              `[Email Verification] No se pudo enviar el correo a ${maskEmail(user.email)} (Bird no configurado o fallo)`,
+            authLogger.error(
+              `Email Verification: No se pudo enviar el correo de verificacion a ${maskEmail(user.email)} — ` +
+                "Bird no configurado (revisa BIRD_API_KEY en Vercel) o la API rechazo el envio. " +
+                "El usuario no podra verificar su cuenta ni iniciar sesion hasta que se resuelva. " +
+                "Buena noticia: el sign-up ya completo (200), pero el flujo esta truncado.",
             );
           }
         } else {
-          console.warn(
-            `[Email Verification] Email service not configured — verification email NOT sent to ${maskEmail(user.email)}`,
+          authLogger.error(
+            `Email Verification: Email service no inyectado — verification email NOT sent to ${maskEmail(user.email)}. ` +
+              "Verifica que setAuthDependencies() se llame en main.ts antes del primer request.",
           );
         }
       },
@@ -490,9 +498,8 @@ async function initAuth(): Promise<AuthInstance> {
               // already taken in Better Auth). Now we attempt to clean up
               // the orphan Better Auth user and re-throw so the sign-up
               // API surfaces a meaningful error to the client.
-              console.error(
+              authLogger.error(
                 `[databaseHooks] Failed to insert Mongoose user for betterAuthId=${user.id} email=${maskEmail(user.email)}: ${err instanceof Error ? err.message : String(err)}`,
-                err instanceof Error ? err.stack : "",
               );
               try {
                 await mongoDb.collection("account").deleteMany({
@@ -503,7 +510,7 @@ async function initAuth(): Promise<AuthInstance> {
                 });
                 await mongoDb.collection("user").deleteOne({ id: user.id });
               } catch (cleanupErr) {
-                console.error(
+                authLogger.error(
                   `[databaseHooks] Failed to cleanup orphan Better Auth user ${user.id}: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`,
                 );
               }
@@ -526,7 +533,7 @@ async function initAuth(): Promise<AuthInstance> {
                 },
               );
             } catch (err) {
-              console.error(
+              authLogger.error(
                 "[databaseHooks] Failed to sync emailVerified:",
                 err,
               );

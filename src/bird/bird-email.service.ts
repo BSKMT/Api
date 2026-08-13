@@ -40,13 +40,44 @@ export class BirdEmailService {
   private readonly teamEmail: string;
 
   constructor(private readonly birdService: BirdService) {
-    this.fromEmail = process.env.BIRD_FROM_EMAIL ?? "no-reply@bskmt.com";
+    this.fromEmail = process.env.BIRD_FROM_EMAIL ?? "no_responder@bskmt.com";
     this.fromName = process.env.BIRD_FROM_NAME ?? "BSK Motorcycle Team";
     this.teamEmail = process.env.BIRD_TEAM_EMAIL ?? "contacto@bskmt.com";
   }
 
   private getFrom(): string | { email: string; name?: string } {
     return { email: this.fromEmail, name: this.fromName };
+  }
+
+  /**
+   * Formatea errores del Bird SDK para logging diagnostico.
+   * Extrae status code, error code y message de la respuesta HTTP
+   * subyacente cuando estan disponibles (OWASP A09:2025 — logging adecuado).
+   */
+  private formatBirdError(err: unknown): string {
+    if (err instanceof Error) {
+      const parts: string[] = [err.message];
+      const errAny = err as unknown as Record<string, unknown>;
+      if (typeof errAny["status"] === "number") {
+        parts.push(`(HTTP ${errAny["status"]})`);
+      }
+      if (typeof errAny["code"] === "string") {
+        parts.push(`[code: ${errAny["code"]}]`);
+      }
+      if (
+        typeof errAny["response"] === "object" &&
+        errAny["response"] !== null
+      ) {
+        try {
+          const body = JSON.stringify(errAny["response"]);
+          parts.push(`body: ${body.slice(0, 200)}`);
+        } catch {
+          // response no serializable — omitir
+        }
+      }
+      return parts.join(" ");
+    }
+    return String(err);
   }
 
   /**
@@ -84,7 +115,7 @@ export class BirdEmailService {
       return { delivered: true };
     } catch (err: unknown) {
       this.logger.error(
-        `Error enviando correo de contacto: ${err instanceof Error ? err.message : String(err)}`,
+        `Error enviando correo de contacto via Bird: ${this.formatBirdError(err)}`,
       );
       return { delivered: false };
     }
@@ -99,7 +130,10 @@ export class BirdEmailService {
     title: string;
     message: string;
   }): Promise<boolean> {
-    if (!this.birdService.isConfigured()) return false;
+    if (!this.birdService.isConfigured()) {
+      this.logger.warn("Bird no configurado: correo de notificacion omitido");
+      return false;
+    }
 
     try {
       const client = await this.birdService.getClient();
@@ -116,7 +150,7 @@ export class BirdEmailService {
       return true;
     } catch (err: unknown) {
       this.logger.error(
-        `Error enviando correo de notificacion: ${err instanceof Error ? err.message : String(err)}`,
+        `Error enviando correo de notificacion via Bird: ${this.formatBirdError(err)}`,
       );
       return false;
     }
@@ -131,7 +165,12 @@ export class BirdEmailService {
     name: string;
     verificationUrl: string;
   }): Promise<boolean> {
-    if (!this.birdService.isConfigured()) return false;
+    if (!this.birdService.isConfigured()) {
+      this.logger.error(
+        "sendVerificationEmail omitido — Bird no configurado (BIRD_API_KEY falta o tiene formato invalido)",
+      );
+      return false;
+    }
 
     try {
       const client = await this.birdService.getClient();
@@ -145,10 +184,13 @@ export class BirdEmailService {
         }),
         category: "transactional",
       });
+      this.logger.log(
+        `Correo de verificacion enviado a ${data.to.replace(/./g, (c, i) => (i < 2 ? c : "*"))} via Bird`,
+      );
       return true;
     } catch (err: unknown) {
       this.logger.error(
-        `Error enviando correo de verificacion: ${err instanceof Error ? err.message : String(err)}`,
+        `Error enviando correo de verificacion via Bird: ${this.formatBirdError(err)}`,
       );
       return false;
     }
@@ -163,7 +205,12 @@ export class BirdEmailService {
     name: string;
     resetUrl: string;
   }): Promise<boolean> {
-    if (!this.birdService.isConfigured()) return false;
+    if (!this.birdService.isConfigured()) {
+      this.logger.error(
+        "sendPasswordResetEmail omitido — Bird no configurado (BIRD_API_KEY falta o tiene formato invalido)",
+      );
+      return false;
+    }
 
     try {
       const client = await this.birdService.getClient();
@@ -180,7 +227,7 @@ export class BirdEmailService {
       return true;
     } catch (err: unknown) {
       this.logger.error(
-        `Error enviando correo de reset: ${err instanceof Error ? err.message : String(err)}`,
+        `Error enviando correo de reset via Bird: ${this.formatBirdError(err)}`,
       );
       return false;
     }
