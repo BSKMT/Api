@@ -156,13 +156,15 @@ async function bootstrap() {
     if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
       return next();
     }
-    // Exempt external webhook endpoints
+    // Exempt external webhook endpoints (no Origin/Referer header from
+    // third-party services like Bold, Bird, or Vercel Cron).
     if (
       req.path === "/api/payments/webhook" ||
       req.path === "/api/membership/webhook" ||
       req.path.startsWith("/api/internal/cron/") ||
       req.path === "/api/membership/internal/cron/sweep-pending" ||
-      req.path === "/api/events/internal/cron/sweep-stale-registrations"
+      req.path === "/api/events/internal/cron/sweep-stale-registrations" ||
+      req.path === "/api/internal/webhooks/bird/realtime"
     ) {
       return next();
     }

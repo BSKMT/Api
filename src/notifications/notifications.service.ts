@@ -7,6 +7,8 @@ import {
   NotificationPriority,
 } from "./schemas/notification.schema";
 import { BirdNotifyService } from "../bird/bird-notify.service";
+import { BirdRealtimeService } from "../bird/bird-realtime.service";
+import { UsersService } from "../users/users.service";
 import { sanitizeForLog } from "../common/utils/log-redact.util";
 
 /**
@@ -15,6 +17,12 @@ import { sanitizeForLog } from "../common/utils/log-redact.util";
  * tiene canales activados, envia una copia del mensaje por correo y/o
  * SMS a traves de BirdNotifyService, respetando las preferencias del
  * usuario (email/SMS on/off, overrides por categoria).
+ *
+ * Desde la integracion de Bird Realtime (Fase 1), tambien publica un
+ * evento `notification.created` via WebSocket al miembro, de modo que
+ * el badge de notificaciones se actualiza en tiempo real. El publish
+ * es best-effort: si falla, el polling de respaldo (60s) sigue
+ * entregando la notificacion. MongoDB sigue siendo la fuente de verdad.
  */
 @Injectable()
 export class NotificationsService {
@@ -24,6 +32,8 @@ export class NotificationsService {
     @InjectModel(Notification.name)
     private readonly notificationModel: Model<NotificationDocument>,
     private readonly birdNotifyService: BirdNotifyService,
+    private readonly realtimeService: BirdRealtimeService,
+    private readonly usersService: UsersService,
   ) {}
 
   async create(data: {
@@ -67,6 +77,39 @@ export class NotificationsService {
             `Error en dispatch multicanal para usuario ${data.userId}: ${sanitizeForLog(err instanceof Error ? err.message : String(err))}`,
           );
         });
+    }
+
+    // Bird Realtime: publish `notification.created` to the member.
+    // The member_id in Bird is the Better Auth `user.id` (betterAuthId),
+    // which the Astro client uses in `bird.signin()`. We need to look up
+    // the user's betterAuthId by their MongoDB _id (data.userId).
+    // The publish is fire-and-forget: if it fails, the polling fallback
+    // (60s) continues to deliver notifications. MongoDB is always the
+    // source of truth — Bird does NOT replay missed events on reconnect.
+    if (created && data.userId) {
+      try {
+        const user = await this.usersService.findById(data.userId);
+        if (user?.betterAuthId) {
+          this.realtimeService
+            .publishToMember(user.betterAuthId, "notification.created", {
+              id: created._id.toString(),
+              type: data.type,
+              title: data.title,
+              snippet: data.message.slice(0, 120),
+              createdAt:
+                created.createdAt?.toISOString?.() ?? new Date().toISOString(),
+            })
+            .catch((err: unknown) => {
+              this.logger.warn(
+                `realtime.publishToMember failed — degrading to polling: ${sanitizeForLog(err instanceof Error ? err.message : String(err))}`,
+              );
+            });
+        }
+      } catch (err: unknown) {
+        this.logger.warn(
+          `realtime.publishToMember: user lookup failed for ${data.userId}: ${sanitizeForLog(err instanceof Error ? err.message : String(err))}`,
+        );
+      }
     }
 
     return created;
