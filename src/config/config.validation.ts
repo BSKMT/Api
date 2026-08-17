@@ -53,9 +53,9 @@ export const configValidationSchema = Joi.object({
   BIRD_REALTIME_KEY: Joi.string().allow("").default(""),
   BIRD_REALTIME_SECRET: Joi.string().allow("").default(""),
   BIRD_REALTIME_REGION: Joi.string()
-    .allow("")
-    .valid("us1", "eu1")
-    .default("us1"),
+    .empty("")
+    .default("us1")
+    .valid("us1", "eu1"),
   BIRD_WEBHOOK_SECRET: Joi.string().allow("").default(""),
 
   LANDING_PAGE_URL: Joi.string().uri().default("http://localhost:4321"),
