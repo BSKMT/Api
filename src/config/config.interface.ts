@@ -20,6 +20,32 @@ export interface EnvironmentConfig {
   BIRD_TEAM_EMAIL: string;
   BIRD_SMS_SENDER: string;
 
+  /**
+   * Bird Realtime — WebSocket hosted service for realtime events.
+   *
+   * - BIRD_REALTIME_APP_ID:  The Realtime app id (`rap_…`) used in
+   *   publish/disconnect API paths.
+   * - BIRD_REALTIME_KEY:     Public key — safe to ship to the browser
+   *   (the Astro frontend reads its own copy via `PUBLIC_BIRD_REALTIME_KEY`).
+   * - BIRD_REALTIME_SECRET:  App secret — signs channel authorizations and
+   *   member identities server-side. NEVER exposed to the client.
+   * - BIRD_REALTIME_REGION:  `us1` or `eu1` — pinned at app creation.
+   *
+   * Security (OWASP A04:2025 — Cryptographic Failures):
+   *   The secret is only read server-side and used for HMAC-SHA256 signing.
+   *   It is never logged, never returned in API responses, and never
+   *   forwarded to the Astro Worker. If any of the three required values
+   *   (APP_ID, KEY, SECRET) is missing, `BirdRealtimeService` degrades to
+   *   a no-op and the polling fallback continues to deliver notifications.
+   *   (OWASP A10:2025 — Server-Side Request Forgery / degradable design.)
+   */
+  BIRD_REALTIME_APP_ID: string;
+  BIRD_REALTIME_KEY: string;
+  BIRD_REALTIME_SECRET: string;
+  BIRD_REALTIME_REGION: string;
+  /** Bird Webhook signing secret for verifying realtime.* deliveries. */
+  BIRD_WEBHOOK_SECRET: string;
+
   LANDING_PAGE_URL: string;
   /**
    * A-7: Secret shared between Vercel Cron and the `/api/internal/cron/*`

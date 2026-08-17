@@ -36,6 +36,12 @@ export interface BirdSdkModule {
  *  - `email.send()`  — envio de correos transaccionales
  *  - `sms.send()`    — envio de mensajes SMS
  *  - `verify.verifications.create/check` — OTP de login
+ *  - `realtime.publish()`          — publica un evento a uno o mas canales
+ *  - `realtime.publishBatch()`     — publica hasta 10 eventos en una solicitud
+ *  - `realtime.members.send()`     — envia un evento directo a un miembro
+ *  - `realtime.members.disconnect()` — cierra todas las conexiones de un miembro
+ *  - `realtime.channels.list()`   — consulta cuales canales estan ocupados
+ *  - `webhooks.unwrap()`           — verifica y decodifica webhooks de Bird
  *
  * Estos interfaces son una "ventana" minima sobre el BirdClient real
  * (que tiene tipos genericos muy profundos del SDK). El BirdClient se
@@ -58,6 +64,36 @@ export interface BirdClientInstance {
         params: BirdVerifyCheckParams,
       ) => Promise<BirdVerificationCheckResult>;
     };
+  };
+  readonly realtime: {
+    publish: (
+      appId: string,
+      params: BirdRealtimePublishParams,
+    ) => Promise<BirdRealtimePublishResult>;
+    publishBatch: (
+      appId: string,
+      params: BirdRealtimeBatchParams,
+    ) => Promise<BirdRealtimeBatchResult>;
+    readonly members: {
+      send: (
+        appId: string,
+        memberId: string,
+        params: BirdRealtimeMemberEventParams,
+      ) => Promise<void>;
+      disconnect: (appId: string, memberId: string) => Promise<void>;
+    };
+    readonly channels: {
+      list: (
+        appId: string,
+        opts?: { prefix?: string },
+      ) => Promise<{ data: BirdRealtimeChannelInfo[] }>;
+    };
+  };
+  readonly webhooks: {
+    unwrap: (
+      body: Buffer | string,
+      headers: Record<string, string | string[] | undefined>,
+    ) => BirdWebhookEvent;
   };
 }
 
@@ -150,6 +186,64 @@ export interface BirdVerificationCheckResult {
   verification: BirdVerificationResponse;
 }
 
+// ── Realtime ──────────────────────────────────────────────────────────
+
+/** Parametros para publicar un evento a uno o mas canales. */
+export interface BirdRealtimePublishParams {
+  event: string;
+  channels: string[];
+  data: unknown;
+  /** Excluye una conexion de recibir el evento (opcional). */
+  exclude_connection_id?: string;
+  /** Solicita metadata de los canales tras el publish (opcional). */
+  include?: string[];
+}
+
+/** Resultado de un publish. */
+export interface BirdRealtimePublishResult {
+  id?: string;
+  channels?: Record<string, unknown>;
+}
+
+/** Parametros para publicar un batch de hasta 10 eventos. */
+export interface BirdRealtimeBatchParams {
+  events: {
+    event: string;
+    channels: string[];
+    data: unknown;
+    exclude_connection_id?: string;
+  }[];
+}
+
+/** Resultado de un batch publish. */
+export interface BirdRealtimeBatchResult {
+  id?: string;
+}
+
+/** Parametros para enviar un evento directo a un miembro. */
+export interface BirdRealtimeMemberEventParams {
+  event: string;
+  data: unknown;
+}
+
+/** Informacion de un canal en la lista de canales ocupados. */
+export interface BirdRealtimeChannelInfo {
+  name: string;
+  occupied: boolean;
+  member_count?: number;
+  connection_count?: number;
+}
+
+// ── Webhooks ──────────────────────────────────────────────────────────
+
+/** Evento webhook desenvelopado por `bird.webhooks.unwrap()`. */
+export interface BirdWebhookEvent {
+  id: string;
+  type: string;
+  timestamp: string;
+  data: Record<string, unknown>;
+}
+
 @Injectable()
 export class BirdService {
   private readonly logger = new Logger(BirdService.name);
@@ -162,6 +256,16 @@ export class BirdService {
 
   /** API key leida de `BIRD_API_KEY`. */
   private readonly apiKey: string | undefined;
+
+  /** Realtime config — populated when all four envs are present. */
+  private readonly realtimeConfig: {
+    appId: string;
+    key: string;
+    secret: string;
+  } | null = null;
+
+  /** Webhook signing secret (optional, for `bird.webhooks.unwrap`). */
+  private readonly webhookSecret: string | undefined;
 
   /**
    * Valida que la API key tenga el formato correcto de Bird.
@@ -197,6 +301,34 @@ export class BirdService {
     this.logger.log(
       `Bird API configurada (region: ${region}) — email, SMS y verify activos.`,
     );
+
+    // Realtime — los cuatro valores deben estar presentes; si falta alguno,
+    // realtimeService.isRealtimeConfigured() devuelve false y todo degrada.
+    const rtAppId = process.env.BIRD_REALTIME_APP_ID ?? "";
+    const rtKey = process.env.BIRD_REALTIME_KEY ?? "";
+    const rtSecret = process.env.BIRD_REALTIME_SECRET ?? "";
+    if (rtAppId && rtKey && rtSecret) {
+      this.realtimeConfig = { appId: rtAppId, key: rtKey, secret: rtSecret };
+      this.logger.log(
+        `Bird Realtime configurado (appId: ${rtAppId.slice(0, 8)}...) — publish y member events activos.`,
+      );
+    } else {
+      this.realtimeConfig = null;
+      this.logger.warn(
+        "Bird Realtime NO configurado — falta alguno de BIRD_REALTIME_APP_ID, BIRD_REALTIME_KEY o BIRD_REALTIME_SECRET. " +
+          "Las notificaciones realtime NO funcionaran, pero el polling de respaldo sigue activo.",
+      );
+    }
+
+    // Webhook secret (for bird.webhooks.unwrap). Optional but strongly
+    // recommended for verifying realtime.* webhook deliveries.
+    const webhookSecret = process.env.BIRD_WEBHOOK_SECRET;
+    if (webhookSecret) {
+      this.webhookSecret = webhookSecret;
+      this.logger.log(
+        "Bird Webhook secret configurado — verificacion de webhooks activa.",
+      );
+    }
   }
 
   /** Indica si el cliente Bird esta configurado y listo para usarse. */
@@ -204,6 +336,31 @@ export class BirdService {
     return (
       typeof this.apiKey === "string" && this.isValidKeyFormat(this.apiKey)
     );
+  }
+
+  /** Indica si Bird Realtime está configurado (appId + key + secret presentes). */
+  isRealtimeConfigured(): boolean {
+    return this.realtimeConfig !== null;
+  }
+
+  /** Devuelve el appId de Realtime o null si no está configurado. */
+  getRealtimeAppId(): string | null {
+    return this.realtimeConfig?.appId ?? null;
+  }
+
+  /** Devuelve la key pública de Realtime o null. */
+  getRealtimeKey(): string | null {
+    return this.realtimeConfig?.key ?? null;
+  }
+
+  /** Devuelve el secret de Realtime o null. */
+  getRealtimeSecret(): string | null {
+    return this.realtimeConfig?.secret ?? null;
+  }
+
+  /** Devuelve el webhook secret o undefined. */
+  getWebhookSecret(): string | undefined {
+    return this.webhookSecret;
   }
 
   /**
@@ -222,9 +379,27 @@ export class BirdService {
     }
     this.sdkPromise ??= import("@messagebird/sdk");
     const sdk = await this.sdkPromise;
-    this.client = new sdk.BirdClient({
+
+    // Build constructor options — always include apiKey, conditionally
+    // include realtime { key, secret } and webhooks { secret } blocks.
+    // The SDK enables the `bird.realtime.*` and `bird.webhooks.*`
+    // namespaces only when these blocks are present.
+    const clientOpts: Record<string, unknown> = {
       apiKey: this.apiKey,
-    }) as BirdClientInstance;
+    };
+    if (this.realtimeConfig) {
+      clientOpts["realtime"] = {
+        key: this.realtimeConfig.key,
+        secret: this.realtimeConfig.secret,
+      };
+    }
+    if (this.webhookSecret) {
+      clientOpts["webhooks"] = { secret: this.webhookSecret };
+    }
+
+    this.client = new sdk.BirdClient(
+      clientOpts as { apiKey: string },
+    ) as BirdClientInstance;
     return this.client;
   }
 }

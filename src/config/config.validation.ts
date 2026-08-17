@@ -35,6 +35,29 @@ export const configValidationSchema = Joi.object({
   BIRD_TEAM_EMAIL: Joi.string().email().allow("").default("contacto@bskmt.com"),
   BIRD_SMS_SENDER: Joi.string().allow("").default("BSKMT"),
 
+  // Bird Realtime — WebSocket hosted service.
+  // All four are optional: if any required trio (APP_ID, KEY, SECRET) is
+  // missing, BirdRealtimeService degrades to a no-op and the polling
+  // fallback continues to work (OWASP A10 — graceful degradation).
+  BIRD_REALTIME_APP_ID: Joi.string()
+    .allow("")
+    .default("")
+    .custom((value: string) => {
+      if (value && !/^rap_\S+$/.test(value)) {
+        throw new Error(
+          "BIRD_REALTIME_APP_ID debe tener formato rap_... (Bird Realtime dashboard)",
+        );
+      }
+      return value;
+    }),
+  BIRD_REALTIME_KEY: Joi.string().allow("").default(""),
+  BIRD_REALTIME_SECRET: Joi.string().allow("").default(""),
+  BIRD_REALTIME_REGION: Joi.string()
+    .allow("")
+    .valid("us1", "eu1")
+    .default("us1"),
+  BIRD_WEBHOOK_SECRET: Joi.string().allow("").default(""),
+
   LANDING_PAGE_URL: Joi.string().uri().default("http://localhost:4321"),
   CRON_SECRET: Joi.string().min(16).required(),
   TURNSTILE_SECRET_KEY: Joi.string().allow("").default(""),
