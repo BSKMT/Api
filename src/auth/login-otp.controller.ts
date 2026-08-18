@@ -1,5 +1,13 @@
-import { Controller, Post, Body, HttpCode, HttpStatus } from "@nestjs/common";
+import {
+  Controller,
+  Post,
+  Body,
+  HttpCode,
+  HttpStatus,
+  Req,
+} from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
+import type { Request } from "express";
 import { LoginOtpService } from "./login-otp.service";
 import { LoginOtpInitiateDto, LoginOtpVerifyDto } from "./dto/login-otp.dto";
 import { Public } from "../common/decorators";
@@ -26,11 +34,19 @@ export class LoginOtpController {
   @Throttle({ default: { ttl: 60000, limit: 3 } })
   async initiate(
     @Body() dto: LoginOtpInitiateDto,
+    @Req() req: Request,
   ): Promise<{ requestId: string }> {
+    const clientIp =
+      (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ??
+      req.ip ??
+      "";
+    const userAgent = req.headers["user-agent"] ?? "";
     return this.loginOtpService.initiateLogin(
       dto.email,
       dto.password,
       dto.rememberMe,
+      clientIp,
+      userAgent,
     );
   }
 

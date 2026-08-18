@@ -183,18 +183,22 @@ export class LoginOtpService {
    *
    * @returns `{ requestId }` — el cliente usa este ID en el paso de verificacion.
    */
-  async initiateLogin(
-    email: string,
-    password: string,
-    rememberMe?: boolean,
-  ): Promise<{ requestId: string }> {
-    const remember = rememberMe === true;
-
-    const session = await this.authenticateAndExtractSession(
-      email,
-      password,
-      remember,
-    );
+   async initiateLogin(
+     email: string,
+     password: string,
+     rememberMe?: boolean,
+     clientIp?: string,
+     userAgent?: string,
+   ): Promise<{ requestId: string }> {
+     const remember = rememberMe === true;
+ 
+     const session = await this.authenticateAndExtractSession(
+       email,
+       password,
+       remember,
+       clientIp,
+       userAgent,
+     );
 
     await this.assertEmailThrottle(session.userEmail);
 
@@ -250,22 +254,28 @@ export class LoginOtpService {
    *         credenciales son invalidas, el correo no esta verificado o
    *         Better Auth no devolvio cookies / userId.
    */
-  private async authenticateAndExtractSession(
-    email: string,
-    password: string,
-    remember: boolean,
-  ): Promise<{
-    sessionCookies: string[];
-    betterAuthId: string;
-    userEmail: string;
-  }> {
-    let authResponse: Response;
-    try {
-      const auth = await getAuth();
-      authResponse = await auth.api.signInEmail({
-        body: { email, password, rememberMe: remember },
-        asResponse: true,
-      });
+   private async authenticateAndExtractSession(
+     email: string,
+     password: string,
+     remember: boolean,
+     clientIp?: string,
+     userAgent?: string,
+   ): Promise<{
+     sessionCookies: string[];
+     betterAuthId: string;
+     userEmail: string;
+   }> {
+     let authResponse: Response;
+     try {
+       const auth = await getAuth();
+       const headers = new Headers();
+       if (clientIp) headers.set("x-forwarded-for", clientIp);
+       if (userAgent) headers.set("user-agent", userAgent);
+       authResponse = await auth.api.signInEmail({
+         body: { email, password, rememberMe: remember },
+         asResponse: true,
+         headers,
+       });
     } catch (err) {
       this.logger.error(
         `Better Auth signInEmail threw: ${err instanceof Error ? err.message : String(err)}`,
