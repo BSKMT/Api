@@ -6,6 +6,7 @@ import {
   Post,
   Body,
   Req,
+  Param,
   UseGuards,
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
@@ -105,6 +106,36 @@ export class ProfileController {
       completedSections: updated.completedSections,
       profileCompleted: updated.profileCompleted,
     };
+  }
+
+  // ── Friend requests ─────────────────────────────────────────────────
+
+  @Get("friend-requests")
+  async getFriendRequests(@Req() req: AuthenticatedRequest) {
+    const user = await this.usersService.findById(req.user.userId);
+    if (!user) return { requests: [] };
+    const pending = (user.friendRequests ?? []).filter(
+      (r) => r.status === "pending",
+    );
+    return { requests: pending };
+  }
+
+  @Post("friend-requests/:requestId/respond")
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  async respondToFriendRequest(
+    @Req() req: AuthenticatedRequest,
+    @Param("requestId") requestId: string,
+    @Body() body: { status: "accepted" | "declined" },
+  ) {
+    if (!body?.status || !["accepted", "declined"].includes(body.status)) {
+      return { message: "Estado invalido" };
+    }
+    await this.usersService.respondToFriendRequest(
+      req.user.userId,
+      requestId,
+      body.status,
+    );
+    return { message: `Solicitud ${body.status === "accepted" ? "aceptada" : "rechazada"}` };
   }
 
   // ── Phone (SMS) verification ───────────────────────────────────────

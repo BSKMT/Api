@@ -12,6 +12,7 @@ import {
   UserRole,
   CreditType,
   PartialPaymentCredit,
+  FriendRequest,
   REQUIRED_PROFILE_SECTIONS,
 } from "./schemas/user.schema";
 import { UpdateProfileSectionDto } from "../profile/dto/update-profile-section.dto";
@@ -62,6 +63,46 @@ export class UsersService {
 
   async findByBetterAuthId(betterAuthId: string): Promise<UserDocument | null> {
     return this.userModel.findOne({ betterAuthId }).lean();
+  }
+
+  /**
+   * Looks up a user by their auto-generated member number
+   * (stored in profile["membresia-ecosistema"].numeroMiembro, e.g. "BSK-0001").
+   * Used by the public profile endpoint.
+   */
+  async findByMemberNumber(numeroMiembro: string): Promise<UserDocument | null> {
+    return this.userModel
+      .findOne({ "profile.membresia-ecosistema.numeroMiembro": numeroMiembro })
+      .lean();
+  }
+
+  /**
+   * Appends a friend request to the target user's friendRequests array.
+   * Called by PublicProfileController.sendFriendRequest.
+   */
+  async addFriendRequest(
+    targetUserId: string,
+    request: FriendRequest,
+  ): Promise<void> {
+    await this.userModel.updateOne(
+      { _id: targetUserId },
+      { $push: { friendRequests: request } },
+    );
+  }
+
+  /**
+   * Updates the status of a friend request (accept / decline).
+   * Called by ProfileController.respondToFriendRequest.
+   */
+  async respondToFriendRequest(
+    userId: string,
+    requestId: string,
+    status: "accepted" | "declined",
+  ): Promise<void> {
+    await this.userModel.updateOne(
+      { _id: userId, "friendRequests._id": requestId },
+      { $set: { "friendRequests.$.status": status } },
+    );
   }
 
   /**
