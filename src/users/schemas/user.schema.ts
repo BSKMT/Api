@@ -1,6 +1,31 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import { Document, Schema as MongooseSchema } from "mongoose";
 
+export interface FriendRequest {
+  fromUserId: string;
+  fromMemberNumber: string;
+  fromDisplayName: string;
+  message: string | null;
+  status: "pending" | "accepted" | "declined";
+  createdAt: Date;
+}
+
+const FriendRequestSchema = new MongooseSchema(
+  {
+    fromUserId: { type: String, required: true },
+    fromMemberNumber: { type: String, required: true },
+    fromDisplayName: { type: String, required: true },
+    message: { type: String, default: null },
+    status: {
+      type: String,
+      enum: ["pending", "accepted", "declined"],
+      default: "pending",
+    },
+    createdAt: { type: Date, default: () => new Date() },
+  },
+  { _id: true },
+);
+
 export type UserDocument = User & Document;
 
 export enum UserRole {
@@ -162,6 +187,9 @@ export class User {
 
   @Prop({ type: Date, default: null })
   accountDeletionRequestedAt?: Date | null;
+
+  @Prop({ type: [FriendRequestSchema], default: [] })
+  friendRequests?: FriendRequest[];
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
