@@ -229,6 +229,16 @@ export class SettingsService {
       .sort({ createdAt: -1 })
       .toArray()) as unknown as SessionRow[];
 
+    this.logger.log(
+      `getSessions: userId=${userId} betterAuthId=${betterAuthId.substring(0, 10)}... ` +
+        `found=${sessions.length} sessions` +
+        (sessions.length > 0
+          ? ` | first.token=${sessions[0]?.token?.substring(0, 10)}... ` +
+            `currentToken=${currentToken.substring(0, 10)}... ` +
+            `ip=${sessions[0]?.ipAddress ?? "null"} ua=${(sessions[0]?.userAgent ?? "null").substring(0, 40)}`
+          : ""),
+    );
+
     return sessions.map((s) => {
       const ua = parseUserAgent(s.userAgent);
       return {
