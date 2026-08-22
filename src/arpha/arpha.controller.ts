@@ -12,6 +12,7 @@ import {
 import { Throttle } from "@nestjs/throttler";
 import type { Request } from "express";
 import { SessionGuard } from "../auth/session.guard";
+import { IdentityVerifiedGuard } from "../common/guards";
 import { UsersService } from "../users/users.service";
 import { ArphaService } from "./arpha.service";
 import { CreateArphaRequestDto } from "./dto/create-arpha-request.dto";
@@ -30,6 +31,11 @@ export class ArphaController {
     private readonly usersService: UsersService,
   ) {}
 
+  /**
+   * A-KYC: ARPHA assistance requests require a verified identity
+   * (OWASP A01 — server-side enforcement).
+   */
+  @UseGuards(IdentityVerifiedGuard)
   @Post("request")
   @HttpCode(HttpStatus.CREATED)
   @Throttle({ default: { ttl: 60000, limit: 10 } })

@@ -28,6 +28,56 @@ const FriendRequestSchema = new MongooseSchema(
 
 export type UserDocument = User & Document;
 
+/**
+ * Official identity-verification record produced by the Verifik KYC
+ * integration. Stored only after a successful match against the
+ * official source (Registraduría for CC, Migración Colombia for
+ * CE/PPT/PEP).
+ *
+ * Security notes (OWASP A04/A09:2025): this subdocument holds
+ * government-verified personal data. It is written exclusively by
+ * the server-side IdentityVerificationService — users can never PUT
+ * it through the profile-section endpoint (the section id
+ * "identity-verification" is not part of the section whitelist).
+ */
+export interface IdentityVerification {
+  /** Verifik document type: CC | CE | PPT | PEP. */
+  documentType: string;
+  documentNumber: string;
+  /** Official full name as returned by the registry. */
+  fullName: string;
+  firstName: string | null;
+  lastName: string | null;
+  /** ISO date (YYYY-MM-DD) when provided by the source. */
+  dateOfBirth: string | null;
+  /** HOMBRE | MUJER | null. */
+  gender: string | null;
+  /** Immigration status for foreigner documents (e.g. VIGENTE). */
+  documentStatus: string | null;
+  /** Expiration date as returned by Verifik (DD/MM/YYYY). */
+  expirationDate: string | null;
+  /** Verifik request id for billing/support disputes. */
+  verifikId: string | null;
+  verifiedAt: Date;
+}
+
+const IdentityVerificationSchema = new MongooseSchema(
+  {
+    documentType: { type: String, required: true },
+    documentNumber: { type: String, required: true },
+    fullName: { type: String, required: true },
+    firstName: { type: String, default: null },
+    lastName: { type: String, default: null },
+    dateOfBirth: { type: String, default: null },
+    gender: { type: String, default: null },
+    documentStatus: { type: String, default: null },
+    expirationDate: { type: String, default: null },
+    verifikId: { type: String, default: null },
+    verifiedAt: { type: Date, required: true },
+  },
+  { _id: false },
+);
+
 export enum UserRole {
   USER = "user",
   MEMBER = "member",
@@ -190,6 +240,21 @@ export class User {
 
   @Prop({ type: [FriendRequestSchema], default: [] })
   friendRequests?: FriendRequest[];
+
+  /**
+   * KYC flag — true only after the user's identity was confirmed
+   * against an official Colombian source via Verifik (see
+   * IdentityVerification). Server-authoritative: never accepted from
+   * client payloads.
+   */
+  @Prop({ default: false })
+  identityVerified!: boolean;
+
+  @Prop({ type: Date, default: null })
+  identityVerifiedAt?: Date | null;
+
+  @Prop({ type: IdentityVerificationSchema, default: null })
+  identityVerification?: IdentityVerification | null;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

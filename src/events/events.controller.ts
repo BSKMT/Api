@@ -18,6 +18,7 @@ import { Throttle } from "@nestjs/throttler";
 import type { Request } from "express";
 import { SessionGuard } from "../auth/session.guard";
 import { Public } from "../common/decorators";
+import { IdentityVerifiedGuard } from "../common/guards";
 import { UsersService } from "../users/users.service";
 import { EventsService, MEMBER_LEVELS } from "./events.service";
 import { RegisterEventDto } from "./dto/register-event.dto";
@@ -84,6 +85,11 @@ export class EventsController {
     return event;
   }
 
+  /**
+   * A-KYC: event registration requires a verified identity
+   * (OWASP A01 — server-side enforcement).
+   */
+  @UseGuards(IdentityVerifiedGuard)
   @Post("register")
   @HttpCode(HttpStatus.CREATED)
   async registerForEvent(

@@ -86,4 +86,16 @@ export const configValidationSchema = Joi.object({
     then: Joi.required(),
   }),
   ABUSEIPDB_BLOCK_THRESHOLD: Joi.number().min(25).max(100).default(75),
+
+  // Verifik — KYC / identity verification (Colombia: CC, CE, PPT, PEP).
+  // Optional on purpose: if the token is missing the identity-verification
+  // endpoints degrade to a 503 "no disponible" instead of crashing boot,
+  // mirroring the Bird degrade-to-no-op pattern (OWASP A10:2025).
+  VERIFIK_API_TOKEN: Joi.string().allow("").default(""),
+  VERIFIK_API_URL: Joi.string().uri().default("https://api.verifik.co"),
+  VERIFIK_TIMEOUT_MS: Joi.number()
+    .integer()
+    .min(2000)
+    .max(60000)
+    .default(15000),
 });

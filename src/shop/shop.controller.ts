@@ -14,6 +14,7 @@ import {
 import type { Request } from "express";
 import { Public } from "../common/decorators";
 import { SessionGuard } from "../auth/session.guard";
+import { IdentityVerifiedGuard } from "../common/guards";
 import { UsersService } from "../users/users.service";
 import { ShopService } from "./shop.service";
 import { CreateOrderDto } from "./dto/create-order.dto";
@@ -65,7 +66,11 @@ export class ShopController {
     return product;
   }
 
-  @UseGuards(SessionGuard)
+  /**
+   * A-KYC: shop orders require a verified identity
+   * (OWASP A01 — server-side enforcement).
+   */
+  @UseGuards(SessionGuard, IdentityVerifiedGuard)
   @Post("order")
   @HttpCode(HttpStatus.CREATED)
   async createOrder(
