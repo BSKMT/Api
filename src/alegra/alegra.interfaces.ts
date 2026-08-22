@@ -52,7 +52,7 @@ export interface AlegraContactCreate {
 /* ─── Invoice ───────────────────────────────────────────────────── */
 
 export interface AlegraInvoiceItem {
-  id: string | null;
+  id: string;
   name: string;
   description?: string;
   reference?: string;
@@ -101,8 +101,10 @@ export interface AlegraInvoiceResponse {
     quantity: number;
   }>;
   stamp?: {
-    id: string | null;
-    status: string | null;
+    legalStatus?: string;
+    cufe?: string;
+    date?: string;
+    warnings?: string[];
   } | null;
 }
 

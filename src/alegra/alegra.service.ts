@@ -381,14 +381,24 @@ export class AlegraService {
   ): Promise<string | null> {
     if (!this.isConfigured()) return null;
 
-    const dateStr = new Date().toISOString().split("T")[0];
+    const dateStr = new Date().toLocaleDateString("sv-SE", {
+      timeZone: "America/Bogota",
+    });
     const sellerId = process.env.ALEGRA_SELLER_ID || "";
+    const itemId = process.env.ALEGRA_ITEM_ID || "";
+
+    if (!itemId) {
+      this.logger.warn(
+        "ALEGRA_ITEM_ID not configured — cannot create invoice without a catalog item ID",
+      );
+      return null;
+    }
 
     const payload: AlegraInvoiceCreate = {
       date: dateStr,
       dueDate: dateStr,
       client: contactId,
-      items: this.buildInvoiceItems(context),
+      items: this.buildInvoiceItems(context, itemId),
       status: "open",
       observations: `BSKMT — Ref: ${context.transactionReference}`,
       termsConditions:
@@ -423,10 +433,11 @@ export class AlegraService {
 
   private buildInvoiceItems(
     context: AlegraBillingContext,
+    itemId: string,
   ): AlegraInvoiceCreate["items"] {
     if (context.items && context.items.length > 0) {
       return context.items.map((item) => ({
-        id: null,
+        id: itemId,
         name: String(item.name).slice(0, 150),
         description: item.description
           ? String(item.description).slice(0, 500)
@@ -441,7 +452,7 @@ export class AlegraService {
 
     return [
       {
-        id: null,
+        id: itemId,
         name: String(context.description).slice(0, 150),
         price: context.amount,
         quantity: 1,
@@ -467,7 +478,9 @@ export class AlegraService {
       return null;
     }
 
-    const dateStr = new Date().toISOString().split("T")[0];
+    const dateStr = new Date().toLocaleDateString("sv-SE", {
+      timeZone: "America/Bogota",
+    });
 
     const payload: AlegraPaymentCreate = {
       date: dateStr,
