@@ -137,6 +137,7 @@ export class PanelController {
       session: {
         accountStatus: fullUser.isActive ? "Activa" : "Inactiva",
         accountVerified: fullUser.emailVerified,
+        identityVerified: fullUser.identityVerified ?? false,
         membershipLevel,
         isLegend,
         profileCompleted: fullUser.profileCompleted,

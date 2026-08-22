@@ -72,4 +72,23 @@ export interface EnvironmentConfig {
   ABUSEIPDB_ENABLED: boolean;
   ABUSEIPDB_API_KEY: string;
   ABUSEIPDB_BLOCK_THRESHOLD: number;
+
+  /**
+   * Verifik — Colombian KYC / identity-verification provider
+   * (https://api.verifik.co).
+   *
+   * - VERIFIK_API_TOKEN: Bearer token issued by the Verifik dashboard.
+   *   Server-side only — NEVER exposed to the client or the Astro Worker.
+   *   All identity lookups are proxied through this API so the token,
+   *   the query patterns and the returned personal data never leave the
+   *   server boundary (OWASP A01/A04:2025).
+   * - VERIFIK_API_URL: Base URL, overridable for testing. Defaults to
+   *   https://api.verifik.co.
+   * - VERIFIK_TIMEOUT_MS: Outbound fetch timeout with AbortController
+   *   (OWASP A10:2025 — mishandling of exceptional conditions). Defaults
+   *   to 15000 ms.
+   */
+  VERIFIK_API_TOKEN: string;
+  VERIFIK_API_URL: string;
+  VERIFIK_TIMEOUT_MS: number;
 }

@@ -57,6 +57,7 @@ export class ProfileController {
       role: fullUser.role,
       email: fullUser.email,
       emailVerified: fullUser.emailVerified ?? false,
+      identityVerified: fullUser.identityVerified ?? false,
       phone: fullUser.phone ?? null,
       phoneVerified: fullUser.phoneVerified ?? false,
       pendingPhone: fullUser.pendingPhone ?? null,

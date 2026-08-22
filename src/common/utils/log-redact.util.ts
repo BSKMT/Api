@@ -25,6 +25,15 @@ export function maskPhone(phone: string): string {
   return `${phone.slice(0, 5)}***${phone.slice(-3)}`;
 }
 
+/**
+ * Enmascara un numero de documento de identidad para logs:
+ * conserva solo los primeros 2 y ultimos 2 digitos.
+ */
+export function maskDocument(document: string): string {
+  if (!document || document.length < 6) return "***";
+  return `${document.slice(0, 2)}***${document.slice(-2)}`;
+}
+
 /** M18: Strip CRLF and other control chars to prevent log injection. */
 export function sanitizeForLog(value: string): string {
   return value.replace(/[\r\n\t]/g, " ").slice(0, 200);

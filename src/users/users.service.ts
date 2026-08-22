@@ -70,7 +70,9 @@ export class UsersService {
    * (stored in profile["membresia-ecosistema"].numeroMiembro, e.g. "BSK-0001").
    * Used by the public profile endpoint.
    */
-  async findByMemberNumber(numeroMiembro: string): Promise<UserDocument | null> {
+  async findByMemberNumber(
+    numeroMiembro: string,
+  ): Promise<UserDocument | null> {
     return this.userModel
       .findOne({ "profile.membresia-ecosistema.numeroMiembro": numeroMiembro })
       .lean();
@@ -147,6 +149,17 @@ export class UsersService {
 
     if (sectionId === "contacto") {
       this.syncPhoneIfChanged(user, sanitizedData);
+    }
+
+    /**
+     * A-KYC: if the user changes their identity document after being
+     * verified, the verification no longer applies to the declared
+     * identity — reset it so they must re-verify (OWASP A01). This
+     * prevents verify-then-swap attacks where someone verifies with
+     * their own document and later impersonates another document.
+     */
+    if (sectionId === "datos-personales" && user.identityVerified) {
+      this.resetIdentityIfDocumentChanged(user, sanitizedData);
     }
 
     const profile = user.profile ?? {};
@@ -441,6 +454,44 @@ export class UsersService {
       user.pendingPhone = null;
     } else if (newPhone && newPhone === oldPhone && user.phone !== newPhone) {
       user.phone = newPhone;
+    }
+  }
+
+  /**
+   * A-KYC: invalida la verificacion de identidad cuando el tipo o el
+   * numero de documento declarado cambia despues de una verificacion
+   * exitosa. El registro verificado queda obsoleto y se limpia junto
+   * con la bandera `identityVerified`.
+   */
+  private resetIdentityIfDocumentChanged(
+    user: UserDocument,
+    sanitizedData: Record<string, unknown>,
+  ): void {
+    const personal = user.profile?.["datos-personales"] ?? {};
+    const oldType =
+      typeof personal.tipoDocumento === "string" ? personal.tipoDocumento : "";
+    const oldNumber =
+      typeof personal.numeroDocumento === "string"
+        ? personal.numeroDocumento
+        : "";
+    const newType =
+      typeof sanitizedData.tipoDocumento === "string"
+        ? sanitizedData.tipoDocumento
+        : "";
+    const newNumber =
+      typeof sanitizedData.numeroDocumento === "string"
+        ? sanitizedData.numeroDocumento
+        : "";
+
+    const normalizeNumber = (n: string): string => n.replace(/\D/g, "");
+    const changed =
+      (newType && newType !== oldType) ||
+      (newNumber && normalizeNumber(newNumber) !== normalizeNumber(oldNumber));
+
+    if (changed) {
+      user.identityVerified = false;
+      user.identityVerifiedAt = null;
+      user.identityVerification = null;
     }
   }
 }

@@ -13,6 +13,7 @@ import { Throttle } from "@nestjs/throttler";
 import type { Request } from "express";
 import { Public } from "../common/decorators";
 import { SessionGuard } from "../auth/session.guard";
+import { IdentityVerifiedGuard } from "../common/guards";
 import { UsersService } from "../users/users.service";
 import { EventsService } from "./events.service";
 import { EnrollCourseDto } from "./dto/enroll-course.dto";
@@ -52,7 +53,11 @@ export class CoursesController {
     return course;
   }
 
-  @UseGuards(SessionGuard)
+  /**
+   * A-KYC: course enrollment requires a verified identity
+   * (OWASP A01 — server-side enforcement).
+   */
+  @UseGuards(SessionGuard, IdentityVerifiedGuard)
   @Post("enroll")
   @Throttle({ default: { ttl: 60000, limit: 10 } })
   async enrollInCourse(

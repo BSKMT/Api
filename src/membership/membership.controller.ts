@@ -20,6 +20,7 @@ import { CreateMembershipPaymentDto } from "./dto/create-membership-payment.dto"
 import { CreditChoiceDto } from "./dto/credit-choice.dto";
 import { UseCreditDto } from "./dto/use-credit.dto";
 import { Public } from "../common/decorators";
+import { IdentityVerifiedGuard } from "../common/guards";
 import type { EnvironmentConfig } from "../config/config.interface";
 
 interface AuthenticatedRequest extends Request {
@@ -35,7 +36,11 @@ export class MembershipController {
     private readonly configService: ConfigService<EnvironmentConfig>,
   ) {}
 
-  @UseGuards(SessionGuard)
+  /**
+   * A-KYC: identity verification is a hard prerequisite for any
+   * monetary transaction (OWASP A01 — server-side enforcement).
+   */
+  @UseGuards(SessionGuard, IdentityVerifiedGuard)
   @Post("purchase")
   @HttpCode(HttpStatus.CREATED)
   async createPayment(
