@@ -161,6 +161,7 @@ async function bootstrap() {
     if (
       req.path === "/api/payments/webhook" ||
       req.path === "/api/membership/webhook" ||
+      req.path === "/api/alegra/webhook" ||
       req.path.startsWith("/api/internal/cron/") ||
       req.path === "/api/membership/internal/cron/sweep-pending" ||
       req.path === "/api/events/internal/cron/sweep-stale-registrations" ||

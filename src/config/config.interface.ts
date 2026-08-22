@@ -91,4 +91,31 @@ export interface EnvironmentConfig {
   VERIFIK_API_TOKEN: string;
   VERIFIK_API_URL: string;
   VERIFIK_TIMEOUT_MS: number;
+
+  /**
+   * Alegra — Facturación electrónica, pagos, inventario y contactos.
+   *
+   * - ALEGRA_ENABLED: Feature flag. Si es false, todas las operaciones
+   *   degradan a no-ops (OWASP A10 — graceful degradation).
+   * - ALEGRA_EMAIL: Correo del usuario de Alegra para Basic Auth.
+   *   Server-side only — NUNCA exponer al cliente.
+   * - ALEGRA_TOKEN: Token de API de Alegra para Basic Auth.
+   *   Se obtiene en app.alegra.com > Configuración > API.
+   *   Server-side only — NUNCA exponer al cliente ni loguear.
+   * - ALEGRA_API_URL: URL base del API (default: https://api.alegra.com/api/v1).
+   * - ALEGRA_TIMEOUT_MS: Timeout para llamadas HTTP (default: 30000).
+   * - ALEGRA_BANK_ACCOUNT_ID: ID de cuenta bancaria default para registrar pagos.
+   * - ALEGRA_SELLER_ID: ID del vendedor default para asignar en facturas.
+   *
+   * Seguridad (OWASP A04:2025): email y token son credenciales
+   * server-side, leídas de env, nunca logueadas ni devueltas en
+   * respuestas. Todas las comunicaciones son sobre HTTPS.
+   */
+  ALEGRA_ENABLED: boolean;
+  ALEGRA_EMAIL: string;
+  ALEGRA_TOKEN: string;
+  ALEGRA_API_URL: string;
+  ALEGRA_TIMEOUT_MS: number;
+  ALEGRA_BANK_ACCOUNT_ID: number;
+  ALEGRA_SELLER_ID: number;
 }

@@ -98,4 +98,22 @@ export const configValidationSchema = Joi.object({
     .min(2000)
     .max(60000)
     .default(15000),
+
+  // Alegra — Facturación electrónica (Colombia).
+  // Optional: if ALEGRA_ENABLED is false or credentials are missing,
+  // AlegraService degrades to a no-op and the payment flow continues
+  // uninterrupted (OWASP A10 — graceful degradation).
+  ALEGRA_ENABLED: Joi.boolean().default(false),
+  ALEGRA_EMAIL: Joi.string().email().allow("").when("ALEGRA_ENABLED", {
+    is: true,
+    then: Joi.required(),
+  }),
+  ALEGRA_TOKEN: Joi.string().allow("").when("ALEGRA_ENABLED", {
+    is: true,
+    then: Joi.required(),
+  }),
+  ALEGRA_API_URL: Joi.string().uri().default("https://api.alegra.com/api/v1"),
+  ALEGRA_TIMEOUT_MS: Joi.number().integer().min(5000).max(60000).default(30000),
+  ALEGRA_BANK_ACCOUNT_ID: Joi.number().integer().allow(0).default(0),
+  ALEGRA_SELLER_ID: Joi.number().integer().allow(0).default(0),
 });
