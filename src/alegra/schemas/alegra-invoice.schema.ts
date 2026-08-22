@@ -30,21 +30,21 @@ export class AlegraInvoice {
   @Prop({ required: true })
   purpose!: string;
 
-  /** Alegra invoice ID returned by POST /invoices. */
+  /** Alegra invoice ID returned by POST /invoices (string since Jan 2025). */
   @Prop({ required: true })
-  alegraInvoiceId!: number;
+  alegraInvoiceId!: string;
 
   /** Alegra invoice number (human-readable, e.g. "SET-01"). */
   @Prop({ type: String, default: null })
   alegraInvoiceNumber!: string | null;
 
-  /** Alegra contact ID linked to the invoice. */
+  /** Alegra contact ID linked to the invoice (string since Jan 2025). */
   @Prop({ required: true })
-  alegraContactId!: number;
+  alegraContactId!: string;
 
-  /** Alegra payment ID (if a payment was recorded). */
-  @Prop({ type: Number, default: null })
-  alegraPaymentId!: number | null;
+  /** Alegra payment ID (if a payment was recorded, string since Jan 2025). */
+  @Prop({ type: String, default: null })
+  alegraPaymentId!: string | null;
 
   /** Whether the electronic invoice was stamped (DIAN). */
   @Prop({ default: false })

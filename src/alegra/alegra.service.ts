@@ -172,7 +172,7 @@ export class AlegraService {
 
   /* ─── Contact Management ───────────────────────────────────────── */
 
-  async ensureContact(userId: string): Promise<number | null> {
+  async ensureContact(userId: string): Promise<string | null> {
     if (!this.isConfigured()) return null;
 
     const user = await this.usersService.findById(userId);
@@ -184,7 +184,7 @@ export class AlegraService {
     }
 
     const cacheKey = `${ALEGRA_KV_PREFIX}contact:${userId}`;
-    const cachedId = await this.kvCache.get<number>(cacheKey, true);
+    const cachedId = await this.kvCache.get<string>(cacheKey, true);
     if (cachedId) return cachedId;
 
     const contactData = this.buildContactData(user);
@@ -193,14 +193,14 @@ export class AlegraService {
     if (existing) {
       await this.kvCache.set(
         cacheKey,
-        existing.id,
+        String(existing.id),
         ALEGRA_CONTACT_CACHE_TTL,
         true,
       );
       this.logger.log(
         `Alegra contact found: user=${maskUserId(userId)} contactId=${existing.id}`,
       );
-      return existing.id;
+      return String(existing.id);
     }
 
     const created = await this.makeRequest<AlegraContact>(
@@ -209,7 +209,7 @@ export class AlegraService {
       contactData,
     );
 
-    if (!created || typeof created.id !== "number") {
+    if (!created || !created.id) {
       this.logger.warn(
         `Failed to create Alegra contact for user=${maskUserId(userId)}`,
       );
@@ -218,14 +218,14 @@ export class AlegraService {
 
     await this.kvCache.set(
       cacheKey,
-      created.id,
+      String(created.id),
       ALEGRA_CONTACT_CACHE_TTL,
       true,
     );
     this.logger.log(
       `Alegra contact created: user=${maskUserId(userId)} contactId=${created.id}`,
     );
-    return created.id;
+    return String(created.id);
   }
 
   private buildContactData(user: {
@@ -295,12 +295,12 @@ export class AlegraService {
 
   async createInvoice(
     context: AlegraBillingContext,
-    contactId: number,
-  ): Promise<number | null> {
+    contactId: string,
+  ): Promise<string | null> {
     if (!this.isConfigured()) return null;
 
     const dateStr = new Date().toISOString().split("T")[0];
-    const sellerId = Number(process.env.ALEGRA_SELLER_ID) || 0;
+    const sellerId = process.env.ALEGRA_SELLER_ID || "";
 
     const payload: AlegraInvoiceCreate = {
       date: dateStr,
@@ -326,7 +326,7 @@ export class AlegraService {
       payload,
     );
 
-    if (!invoice || typeof invoice.id !== "number") {
+    if (!invoice || !invoice.id) {
       this.logger.warn(
         `Failed to create Alegra invoice for ref=${maskReference(context.transactionReference)}`,
       );
@@ -336,7 +336,7 @@ export class AlegraService {
     this.logger.log(
       `Alegra invoice created: ref=${maskReference(context.transactionReference)} invoiceId=${invoice.id}`,
     );
-    return invoice.id;
+    return String(invoice.id);
   }
 
   private buildInvoiceItems(
@@ -370,13 +370,13 @@ export class AlegraService {
   /* ─── Payment Management ───────────────────────────────────────── */
 
   async createPayment(
-    invoiceId: number,
+    invoiceId: string,
     amount: number,
-  ): Promise<number | null> {
+  ): Promise<string | null> {
     if (!this.isConfigured()) return null;
     if (amount <= 0) return null;
 
-    const bankAccountId = Number(process.env.ALEGRA_BANK_ACCOUNT_ID) || 0;
+    const bankAccountId = process.env.ALEGRA_BANK_ACCOUNT_ID || "";
 
     if (!bankAccountId) {
       this.logger.warn(
@@ -401,7 +401,7 @@ export class AlegraService {
       payload,
     );
 
-    if (!payment || typeof payment.id !== "number") {
+    if (!payment || !payment.id) {
       this.logger.warn(
         `Failed to create Alegra payment for invoiceId=${invoiceId}`,
       );
@@ -411,12 +411,12 @@ export class AlegraService {
     this.logger.log(
       `Alegra payment created: invoiceId=${invoiceId} paymentId=${payment.id} amount=${maskAmount(amount)}`,
     );
-    return payment.id;
+    return String(payment.id);
   }
 
   /* ─── Email Invoice ────────────────────────────────────────────── */
 
-  async emailInvoice(invoiceId: number): Promise<boolean> {
+  async emailInvoice(invoiceId: string): Promise<boolean> {
     if (!this.isConfigured()) return false;
 
     const result = await this.makeRequest<unknown>(
@@ -482,7 +482,7 @@ export class AlegraService {
         return;
       }
 
-      let paymentId: number | null = null;
+      let paymentId: string | null = null;
       if (context.amount > 0) {
         paymentId = await this.createPayment(invoiceId, context.amount);
       }
@@ -558,8 +558,8 @@ export class AlegraService {
             userId: context.userId,
             transactionReference: context.transactionReference,
             purpose: context.purpose,
-            alegraInvoiceId: 0,
-            alegraContactId: 0,
+            alegraInvoiceId: "0",
+            alegraContactId: "0",
             amount: context.amount,
             status: "FAILED",
             errorMessage: errorMessage.slice(0, 500),
@@ -623,7 +623,7 @@ export class AlegraService {
     subject: string,
   ): Promise<void> {
     const invoice = payload?.message?.invoice;
-    if (!invoice || typeof invoice.id !== "number") {
+    if (!invoice || !invoice.id) {
       this.logger.warn("Alegra invoice webhook without valid invoice data");
       return;
     }
