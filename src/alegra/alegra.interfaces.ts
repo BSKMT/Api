@@ -1,8 +1,12 @@
 /**
  * TypeScript interfaces for the Alegra REST API.
  *
- * Reference: Docs_Alegra/ — schemas are country-specific (oneOf).
+ * Reference: https://developer.alegra.com/reference/
  * BSKMT operates under the Colombia schema.
+ *
+ * IMPORTANT: Since Jan 6 2025, Alegra returns ALL IDs as strings
+ * (VARCHAR(36), transitioning to UUID). Every `id` field below is
+ * typed as `string` to match the current API contract.
  *
  * Security (OWASP A04:2025 — Cryptographic Failures):
  * These interfaces describe the shape of data exchanged with Alegra.
@@ -13,7 +17,7 @@
 /* ─── Contact (Client) ──────────────────────────────────────────── */
 
 export interface AlegraContact {
-  id: number;
+  id: string;
   name: string;
   identification: string | null;
   email: string | null;
@@ -26,9 +30,9 @@ export interface AlegraContact {
     city: string | null;
     address: string | null;
   } | null;
-  seller: { id: number; name: string } | null;
-  priceList: { id: number; name: string } | null;
-  term: { id: number; name: string; days: number } | null;
+  seller: { id: string; name: string } | null;
+  priceList: { id: string; name: string } | null;
+  term: { id: string; name: string; days: number } | null;
 }
 
 export interface AlegraContactCreate {
@@ -48,23 +52,23 @@ export interface AlegraContactCreate {
 /* ─── Invoice ───────────────────────────────────────────────────── */
 
 export interface AlegraInvoiceItem {
-  id: number | null;
+  id: string | null;
   name: string;
   description?: string;
   reference?: string;
   price: number;
   quantity: number;
-  tax?: { id: number }[];
+  tax?: { id: string }[];
   discount?: number;
 }
 
 export interface AlegraInvoiceCreate {
   date: string;
   dueDate: string;
-  client: number;
+  client: string;
   items: AlegraInvoiceItem[];
   status?: string;
-  seller?: number;
+  seller?: string;
   observations?: string;
   termsConditions?: string;
   paymentMethod?: string;
@@ -77,27 +81,27 @@ export interface AlegraInvoiceCreate {
 }
 
 export interface AlegraInvoiceResponse {
-  id: number;
+  id: string;
   numberTemplate?: {
-    id: number;
+    id: string;
     fullNumber: string;
   };
   date: string;
   dueDate: string;
-  client: { id: number; name: string };
+  client: { id: string; name: string };
   status: string;
   total: number;
   balance: number;
   totalPaid: number;
   items: Array<{
-    id: number;
+    id: string;
     name: string;
     description: string | null;
     price: number;
     quantity: number;
   }>;
   stamp?: {
-    id: number | null;
+    id: string | null;
     status: string | null;
   } | null;
 }
@@ -106,20 +110,20 @@ export interface AlegraInvoiceResponse {
 
 export interface AlegraPaymentCreate {
   date: string;
-  bankAccount: number;
+  bankAccount: string;
   type: "in";
   paymentMethod?: string;
   invoices?: Array<{
-    id: number;
+    id: string;
     amount: number;
   }>;
 }
 
 export interface AlegraPaymentResponse {
-  id: number;
+  id: string;
   date: string;
   type: string;
-  bankAccount: { id: number; name: string };
+  bankAccount: { id: string; name: string };
   status: string;
   total: number;
   balance: number;
@@ -128,11 +132,11 @@ export interface AlegraPaymentResponse {
 /* ─── Item (Product/Service) ────────────────────────────────────── */
 
 export interface AlegraItem {
-  id: number;
+  id: string;
   name: string;
   description: string | null;
   reference: string | null;
-  price: Array<{ id: number; price: number }>;
+  price: Array<{ id: string; price: number }>;
   type: string;
   inventory: {
     unit: string;
@@ -160,7 +164,7 @@ export interface AlegraItemCreate {
 /* ─── Webhook Subscription ──────────────────────────────────────── */
 
 export interface AlegraWebhookSubscription {
-  id: number;
+  id: string;
   event: string;
   url: string;
 }
@@ -176,17 +180,17 @@ export interface AlegraWebhookPayload {
   subject: string;
   message: {
     invoice?: {
-      id: number;
+      id: string;
       date: string;
       dueDate: string;
       status: string;
-      client: { id: number };
+      client: { id: string };
       total: number;
       totalPaid: number;
       balance: number;
     };
     client?: {
-      id: number;
+      id: string;
       name: {
         firstName: string;
         secondName: string | null;
@@ -197,7 +201,7 @@ export interface AlegraWebhookPayload {
       identification: string | null;
     };
     item?: {
-      id: number;
+      id: string;
       name: string;
       description: string | null;
       reference: string | null;
@@ -212,7 +216,7 @@ export interface AlegraWebhookPayload {
 /* ─── Bank Account ──────────────────────────────────────────────── */
 
 export interface AlegraBankAccount {
-  id: number;
+  id: string;
   name: string;
   number: string | null;
   type: string;
@@ -222,7 +226,7 @@ export interface AlegraBankAccount {
 /* ─── Seller ────────────────────────────────────────────────────── */
 
 export interface AlegraSeller {
-  id: number;
+  id: string;
   name: string;
   identification: string | null;
   status: string;
@@ -231,7 +235,7 @@ export interface AlegraSeller {
 /* ─── Tax ───────────────────────────────────────────────────────── */
 
 export interface AlegraTax {
-  id: number;
+  id: string;
   name: string;
   percentage: number;
   status: string;
