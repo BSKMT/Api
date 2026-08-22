@@ -26,6 +26,8 @@ import { UsersService } from "../users/users.service";
 import { UserRole, CreditType } from "../users/schemas/user.schema";
 import type { PartialPaymentCredit } from "../users/schemas/user.schema";
 import { NotificationsService } from "../notifications/notifications.service";
+import { AlegraService } from "../alegra/alegra.service";
+import type { AlegraBillingContext } from "../alegra/alegra.interfaces";
 
 /** Shared contextual shape used to keep helper signatures ≤ 7 parameters. */
 interface MembershipPaymentContext {
@@ -63,6 +65,7 @@ export class MembershipService {
     private readonly usersService: UsersService,
     private readonly notificationsService: NotificationsService,
     private readonly configService: ConfigService<EnvironmentConfig>,
+    private readonly alegraService: AlegraService,
   ) {}
 
   /** Format a human-readable membership description across renewal/new plans. */
@@ -842,15 +845,45 @@ export class MembershipService {
 
     if (transaction.isRenewal) {
       await this.processRenewalApproval(transaction, user);
-      return;
-    }
-
-    if (transaction.paymentPlan === "single") {
+    } else if (transaction.paymentPlan === "single") {
       await this.processSingleNewPaymentActivation(transaction, user);
-      return;
+    } else {
+      await this.processInstallmentApproval(transaction, user);
     }
 
-    await this.processInstallmentApproval(transaction, user);
+    await this.processAlegraInvoicing(transaction);
+  }
+
+  /**
+   * Build an AlegraBillingContext from a membership transaction and
+   * invoke the Alegra invoicing flow. A10: Best-effort — errors are
+   * caught inside AlegraService and never break the membership flow.
+   */
+  private async processAlegraInvoicing(
+    transaction: MembershipTransactionDocument,
+  ): Promise<void> {
+    try {
+      const description = this.formatStoredMembershipDescription(
+        transaction.paymentPlan,
+        transaction.isRenewal,
+        transaction.installmentNumber,
+        transaction.installmentTotal,
+      );
+
+      const context: AlegraBillingContext = {
+        userId: transaction.userId,
+        transactionReference: transaction.reference,
+        purpose: "membership",
+        amount: transaction.amount,
+        description,
+      };
+
+      await this.alegraService.processApprovedPayment(context);
+    } catch (err: unknown) {
+      this.logger.warn(
+        `Alegra invoicing skipped for membership ref=${transaction.reference}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   /** Process the renewal branch of an approved membership payment. */

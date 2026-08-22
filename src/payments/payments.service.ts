@@ -24,6 +24,8 @@ import { ARPHA_PRICING } from "../arpha/schemas/arpha-request.schema";
 import { UsersService } from "../users/users.service";
 import { UserRole } from "../users/schemas/user.schema";
 import { KvCacheService } from "../kv/kv-cache.service";
+import { AlegraService } from "../alegra/alegra.service";
+import type { AlegraBillingContext } from "../alegra/alegra.interfaces";
 import {
   maskUserId,
   maskReference,
@@ -90,6 +92,7 @@ export class PaymentsService {
     private readonly arphaService: ArphaService,
     private readonly usersService: UsersService,
     private readonly kvCache: KvCacheService,
+    private readonly alegraService: AlegraService,
   ) {}
 
   private static readonly TERMINAL_STATUSES = new Set([
@@ -272,6 +275,7 @@ export class PaymentsService {
       );
       // PAY-15: Link free ($0) registrations to the benefit
       await this.linkPaymentByPurpose(transaction);
+      await this.processAlegraInvoicing(transaction);
       return {
         reference,
         amount,
@@ -361,6 +365,7 @@ export class PaymentsService {
       );
       // PAY-15: Link free ($0) course registration to the benefit
       await this.linkPaymentByPurpose(transaction);
+      await this.processAlegraInvoicing(transaction);
       return {
         reference,
         amount,
@@ -439,6 +444,7 @@ export class PaymentsService {
     if (amount === 0) {
       transaction.status = "APPROVED";
       await transaction.save();
+      await this.processAlegraInvoicing(transaction);
       return {
         reference,
         amount,
@@ -497,6 +503,7 @@ export class PaymentsService {
         transaction.benefitGranted = true;
       }
       await this.linkPaymentByPurpose(transaction);
+      await this.processAlegraInvoicing(transaction);
     }
   }
 
@@ -770,6 +777,50 @@ export class PaymentsService {
     }
   }
 
+  /**
+   * Build an AlegraBillingContext from a transaction and invoke the
+   * Alegra invoicing flow. A10: Best-effort — errors are caught inside
+   * AlegraService and never propagate to break the payment flow.
+   *
+   * For shop orders, the individual order items are looked up so the
+   * Alegra invoice reflects each product line. For other purposes
+   * (event, course, arpha), a single line item is used.
+   */
+  private async processAlegraInvoicing(
+    transaction: TransactionDocument,
+  ): Promise<void> {
+    try {
+      const context: AlegraBillingContext = {
+        userId: transaction.userId,
+        transactionReference: transaction.reference,
+        purpose: transaction.purpose,
+        amount: transaction.amount,
+        description: transaction.description,
+      };
+
+      if (transaction.purpose === "shop" && transaction.relatedReference) {
+        const order = await this.shopService.getOrderByOrderNumber(
+          transaction.relatedReference,
+        );
+        if (order?.items && Array.isArray(order.items)) {
+          context.items = order.items.map((item) => ({
+            name: item.productName,
+            description: `Producto BSK — ${item.productSlug}`,
+            reference: item.productSlug,
+            price: item.unitPrice,
+            quantity: item.quantity,
+          }));
+        }
+      }
+
+      await this.alegraService.processApprovedPayment(context);
+    } catch (err: unknown) {
+      this.logger.warn(
+        `Alegra invoicing skipped for ref=${transaction.reference}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   private mapBoldStatus(eventType: string | undefined): string | null {
     switch (eventType) {
       case "SALE_APPROVED":
@@ -951,6 +1002,7 @@ export class PaymentsService {
     }
     transaction.benefitGranted = true;
     await this.linkPaymentByPurpose(transaction);
+    await this.processAlegraInvoicing(transaction);
   }
 
   private mapBoldVoucherStatus(boldStatus: string): string | null {

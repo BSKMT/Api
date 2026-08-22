@@ -18,6 +18,9 @@ export enum NotificationType {
   // course enrollment; tells the user the refund is pending admin
   // review and surfaces the request to admins via the notification feed.
   CANCELLATION_REFUND_REQUESTED = "cancellation_refund_requested",
+  INVOICE_CREATED = "invoice_created",
+  INVOICE_EMAILED = "invoice_emailed",
+  INVOICE_FAILED = "invoice_failed",
 }
 
 export enum NotificationPriority {

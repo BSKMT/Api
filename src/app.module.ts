@@ -24,6 +24,7 @@ import { AdminModule } from "./admin/admin.module";
 import { SettingsModule } from "./settings/settings.module";
 import { BirdModule } from "./bird/bird.module";
 import { AbuseIpDbModule } from "./abuseipdb/abuseipdb.module";
+import { AlegraModule } from "./alegra/alegra.module";
 
 @Module({
   imports: [
@@ -78,6 +79,7 @@ import { AbuseIpDbModule } from "./abuseipdb/abuseipdb.module";
     SettingsModule,
     BirdModule,
     ContactModule,
+    AlegraModule,
   ],
   providers: [
     {
