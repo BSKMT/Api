@@ -116,8 +116,5 @@ export const configValidationSchema = Joi.object({
   ALEGRA_TIMEOUT_MS: Joi.number().integer().min(5000).max(60000).default(30000),
   ALEGRA_BANK_ACCOUNT_ID: Joi.string().allow("").default(""),
   ALEGRA_SELLER_ID: Joi.string().allow("").default(""),
-  ALEGRA_ITEM_ID: Joi.string().allow("").when("ALEGRA_ENABLED", {
-    is: true,
-    then: Joi.required(),
-  }),
+  ALEGRA_ITEM_ID: Joi.string().allow("").default(""),
 });
