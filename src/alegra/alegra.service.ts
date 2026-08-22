@@ -221,50 +221,82 @@ export class AlegraService {
       }
     }
 
-    const created = await this.makeRequest<AlegraContact>(
-      "POST",
-      "/contacts",
-      contactData,
-    );
-
-    if (created && created.id) {
-      await this.kvCache.set(
-        cacheKey,
-        String(created.id),
-        ALEGRA_CONTACT_CACHE_TTL,
-        true,
-      );
+    const created = await this.tryCreateContact(contactData);
+    if (created) {
+      await this.kvCache.set(cacheKey, created, ALEGRA_CONTACT_CACHE_TTL, true);
       this.logger.log(
-        `Alegra contact created: user=${maskUserId(userId)} contactId=${created.id}`,
+        `Alegra contact ready: user=${maskUserId(userId)} contactId=${created}`,
       );
-      return String(created.id);
-    }
-
-    if (contactData.identification) {
-      this.logger.warn(
-        `Contact creation failed — retrying search by identification: ${contactData.identification}`,
-      );
-      const retry = await this.findContactByIdentification(
-        contactData.identification,
-      );
-      if (retry) {
-        await this.kvCache.set(
-          cacheKey,
-          String(retry.id),
-          ALEGRA_CONTACT_CACHE_TTL,
-          true,
-        );
-        this.logger.log(
-          `Alegra contact found on retry: user=${maskUserId(userId)} contactId=${retry.id}`,
-        );
-        return String(retry.id);
-      }
+      return created;
     }
 
     this.logger.warn(
       `Failed to create/find Alegra contact for user=${maskUserId(userId)}`,
     );
     return null;
+  }
+
+  private async tryCreateContact(
+    contactData: AlegraContactCreate,
+  ): Promise<string | null> {
+    const url = `${this.getBaseUrl()}/contacts`;
+    const timeoutMs =
+      Number(process.env.ALEGRA_TIMEOUT_MS) || ALEGRA_DEFAULT_TIMEOUT_MS;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: this.getAuthHeader(),
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(contactData),
+        signal: controller.signal,
+      });
+
+      if (res.ok) {
+        const created = (await res.json()) as AlegraContact;
+        if (created?.id) {
+          this.logger.log(`Alegra contact created: contactId=${created.id}`);
+          return String(created.id);
+        }
+        return null;
+      }
+
+      const text = await res.text().catch(() => "");
+      this.logger.warn(
+        `Alegra API POST /contacts returned ${res.status}: ${text.slice(0, 300)}`,
+      );
+
+      if (res.status === 400) {
+        try {
+          const error = JSON.parse(text) as {
+            code?: number;
+            contactId?: string;
+          };
+          if (error.code === 2006 && error.contactId) {
+            this.logger.log(
+              `Alegra contact already exists — using contactId=${error.contactId} from error response`,
+            );
+            return String(error.contactId);
+          }
+        } catch {
+          // JSON parse failed — ignore
+        }
+      }
+
+      return null;
+    } catch (err: unknown) {
+      this.logger.warn(
+        `Alegra API POST /contacts failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   private buildContactData(user: {
