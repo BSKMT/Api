@@ -189,18 +189,36 @@ export class AlegraService {
 
     const contactData = this.buildContactData(user);
 
-    const existing = await this.findContactByEmail(user.email);
-    if (existing) {
+    const existingByEmail = await this.findContactByEmail(user.email);
+    if (existingByEmail) {
       await this.kvCache.set(
         cacheKey,
-        String(existing.id),
+        String(existingByEmail.id),
         ALEGRA_CONTACT_CACHE_TTL,
         true,
       );
       this.logger.log(
-        `Alegra contact found: user=${maskUserId(userId)} contactId=${existing.id}`,
+        `Alegra contact found by email: user=${maskUserId(userId)} contactId=${existingByEmail.id}`,
       );
-      return String(existing.id);
+      return String(existingByEmail.id);
+    }
+
+    if (contactData.identification) {
+      const existingById = await this.findContactByIdentification(
+        contactData.identification,
+      );
+      if (existingById) {
+        await this.kvCache.set(
+          cacheKey,
+          String(existingById.id),
+          ALEGRA_CONTACT_CACHE_TTL,
+          true,
+        );
+        this.logger.log(
+          `Alegra contact found by identification: user=${maskUserId(userId)} contactId=${existingById.id}`,
+        );
+        return String(existingById.id);
+      }
     }
 
     const created = await this.makeRequest<AlegraContact>(
@@ -209,23 +227,44 @@ export class AlegraService {
       contactData,
     );
 
-    if (!created || !created.id) {
-      this.logger.warn(
-        `Failed to create Alegra contact for user=${maskUserId(userId)}`,
+    if (created && created.id) {
+      await this.kvCache.set(
+        cacheKey,
+        String(created.id),
+        ALEGRA_CONTACT_CACHE_TTL,
+        true,
       );
-      return null;
+      this.logger.log(
+        `Alegra contact created: user=${maskUserId(userId)} contactId=${created.id}`,
+      );
+      return String(created.id);
     }
 
-    await this.kvCache.set(
-      cacheKey,
-      String(created.id),
-      ALEGRA_CONTACT_CACHE_TTL,
-      true,
+    if (contactData.identification) {
+      this.logger.warn(
+        `Contact creation failed — retrying search by identification: ${contactData.identification}`,
+      );
+      const retry = await this.findContactByIdentification(
+        contactData.identification,
+      );
+      if (retry) {
+        await this.kvCache.set(
+          cacheKey,
+          String(retry.id),
+          ALEGRA_CONTACT_CACHE_TTL,
+          true,
+        );
+        this.logger.log(
+          `Alegra contact found on retry: user=${maskUserId(userId)} contactId=${retry.id}`,
+        );
+        return String(retry.id);
+      }
+    }
+
+    this.logger.warn(
+      `Failed to create/find Alegra contact for user=${maskUserId(userId)}`,
     );
-    this.logger.log(
-      `Alegra contact created: user=${maskUserId(userId)} contactId=${created.id}`,
-    );
-    return String(created.id);
+    return null;
   }
 
   private buildContactData(user: {
@@ -289,6 +328,17 @@ export class AlegraService {
       contacts.find((c) => c.email?.toLowerCase() === email.toLowerCase()) ??
       null
     );
+  }
+
+  private async findContactByIdentification(
+    identification: string,
+  ): Promise<AlegraContact | null> {
+    const contacts = await this.makeRequest<AlegraContact[]>(
+      "GET",
+      `/contacts?query=${encodeURIComponent(identification)}&limit=5`,
+    );
+    if (!contacts || !Array.isArray(contacts)) return null;
+    return contacts.find((c) => c.identification === identification) ?? null;
   }
 
   /* ─── Invoice Management ───────────────────────────────────────── */
