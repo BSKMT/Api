@@ -106,6 +106,8 @@ export interface EnvironmentConfig {
    * - ALEGRA_TIMEOUT_MS: Timeout para llamadas HTTP (default: 30000).
    * - ALEGRA_BANK_ACCOUNT_ID: ID de cuenta bancaria default para registrar pagos.
    * - ALEGRA_SELLER_ID: ID del vendedor default para asignar en facturas.
+   * - ALEGRA_ITEM_ID: ID del item genérico en el catálogo de Alegra (obligatorio
+   *   para crear facturas — la API exige un item del catálogo).
    *
    * Seguridad (OWASP A04:2025): email y token son credenciales
    * server-side, leídas de env, nunca logueadas ni devueltas en
@@ -116,6 +118,7 @@ export interface EnvironmentConfig {
   ALEGRA_TOKEN: string;
   ALEGRA_API_URL: string;
   ALEGRA_TIMEOUT_MS: number;
-  ALEGRA_BANK_ACCOUNT_ID: number;
-  ALEGRA_SELLER_ID: number;
+  ALEGRA_BANK_ACCOUNT_ID: string;
+  ALEGRA_SELLER_ID: string;
+  ALEGRA_ITEM_ID: string;
 }

@@ -114,6 +114,10 @@ export const configValidationSchema = Joi.object({
   }),
   ALEGRA_API_URL: Joi.string().uri().default("https://api.alegra.com/api/v1"),
   ALEGRA_TIMEOUT_MS: Joi.number().integer().min(5000).max(60000).default(30000),
-  ALEGRA_BANK_ACCOUNT_ID: Joi.number().integer().allow(0).default(0),
-  ALEGRA_SELLER_ID: Joi.number().integer().allow(0).default(0),
+  ALEGRA_BANK_ACCOUNT_ID: Joi.string().allow("").default(""),
+  ALEGRA_SELLER_ID: Joi.string().allow("").default(""),
+  ALEGRA_ITEM_ID: Joi.string().allow("").when("ALEGRA_ENABLED", {
+    is: true,
+    then: Joi.required(),
+  }),
 });
