@@ -106,6 +106,16 @@ export interface AlegraInvoiceResponse {
     date?: string;
     warnings?: string[];
   } | null;
+  /** PDF URL on Alegra's S3 — only present when `fields=pdf` is requested. */
+  pdf?: string;
+}
+
+/** Result data from creating an invoice in Alegra. */
+export interface CreatedInvoiceData {
+  invoiceId: string;
+  invoiceNumber: string | null;
+  cufe: string | null;
+  stampStatus: string | null;
 }
 
 /* ─── Payment ───────────────────────────────────────────────────── */

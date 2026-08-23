@@ -15,6 +15,7 @@ import type {
   AlegraPaymentResponse,
   AlegraWebhookPayload,
   AlegraBillingContext,
+  CreatedInvoiceData,
 } from "./alegra.interfaces";
 import {
   ALEGRA_DEFAULT_API_URL,
@@ -378,7 +379,7 @@ export class AlegraService {
   async createInvoice(
     context: AlegraBillingContext,
     contactId: string,
-  ): Promise<string | null> {
+  ): Promise<CreatedInvoiceData | null> {
     if (!this.isConfigured()) return null;
 
     const dateStr = new Date().toLocaleDateString("sv-SE", {
@@ -425,10 +426,17 @@ export class AlegraService {
       return null;
     }
 
+    const result: CreatedInvoiceData = {
+      invoiceId: String(invoice.id),
+      invoiceNumber: invoice.numberTemplate?.fullNumber ?? null,
+      cufe: invoice.stamp?.cufe ?? null,
+      stampStatus: invoice.stamp?.legalStatus ?? null,
+    };
+
     this.logger.log(
-      `Alegra invoice created: ref=${maskReference(context.transactionReference)} invoiceId=${invoice.id}`,
+      `Alegra invoice created: ref=${maskReference(context.transactionReference)} invoiceId=${invoice.id} cufe=${result.cufe ? "yes" : "no"}`,
     );
-    return String(invoice.id);
+    return result;
   }
 
   private buildInvoiceItems(
@@ -571,18 +579,21 @@ export class AlegraService {
         return;
       }
 
-      const invoiceId = await this.createInvoice(context, contactId);
-      if (!invoiceId) {
+      const invoiceData = await this.createInvoice(context, contactId);
+      if (!invoiceData) {
         await this.recordFailedInvoice(context, "Failed to create invoice");
         return;
       }
 
       let paymentId: string | null = null;
       if (context.amount > 0) {
-        paymentId = await this.createPayment(invoiceId, context.amount);
+        paymentId = await this.createPayment(
+          invoiceData.invoiceId,
+          context.amount,
+        );
       }
 
-      const emailed = await this.emailInvoice(invoiceId);
+      const emailed = await this.emailInvoice(invoiceData.invoiceId);
 
       await this.invoiceModel.findOneAndUpdate(
         {
@@ -594,11 +605,14 @@ export class AlegraService {
             userId: context.userId,
             transactionReference: context.transactionReference,
             purpose: context.purpose,
-            alegraInvoiceId: invoiceId,
+            alegraInvoiceId: invoiceData.invoiceId,
+            alegraInvoiceNumber: invoiceData.invoiceNumber,
             alegraContactId: contactId,
             alegraPaymentId: paymentId,
             stamped: true,
-            stampStatus: "STAMPED_AND_ACCEPTED",
+            stampStatus: invoiceData.stampStatus ?? "STAMPED_AND_ACCEPTED",
+            cufe: invoiceData.cufe,
+            description: context.description,
             emailed,
             amount: context.amount,
             status: paymentId ? "PAID" : "STAMPED",
@@ -618,7 +632,7 @@ export class AlegraService {
         message: `Tu factura electrónica ha sido generada${emailed ? " y enviada a tu correo" : ""}. Referencia: ${context.transactionReference}.`,
         priority: NotificationPriority.MEDIUM,
         metadata: {
-          alegraInvoiceId: invoiceId,
+          alegraInvoiceId: invoiceData.invoiceId,
           amount: context.amount,
           purpose: context.purpose,
         },
@@ -627,7 +641,7 @@ export class AlegraService {
       });
 
       this.logger.log(
-        `Alegra invoicing completed: ref=${maskReference(context.transactionReference)} invoiceId=${invoiceId} paymentId=${paymentId ?? "n/a"} emailed=${emailed}`,
+        `Alegra invoicing completed: ref=${maskReference(context.transactionReference)} invoiceId=${invoiceData.invoiceId} paymentId=${paymentId ?? "n/a"} emailed=${emailed}`,
       );
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -656,6 +670,7 @@ export class AlegraService {
             alegraInvoiceId: "0",
             alegraContactId: "0",
             amount: context.amount,
+            description: context.description,
             status: "FAILED",
             errorMessage: errorMessage.slice(0, 500),
           },
@@ -682,6 +697,108 @@ export class AlegraService {
         `Failed to record failed invoice for ref=${maskReference(context.transactionReference)}`,
       );
     }
+  }
+
+  /* ─── Frontend-facing methods ─────────────────────────────────── */
+
+  /**
+   * Get all Alegra invoice records for a user, keyed by
+   * `${transactionReference}:${purpose}` for quick lookups.
+   */
+  async getInvoicesForUser(
+    userId: string,
+  ): Promise<Map<string, AlegraInvoiceDocument>> {
+    const invoices = await this.invoiceModel.find({ userId }).lean();
+    const map = new Map<string, AlegraInvoiceDocument>();
+    for (const inv of invoices) {
+      map.set(`${inv.transactionReference}:${inv.purpose}`, inv);
+    }
+    return map;
+  }
+
+  /**
+   * Get the PDF URL for an Alegra invoice by calling
+   * `GET /invoices/{id}?fields=pdf`. Returns a temporary S3 URL.
+   */
+  async getInvoicePdfUrl(invoiceId: string): Promise<string | null> {
+    if (!this.isConfigured()) return null;
+
+    const invoice = await this.makeRequest<AlegraInvoiceResponse>(
+      "GET",
+      `/invoices/${invoiceId}?fields=pdf`,
+    );
+
+    if (!invoice || !invoice.pdf) {
+      this.logger.warn(`Failed to get PDF URL for invoice ${invoiceId}`);
+      return null;
+    }
+
+    return invoice.pdf;
+  }
+
+  /**
+   * Get the PDF URL for an Alegra invoice by transaction reference + purpose.
+   * Looks up the AlegraInvoice record, then calls Alegra's API for the PDF URL.
+   *
+   * A01 (Broken Access Control): The `userId` parameter ensures only the
+   * owner of the transaction can retrieve the invoice PDF — preventing
+   * IDOR attacks where an authenticated user could download another
+   * user's invoice by guessing the reference.
+   */
+  async getInvoicePdfUrlByTransaction(
+    userId: string,
+    transactionReference: string,
+    purpose: string,
+  ): Promise<string | null> {
+    const record = await this.invoiceModel.findOne({
+      userId,
+      transactionReference,
+      purpose,
+    });
+
+    if (!record || !record.alegraInvoiceId || record.alegraInvoiceId === "0") {
+      return null;
+    }
+
+    return this.getInvoicePdfUrl(record.alegraInvoiceId);
+  }
+
+  /**
+   * Retry a failed Alegra invoice by re-running processApprovedPayment
+   * with the stored context. Only retries when status is "FAILED".
+   */
+  async retryFailedInvoice(
+    transactionReference: string,
+    purpose: string,
+  ): Promise<boolean> {
+    const existing = await this.invoiceModel.findOne({
+      transactionReference,
+      purpose,
+    });
+
+    if (!existing) {
+      return false;
+    }
+
+    if (existing.status !== "FAILED") {
+      return false;
+    }
+
+    this.logger.log(
+      `Retrying failed Alegra invoice: ref=${maskReference(transactionReference)} purpose=${purpose}`,
+    );
+
+    const context: AlegraBillingContext = {
+      userId: existing.userId,
+      transactionReference,
+      purpose,
+      amount: existing.amount,
+      description:
+        existing.description ?? `BSKMT — Ref: ${transactionReference}`,
+    };
+
+    await this.processApprovedPayment(context);
+    return true;
   }
 
   /* ─── Webhook Handler ──────────────────────────────────────────── */

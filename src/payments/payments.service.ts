@@ -195,6 +195,8 @@ export class PaymentsService {
       await this.verifyActiveMember(userId);
     }
 
+    await this.assertNoPendingForPurpose(userId, "event", dto.eventSlug);
+
     const event = await this.eventsService.getEventBySlug(dto.eventSlug);
     if (!event) {
       throw new NotFoundException("Evento no encontrado");
@@ -291,6 +293,8 @@ export class PaymentsService {
     if (PaymentsService.MEMBER_TIERS.has(dto.tier)) {
       await this.verifyActiveMember(userId);
     }
+
+    await this.assertNoPendingForPurpose(userId, "course", dto.eventSlug);
 
     const course = await this.eventsService.getCourseBySlug(dto.eventSlug);
     if (!course) {
@@ -1196,21 +1200,202 @@ export class PaymentsService {
     const transactions = await this.transactionModel
       .find({ userId })
       .sort({ createdAt: -1 })
-      .select("-webhookEvents -__v -companionData");
+      .select("-webhookEvents -__v");
 
-    return transactions.map((t) => ({
-      reference: t.reference,
-      eventSlug: t.eventSlug,
-      status: t.status,
-      amount: t.amount,
-      description: t.description,
-      tier: t.tier,
-      purpose: t.purpose,
-      relatedReference: t.relatedReference,
-      hasCompanion: t.hasCompanion,
-      companionData: undefined,
-      paymentMethod: t.paymentMethod,
-      createdAt: t.createdAt,
-    }));
+    const alegraInvoices = await this.alegraService.getInvoicesForUser(userId);
+
+    return transactions.map((t) => {
+      const key = `${t.reference}:${t.purpose}`;
+      const inv = alegraInvoices.get(key);
+
+      return {
+        reference: t.reference,
+        eventSlug: t.eventSlug,
+        status: t.status,
+        amount: t.amount,
+        description: t.description,
+        tier: t.tier,
+        purpose: t.purpose,
+        relatedReference: t.relatedReference,
+        hasCompanion: t.hasCompanion,
+        companionData: t.companionData
+          ? {
+              fullName: t.companionData.fullName,
+              documentId: t.companionData.documentId,
+              phone: t.companionData.phone,
+              email: t.companionData.email,
+            }
+          : null,
+        paymentMethod: t.paymentMethod,
+        createdAt: t.createdAt,
+        invoice: inv
+          ? {
+              alegraInvoiceId: inv.alegraInvoiceId,
+              invoiceNumber: inv.alegraInvoiceNumber,
+              cufe: inv.cufe,
+              stampStatus: inv.stampStatus,
+              status: inv.status,
+              emailed: inv.emailed,
+              errorMessage: inv.errorMessage,
+            }
+          : null,
+      };
+    });
+  }
+
+  /**
+   * Cancel a user's own pending transaction. Only PENDING or PROCESSING
+   * transactions can be cancelled. Sets status to VOIDED.
+   */
+  async cancelPendingTransaction(
+    userId: string,
+    reference: string,
+  ): Promise<{ message: string }> {
+    const transaction = await this.transactionModel.findOne({
+      userId,
+      reference,
+    });
+
+    if (!transaction) {
+      throw new NotFoundException("Transacción no encontrada");
+    }
+
+    if (
+      transaction.status !== "PENDING" &&
+      transaction.status !== "PROCESSING"
+    ) {
+      throw new BadRequestException(
+        "Solo se pueden cancelar transacciones pendientes o en proceso",
+      );
+    }
+
+    transaction.status = "VOIDED";
+    await transaction.save();
+    this.logger.log(
+      `Transaction cancelled by user: ref=${maskReference(reference)}`,
+    );
+
+    return { message: "Transacción cancelada exitosamente" };
+  }
+
+  /**
+   * Retry a failed Alegra invoice for a user's transaction.
+   */
+  async retryInvoice(
+    userId: string,
+    reference: string,
+  ): Promise<{ message: string }> {
+    const transaction = await this.transactionModel.findOne({
+      userId,
+      reference,
+    });
+
+    if (!transaction) {
+      throw new NotFoundException("Transacción no encontrada");
+    }
+
+    if (transaction.status !== "APPROVED") {
+      throw new BadRequestException(
+        "Solo se pueden reintentar facturas de transacciones aprobadas",
+      );
+    }
+
+    const retried = await this.alegraService.retryFailedInvoice(
+      reference,
+      transaction.purpose,
+    );
+
+    if (!retried) {
+      throw new BadRequestException(
+        "No hay una factura fallida para reintentar, o ya fue procesada exitosamente",
+      );
+    }
+
+    return { message: "Reintento de factura electrónica en proceso" };
+  }
+
+  /**
+   * Get the Alegra PDF URL for a user's transaction.
+   * Returns a temporary S3 URL that the frontend can redirect to.
+   * For membership transactions (not in the Transaction collection),
+   * the caller can pass the purpose directly.
+   */
+  async getInvoicePdfUrl(
+    userId: string,
+    reference: string,
+    purpose?: string,
+  ): Promise<{ pdfUrl: string }> {
+    const transaction = await this.transactionModel.findOne({
+      userId,
+      reference,
+    });
+
+    const effectivePurpose = transaction?.purpose ?? purpose;
+
+    if (!transaction && !effectivePurpose) {
+      throw new NotFoundException("Transacción no encontrada");
+    }
+
+    const pdfUrl = await this.alegraService.getInvoicePdfUrlByTransaction(
+      userId,
+      reference,
+      effectivePurpose ?? "membership",
+    );
+
+    if (!pdfUrl) {
+      throw new BadRequestException(
+        "La factura electrónica no está disponible para descarga. Puede estar pendiente de generación o no configurada.",
+      );
+    }
+
+    return { pdfUrl };
+  }
+
+  /**
+   * Check if a user has a pending transaction for a given purpose and
+   * optional eventSlug. Used by the frontend to block new transactions
+   * and show "continue payment" CTAs.
+   */
+  async checkPendingForPurpose(
+    userId: string,
+    purpose: string,
+    eventSlug?: string,
+  ): Promise<{ hasPending: boolean; reference: string | null }> {
+    const query: Record<string, unknown> = {
+      userId,
+      purpose,
+      status: { $in: ["PENDING", "PROCESSING"] },
+    };
+    if (eventSlug) query.eventSlug = eventSlug;
+
+    const pending = await this.transactionModel
+      .findOne(query)
+      .sort({ createdAt: -1 });
+
+    return {
+      hasPending: !!pending,
+      reference: pending?.reference ?? null,
+    };
+  }
+
+  /**
+   * Guard: reject new transaction creation when a pending one exists
+   * for the same purpose + eventSlug.
+   */
+  private async assertNoPendingForPurpose(
+    userId: string,
+    purpose: string,
+    eventSlug: string,
+  ): Promise<void> {
+    const { hasPending, reference } = await this.checkPendingForPurpose(
+      userId,
+      purpose,
+      eventSlug,
+    );
+    if (hasPending && reference) {
+      throw new ConflictException(
+        `Ya tienes una transacción pendiente (${reference}). Continúa o cancélala antes de iniciar una nueva.`,
+      );
+    }
   }
 }

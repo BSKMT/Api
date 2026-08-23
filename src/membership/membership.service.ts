@@ -422,7 +422,22 @@ export class MembershipService {
       });
       if (pendingForSameKey) {
         throw new ConflictException(
-          "Ya tienes un pago pendiente para esta cuota. Cancela o complétalo antes de iniciar uno nuevo.",
+          `Ya tienes un pago pendiente (${pendingForSameKey.reference}). Continúa o cancélalo antes de iniciar uno nuevo.`,
+        );
+      }
+    }
+
+    // Also block single-payment intents when a PENDING one exists.
+    if (dto.paymentPlan === "single") {
+      const pendingSingle = await this.transactionModel.findOne({
+        userId,
+        paymentPlan: "single",
+        isRenewal,
+        status: "PENDING",
+      });
+      if (pendingSingle) {
+        throw new ConflictException(
+          `Ya tienes un pago pendiente de membresía (${pendingSingle.reference}). Continúa o cancélalo antes de iniciar uno nuevo.`,
         );
       }
     }
@@ -1354,6 +1369,8 @@ export class MembershipService {
       .sort({ createdAt: -1 })
       .select("-webhookEvents -__v");
 
+    const alegraInvoices = await this.alegraService.getInvoicesForUser(userId);
+
     return {
       role: user.role,
       membershipLevel: user.membershipLevel,
@@ -1368,18 +1385,112 @@ export class MembershipService {
       installmentsTotal: user.installmentsTotal,
       renewalInstallmentsPaid: user.renewalInstallmentsPaid,
       partialPaymentCredit: user.partialPaymentCredit,
-      transactions: transactions.map((t) => ({
-        reference: t.reference,
-        amount: t.amount,
-        status: t.status,
-        installmentNumber: t.installmentNumber,
-        installmentTotal: t.installmentTotal,
-        paymentPlan: t.paymentPlan,
-        isRenewal: t.isRenewal,
-        paidAt: t.paidAt,
-        createdAt: t.createdAt,
-      })),
+      transactions: transactions.map((t) => {
+        const key = `${t.reference}:membership`;
+        const inv = alegraInvoices.get(key);
+        return {
+          reference: t.reference,
+          amount: t.amount,
+          status: t.status,
+          installmentNumber: t.installmentNumber,
+          installmentTotal: t.installmentTotal,
+          paymentPlan: t.paymentPlan,
+          isRenewal: t.isRenewal,
+          paidAt: t.paidAt,
+          createdAt: t.createdAt,
+          invoice: inv
+            ? {
+                alegraInvoiceId: inv.alegraInvoiceId,
+                invoiceNumber: inv.alegraInvoiceNumber,
+                cufe: inv.cufe,
+                stampStatus: inv.stampStatus,
+                status: inv.status,
+                emailed: inv.emailed,
+                errorMessage: inv.errorMessage,
+              }
+            : null,
+        };
+      }),
     };
+  }
+
+  /**
+   * Cancel a user's own pending membership transaction.
+   * Only PENDING transactions can be cancelled. Reverts any credit block.
+   */
+  async cancelPendingMembershipTransaction(
+    userId: string,
+    reference: string,
+  ): Promise<{ message: string }> {
+    const transaction = await this.transactionModel.findOne({
+      userId,
+      reference,
+    });
+
+    if (!transaction) {
+      throw new NotFoundException("Transacción de membresía no encontrada");
+    }
+
+    if (transaction.status !== "PENDING") {
+      throw new BadRequestException(
+        "Solo se pueden cancelar transacciones pendientes",
+      );
+    }
+
+    transaction.status = "VOIDED";
+
+    if (transaction.creditUsedAmount > 0 && !transaction.creditReverted) {
+      const reverted = await this.usersService.revertPartialPaymentCredit(
+        transaction.userId,
+        transaction.creditUsedAmount,
+      );
+      if (reverted) {
+        transaction.creditReverted = true;
+      }
+    }
+
+    await transaction.save();
+    this.logger.log(
+      `Membership transaction cancelled by user: ref=${maskReference(reference)}`,
+    );
+
+    return { message: "Transacción de membresía cancelada exitosamente" };
+  }
+
+  /**
+   * Retry a failed Alegra invoice for a membership transaction.
+   */
+  async retryMembershipInvoice(
+    userId: string,
+    reference: string,
+  ): Promise<{ message: string }> {
+    const transaction = await this.transactionModel.findOne({
+      userId,
+      reference,
+    });
+
+    if (!transaction) {
+      throw new NotFoundException("Transacción de membresía no encontrada");
+    }
+
+    if (transaction.status !== "APPROVED") {
+      throw new BadRequestException(
+        "Solo se pueden reintentar facturas de transacciones aprobadas",
+      );
+    }
+
+    const retried = await this.alegraService.retryFailedInvoice(
+      reference,
+      "membership",
+    );
+
+    if (!retried) {
+      throw new BadRequestException(
+        "No hay una factura fallida para reintentar, o ya fue procesada exitosamente",
+      );
+    }
+
+    return { message: "Reintento de factura electrónica en proceso" };
   }
 
   async chooseCreditOption(userId: string, dto: CreditChoiceDto) {

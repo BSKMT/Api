@@ -54,6 +54,14 @@ export class AlegraInvoice {
   @Prop({ type: String, default: null })
   stampStatus!: string | null;
 
+  /** CUFE (Colombian electronic invoice unique code) from DIAN stamping. */
+  @Prop({ type: String, default: null })
+  cufe!: string | null;
+
+  /** Transaction description — stored for retry support. */
+  @Prop({ type: String, default: null })
+  description!: string | null;
+
   /** Whether the invoice was emailed to the customer. */
   @Prop({ default: false })
   emailed!: boolean;

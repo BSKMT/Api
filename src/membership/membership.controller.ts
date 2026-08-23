@@ -90,6 +90,31 @@ export class MembershipController {
   }
 
   @UseGuards(SessionGuard)
+  @Post("cancel/:reference")
+  @HttpCode(HttpStatus.OK)
+  async cancelTransaction(
+    @Req() req: AuthenticatedRequest,
+    @Param("reference") reference: string,
+  ) {
+    const { userId } = req.user;
+    return this.membershipService.cancelPendingMembershipTransaction(
+      userId,
+      reference,
+    );
+  }
+
+  @UseGuards(SessionGuard)
+  @Post("retry-invoice/:reference")
+  @HttpCode(HttpStatus.OK)
+  async retryInvoice(
+    @Req() req: AuthenticatedRequest,
+    @Param("reference") reference: string,
+  ) {
+    const { userId } = req.user;
+    return this.membershipService.retryMembershipInvoice(userId, reference);
+  }
+
+  @UseGuards(SessionGuard)
   @Get("credit")
   async getCreditBalance(@Req() req: AuthenticatedRequest) {
     const { userId } = req.user;

@@ -10,6 +10,7 @@ import {
   HttpStatus,
   Headers,
   BadRequestException,
+  Query,
 } from "@nestjs/common";
 import type { Request } from "express";
 import { PaymentsService } from "./payments.service";
@@ -85,5 +86,53 @@ export class PaymentsController {
   async getMyTransactions(@Req() req: AuthenticatedRequest) {
     const { userId } = req.user;
     return this.paymentsService.getTransactionsByUser(userId);
+  }
+
+  @UseGuards(SessionGuard)
+  @Post("cancel/:reference")
+  @HttpCode(HttpStatus.OK)
+  async cancelTransaction(
+    @Req() req: AuthenticatedRequest,
+    @Param("reference") reference: string,
+  ) {
+    const { userId } = req.user;
+    return this.paymentsService.cancelPendingTransaction(userId, reference);
+  }
+
+  @UseGuards(SessionGuard)
+  @Post("retry-invoice/:reference")
+  @HttpCode(HttpStatus.OK)
+  async retryInvoice(
+    @Req() req: AuthenticatedRequest,
+    @Param("reference") reference: string,
+  ) {
+    const { userId } = req.user;
+    return this.paymentsService.retryInvoice(userId, reference);
+  }
+
+  @UseGuards(SessionGuard)
+  @Get("invoice/:reference/pdf")
+  async getInvoicePdf(
+    @Req() req: AuthenticatedRequest,
+    @Param("reference") reference: string,
+    @Query("purpose") purpose?: string,
+  ) {
+    const { userId } = req.user;
+    return this.paymentsService.getInvoicePdfUrl(userId, reference, purpose);
+  }
+
+  @UseGuards(SessionGuard)
+  @Get("pending-check")
+  async checkPending(
+    @Req() req: AuthenticatedRequest,
+    @Query("purpose") purpose: string,
+    @Query("eventSlug") eventSlug?: string,
+  ) {
+    const { userId } = req.user;
+    return this.paymentsService.checkPendingForPurpose(
+      userId,
+      purpose,
+      eventSlug,
+    );
   }
 }
