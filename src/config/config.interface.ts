@@ -11,7 +11,7 @@ export interface EnvironmentConfig {
   BOLD_ENVIRONMENT: string;
 
   /**
-   * Bird — API unificada para email, SMS y verify.
+   * Bird — API unificada para email, SMS, WhatsApp y verify.
    * La key (bk_{region}_...) selecciona la region automaticamente.
    */
   BIRD_API_KEY: string;
@@ -19,6 +19,24 @@ export interface EnvironmentConfig {
   BIRD_FROM_NAME: string;
   BIRD_TEAM_EMAIL: string;
   BIRD_SMS_SENDER: string;
+
+  /**
+   * Bird WhatsApp — Numero remitente E.164 que el workspace posee y
+   * tiene conectado a un WhatsApp Business Account (WABA) en Bird.
+   *
+   * Requerido para envios free-form (notificaciones del sistema como
+   * texto libre). Las plantillas bird_* (Bird-managed) no necesitan
+   * este campo.
+   *
+   * - Si esta vacio o no es E.164 valido, BirdWhatsappService degrada
+   *   a no-op y las notificaciones por WhatsApp se omiten sin afectar
+   *   los demas canales (OWASP A10:2025 — graceful degradation).
+   *
+   * Seguridad (OWASP A04:2025): el numero se lee de env, nunca se
+   * loguea completo, y se valida formato E.164 antes de cualquier
+   * llamada a la API.
+   */
+  BIRD_WHATSAPP_SENDER: string;
 
   /**
    * Bird Realtime — WebSocket hosted service for realtime events.

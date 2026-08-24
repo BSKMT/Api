@@ -14,7 +14,7 @@ export const configValidationSchema = Joi.object({
     .valid("sandbox", "production", "test")
     .default("sandbox"),
 
-  // Bird — email, SMS y verify
+  // Bird — email, SMS, WhatsApp y verify
   BIRD_API_KEY: Joi.string()
     .allow("")
     .default("")
@@ -34,6 +34,25 @@ export const configValidationSchema = Joi.object({
   BIRD_FROM_NAME: Joi.string().allow("").default("BSK Motorcycle Team"),
   BIRD_TEAM_EMAIL: Joi.string().email().allow("").default("contacto@bskmt.com"),
   BIRD_SMS_SENDER: Joi.string().allow("").default("BSKMT"),
+
+  // Bird WhatsApp — numero remitente E.164 que el workspace posee y
+  // tiene conectado a un WhatsApp Business Account (WABA) en Bird.
+  // Requerido para envios free-form (fuera de plantillas bird_*).
+  // Si no esta configurado o es invalido, WhatsApp degrada a no-op
+  // (OWASP A10 — graceful degradation).
+  BIRD_WHATSAPP_SENDER: Joi.string()
+    .allow("")
+    .default("")
+    .custom((value: string) => {
+      if (value && !/^\+[1-9]\d{5,14}$/.test(value)) {
+        throw new Error(
+          "BIRD_WHATSAPP_SENDER debe ser un numero E.164 valido " +
+            "(ej: +13124495648). Obten el numero desde Bird dashboard > " +
+            "WhatsApp > Numbers.",
+        );
+      }
+      return value;
+    }),
 
   // Bird Realtime — WebSocket hosted service.
   // All four are optional: if any required trio (APP_ID, KEY, SECRET) is

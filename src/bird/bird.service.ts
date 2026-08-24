@@ -33,8 +33,9 @@ export interface BirdSdkModule {
 
 /**
  * Cliente Bird tipado con la superficie que los servicios usan:
- *  - `email.send()`  — envio de correos transaccionales
- *  - `sms.send()`    — envio de mensajes SMS
+ *  - `email.send()`     — envio de correos transaccionales
+ *  - `sms.send()`       — envio de mensajes SMS
+ *  - `whatsapp.send()`  — envio de mensajes WhatsApp
  *  - `verify.verifications.create/check` — OTP de login
  *  - `realtime.publish()`          — publica un evento a uno o mas canales
  *  - `realtime.publishBatch()`     — publica hasta 10 eventos en una solicitud
@@ -54,6 +55,9 @@ export interface BirdClientInstance {
   };
   readonly sms: {
     send: (params: BirdSmsSendParams) => Promise<BirdSmsMessage>;
+  };
+  readonly whatsapp: {
+    send: (params: BirdWhatsappSendParams) => Promise<BirdWhatsappMessage>;
   };
   readonly verify: {
     readonly verifications: {
@@ -143,6 +147,63 @@ export interface BirdSmsMessage {
   to: string;
   from: string;
   text?: string;
+  category?: string;
+}
+
+// ── WhatsApp ────────────────────────────────────────────────────────
+
+/**
+ * Contenido de texto plano para un mensaje WhatsApp.
+ * WhatsApp no interpreta HTML; el cuerpo es texto plano.
+ */
+export interface BirdWhatsappTextContent {
+  body: string;
+  /**
+   * Si es true, WhatsApp genera un preview de cualquier URL en el
+   * cuerpo. Se establece en false por defecto por seguridad
+   * (defense-in-depth contra phishing via URLs en notificaciones).
+   */
+  preview_url?: boolean;
+}
+
+/**
+ * Parametros para enviar un mensaje WhatsApp via Bird WhatsApp API.
+ *
+ * Se envia free-form text (no template) para notificaciones del
+ * sistema. Esto requiere:
+ *  - `from`: numero E.164 que el workspace posee y tiene conectado
+ *    a un WhatsApp Business Account (WABA).
+ *  - `to`: numero E.164 del destinatario.
+ *  - Una ventana de servicio al cliente abierta (24h desde el ultimo
+ *    mensaje entrante del destinatario). Si la ventana esta cerrada,
+ *    Bird acepta el mensaje (202) pero luego falla con
+ *    `service_window_expired` en `last_error`.
+ *
+ * Seguridad (OWASP A04, A05):
+ *  - `from` y `to` deben ser E.164 valido.
+ *  - El cuerpo del texto se sanitiza (sin CRLF, max 4096 chars).
+ *  - `preview_url` se fija en false para evitar previews de URLs.
+ */
+export interface BirdWhatsappSendParams {
+  to: string;
+  from?: string;
+  text?: BirdWhatsappTextContent;
+  template?: {
+    slug?: string;
+    id?: string;
+    language?: string;
+    components?: unknown[];
+  };
+  tags?: { name: string; value: string }[];
+  metadata?: Record<string, unknown>;
+}
+
+/** Respuesta de Bird WhatsApp (`202 Accepted`). */
+export interface BirdWhatsappMessage {
+  readonly id: string;
+  readonly status: string;
+  to: string;
+  from?: string;
   category?: string;
 }
 
@@ -281,7 +342,7 @@ export class BirdService {
     if (!rawKey) {
       this.logger.error(
         "BIRD_API_KEY no esta configurada — los servicios de Bird " +
-          "(email, SMS, verify) NO funcionaran. Configura la env var " +
+          "(email, SMS, WhatsApp, verify) NO funcionaran. Configura la env var " +
           "en Vercel con una key real (formato: bk_us1_... o bk_eu1_...).",
       );
       this.apiKey = undefined;
@@ -299,7 +360,7 @@ export class BirdService {
     this.apiKey = rawKey;
     const region = rawKey.startsWith("bk_us1_") ? "us1" : "eu1";
     this.logger.log(
-      `Bird API configurada (region: ${region}) — email, SMS y verify activos.`,
+      `Bird API configurada (region: ${region}) — email, SMS, WhatsApp y verify activos.`,
     );
 
     // Realtime — los cuatro valores deben estar presentes; si falta alguno,

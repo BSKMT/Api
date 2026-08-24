@@ -4,6 +4,7 @@ import { Model } from "mongoose";
 import { User, UserDocument } from "../users/schemas/user.schema";
 import { BirdEmailService } from "./bird-email.service";
 import { BirdSmsService } from "./bird-sms.service";
+import { BirdWhatsappService } from "./bird-whatsapp.service";
 import {
   maskEmail,
   maskPhone,
@@ -15,11 +16,12 @@ import {
  *
  * Lee las preferencias de notificacion del usuario desde MongoDB
  * (`user.settings.notifications`) y envia el mensaje por los canales
- * que el usuario tenga activados (email y/o SMS).
+ * que el usuario tenga activados (email, SMS y/o WhatsApp).
  *
  * Reglas:
- *  - Si `channels.email` es true  → envia correo via BirdEmailService.
- *  - Si `channels.sms`   es true  AND el usuario tiene telefono → envia SMS.
+ *  - Si `channels.email`     es true  → envia correo via BirdEmailService.
+ *  - Si `channels.sms`       es true  AND el usuario tiene telefono → envia SMS.
+ *  - Si `channels.whatsapp`  es true  AND el usuario tiene telefono → envia WhatsApp.
  *  - Si la categoria tiene overrides (per-category), estos tienen
  *    precedencia sobre los channels globales.
  *  - Si ningun canal esta activo, no se envia nada pero se persista
@@ -30,6 +32,11 @@ import {
  * Seguridad (OWASP A07:2025):
  *  - Los logs enmascaran email y telefono del destinatario.
  *  - Las preferencias se leen de la DB, no se pasan del cliente.
+ *  - WhatsApp requiere un numero E.164 conectado a un WABA; si el
+ *    sender no esta configurado, el canal degrada a no-op (A10).
+ *  - WhatsApp free-form requiere ventana de servicio abierta (24h);
+ *    si esta cerrada, Bird acepta pero falla asincronamente — el
+ *    fallo se maneja como best-effort (A10).
  */
 
 /** Forma de `user.settings.notifications`. */
@@ -70,6 +77,7 @@ export class BirdNotifyService {
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     private readonly emailService: BirdEmailService,
     private readonly smsService: BirdSmsService,
+    private readonly whatsappService: BirdWhatsappService,
   ) {}
 
   /**
@@ -126,7 +134,7 @@ export class BirdNotifyService {
    */
   private isChannelEnabled(
     settings: NotificationSettings | undefined,
-    channel: "email" | "sms",
+    channel: "email" | "sms" | "whatsapp",
     category?: string,
   ): boolean {
     if (!settings) return channel === "email"; // default: email on
@@ -137,8 +145,9 @@ export class BirdNotifyService {
   }
 
   /**
-   * Despacha una notificacion por email y/o SMS segun las preferencias
-   * del usuario. Ambos envios son best-effort (nunca lanzan).
+   * Despacha una notificacion por email, SMS y/o WhatsApp segun las
+   * preferencias del usuario. Todos los envios son best-effort (nunca
+   * lanzan).
    *
    * @param userId   ID del usuario (MongoDB _id).
    * @param title    Titulo de la notificacion.
@@ -168,6 +177,11 @@ export class BirdNotifyService {
     const smsEnabled = this.isChannelEnabled(
       notifSettings,
       "sms",
+      data.category,
+    );
+    const whatsappEnabled = this.isChannelEnabled(
+      notifSettings,
+      "whatsapp",
       data.category,
     );
 
@@ -222,6 +236,36 @@ export class BirdNotifyService {
     } else if (smsEnabled && !user.phone) {
       this.logger.debug(
         `SMS habilitado pero usuario ${data.userId} sin telefono`,
+      );
+    }
+
+    if (whatsappEnabled && user.phone && user.phoneVerified) {
+      const phone = user.phone;
+      this.whatsappService
+        .sendNotificationWhatsapp({
+          to: phone,
+          title: data.title,
+          message: data.message,
+        })
+        .then((ok) => {
+          if (!ok) {
+            this.logger.warn(
+              `No se pudo enviar WhatsApp a ${maskPhone(phone)}`,
+            );
+          }
+        })
+        .catch((err: unknown) => {
+          this.logger.warn(
+            `Error WhatsApp notif a ${maskPhone(phone)}: ${sanitizeForLog(err instanceof Error ? err.message : String(err))}`,
+          );
+        });
+    } else if (whatsappEnabled && user.phone && !user.phoneVerified) {
+      this.logger.debug(
+        `WhatsApp habilitado pero usuario ${data.userId} sin telefono verificado — skip`,
+      );
+    } else if (whatsappEnabled && !user.phone) {
+      this.logger.debug(
+        `WhatsApp habilitado pero usuario ${data.userId} sin telefono — skip`,
       );
     }
   }
