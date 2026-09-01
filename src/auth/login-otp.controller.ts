@@ -37,7 +37,9 @@ export class LoginOtpController {
     @Req() req: Request,
   ): Promise<{ requestId: string }> {
     const clientIp =
-      (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ??
+      (req.headers["x-forwarded-for"] as string | undefined)
+        ?.split(",")[0]
+        ?.trim() ??
       req.ip ??
       "";
     const userAgent = req.headers["user-agent"] ?? "";

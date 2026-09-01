@@ -38,9 +38,7 @@ export class PublicProfileController {
    * Extracts the userId from the Better Auth session cookie if present.
    * Returns null for unauthenticated requests — the endpoint is public.
    */
-  private async getUserIdFromSession(
-    req: Request,
-  ): Promise<string | null> {
+  private async getUserIdFromSession(req: Request): Promise<string | null> {
     const cookieHeader = req.headers.cookie ?? "";
     if (!cookieHeader) return null;
     if (!cookieHeader.includes("better-auth.session_token")) return null;
@@ -66,7 +64,8 @@ export class PublicProfileController {
     const personal = profile["datos-personales"] ?? {};
     const primerNombre = personal.primerNombre as string | undefined;
     const primerApellido = personal.primerApellido as string | undefined;
-    if (primerNombre && primerApellido) return `${primerNombre} ${primerApellido}`;
+    if (primerNombre && primerApellido)
+      return `${primerNombre} ${primerApellido}`;
     if (primerNombre) return primerNombre;
     if (primerApellido) return primerApellido;
     return email ? email.split("@")[0] : "Piloto";
@@ -122,7 +121,9 @@ export class PublicProfileController {
     let user: Awaited<ReturnType<UsersService["findById"]>> = null;
 
     if (identifier.toUpperCase().startsWith("BSK-")) {
-      user = await this.usersService.findByMemberNumber(identifier.toUpperCase());
+      user = await this.usersService.findByMemberNumber(
+        identifier.toUpperCase(),
+      );
     } else if (/^[0-9a-fA-F]{24}$/.test(identifier)) {
       user = await this.usersService.findById(identifier);
     }
@@ -136,14 +137,35 @@ export class PublicProfileController {
     }
 
     const requesterUserId = await this.getUserIdFromSession(req);
-    const isOwner = requesterUserId !== null && requesterUserId === user.betterAuthId;
+    const isOwner =
+      requesterUserId !== null && requesterUserId === user.betterAuthId;
 
     const privacy = {
-      profileVisible: this.privacyFlag(user as unknown as Record<string, unknown>, "profileVisible", true),
-      showLocation: this.privacyFlag(user as unknown as Record<string, unknown>, "showLocation", true),
-      allowFriendRequests: this.privacyFlag(user as unknown as Record<string, unknown>, "allowFriendRequests", false),
-      shareStats: this.privacyFlag(user as unknown as Record<string, unknown>, "shareStats", true),
-      showMotorcycle: this.privacyFlag(user as unknown as Record<string, unknown>, "showMotorcycle", true),
+      profileVisible: this.privacyFlag(
+        user as unknown as Record<string, unknown>,
+        "profileVisible",
+        true,
+      ),
+      showLocation: this.privacyFlag(
+        user as unknown as Record<string, unknown>,
+        "showLocation",
+        true,
+      ),
+      allowFriendRequests: this.privacyFlag(
+        user as unknown as Record<string, unknown>,
+        "allowFriendRequests",
+        false,
+      ),
+      shareStats: this.privacyFlag(
+        user as unknown as Record<string, unknown>,
+        "shareStats",
+        true,
+      ),
+      showMotorcycle: this.privacyFlag(
+        user as unknown as Record<string, unknown>,
+        "showMotorcycle",
+        true,
+      ),
     };
 
     if (!isOwner && !privacy.profileVisible) {
@@ -157,12 +179,15 @@ export class PublicProfileController {
 
     const response: Record<string, unknown> = {
       displayName,
-      firstName: (profile["datos-personales"] ?? {}).primerNombre ?? displayName,
+      firstName:
+        (profile["datos-personales"] ?? {}).primerNombre ?? displayName,
       memberNumber,
       membershipLevel: user.membershipLevel ?? null,
       role: user.role,
       memberSince: (user as unknown as { createdAt?: Date }).createdAt
-        ? new Date((user as unknown as { createdAt?: Date }).createdAt!).toISOString()
+        ? new Date(
+            (user as unknown as { createdAt?: Date }).createdAt!,
+          ).toISOString()
         : null,
       profileCompleted: user.profileCompleted,
       isOwner,
@@ -238,7 +263,9 @@ export class PublicProfileController {
     }
 
     if (message && message.length > 500) {
-      throw new BadRequestException("El mensaje no puede exceder 500 caracteres");
+      throw new BadRequestException(
+        "El mensaje no puede exceder 500 caracteres",
+      );
     }
 
     const target = await this.usersService.findByMemberNumber(
@@ -249,7 +276,9 @@ export class PublicProfileController {
     }
 
     if (String(target._id) === req.user.userId) {
-      throw new BadRequestException("No puedes enviarte una solicitud a ti mismo");
+      throw new BadRequestException(
+        "No puedes enviarte una solicitud a ti mismo",
+      );
     }
 
     const allowFriendRequests = this.privacyFlag(
@@ -259,7 +288,9 @@ export class PublicProfileController {
     );
 
     if (!allowFriendRequests) {
-      throw new ForbiddenException("Este miembro no acepta solicitudes de amistad");
+      throw new ForbiddenException(
+        "Este miembro no acepta solicitudes de amistad",
+      );
     }
 
     const existingRequests = target.friendRequests ?? [];
@@ -267,7 +298,9 @@ export class PublicProfileController {
       (r) => r.fromUserId === req.user.userId && r.status === "pending",
     );
     if (alreadyRequested) {
-      throw new BadRequestException("Ya tienes una solicitud pendiente con este miembro");
+      throw new BadRequestException(
+        "Ya tienes una solicitud pendiente con este miembro",
+      );
     }
 
     const sender = await this.usersService.findById(req.user.userId);
