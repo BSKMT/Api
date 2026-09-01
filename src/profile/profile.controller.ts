@@ -136,7 +136,9 @@ export class ProfileController {
       requestId,
       body.status,
     );
-    return { message: `Solicitud ${body.status === "accepted" ? "aceptada" : "rechazada"}` };
+    return {
+      message: `Solicitud ${body.status === "accepted" ? "aceptada" : "rechazada"}`,
+    };
   }
 
   // ── Phone (SMS) verification ───────────────────────────────────────
