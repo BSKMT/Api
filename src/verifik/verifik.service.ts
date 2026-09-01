@@ -190,10 +190,12 @@ export class VerifikService {
       };
     }
 
-    const baseUrl = (
+    let baseUrl =
       this.configService.get<string>("VERIFIK_API_URL") ??
-      "https://api.verifik.co"
-    ).replace(/\/+$/, "");
+      "https://api.verifik.co";
+    while (baseUrl.endsWith("/")) {
+      baseUrl = baseUrl.slice(0, -1);
+    }
     const timeoutMs =
       this.configService.get<number>("VERIFIK_TIMEOUT_MS") ?? 15000;
 
@@ -236,49 +238,7 @@ export class VerifikService {
         };
       }
 
-      if (response.status === 404) {
-        return {
-          ok: false,
-          reason: "not_found",
-          message:
-            "No encontramos registros para el documento. Verifica el numero y la fecha de expedicion.",
-        };
-      }
-
-      if (response.status === 409) {
-        // Validation failure before the upstream lookup ran.
-        return {
-          ok: false,
-          reason: "invalid_input",
-          message:
-            "Los datos del documento no cumplen el formato requerido. Verifica el numero y la fecha de expedicion.",
-        };
-      }
-
-      if (response.status === 429) {
-        this.logger.warn(`Verifik rate limit hit on ${path}`);
-        return {
-          ok: false,
-          reason: "unavailable",
-          message:
-            "El servicio de verificacion esta saturado. Intenta de nuevo en unos minutos.",
-        };
-      }
-
-      if (!response.ok || !body.data) {
-        this.logger.error(
-          `Verifik error ${response.status} on ${path}: ${sanitizeForLog(
-            typeof body.message === "string" ? body.message : "unknown",
-          )}`,
-        );
-        return {
-          ok: false,
-          reason: "unavailable",
-          message: "La verificacion de identidad no esta disponible.",
-        };
-      }
-
-      return { ok: true, record: this.normalize(body.data, body.id) };
+      return this.mapResponseToResult(response, body, path);
     } catch (err: unknown) {
       if (err instanceof Error && err.name === "AbortError") {
         this.logger.warn(`Verifik request to ${path} timed out`);
@@ -297,6 +257,55 @@ export class VerifikService {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  private mapResponseToResult(
+    response: Response,
+    body: VerifikRawResponse,
+    path: string,
+  ): VerifikLookupResult {
+    if (response.status === 404) {
+      return {
+        ok: false,
+        reason: "not_found",
+        message:
+          "No encontramos registros para el documento. Verifica el numero y la fecha de expedicion.",
+      };
+    }
+
+    if (response.status === 409) {
+      return {
+        ok: false,
+        reason: "invalid_input",
+        message:
+          "Los datos del documento no cumplen el formato requerido. Verifica el numero y la fecha de expedicion.",
+      };
+    }
+
+    if (response.status === 429) {
+      this.logger.warn(`Verifik rate limit hit on ${path}`);
+      return {
+        ok: false,
+        reason: "unavailable",
+        message:
+          "El servicio de verificacion esta saturado. Intenta de nuevo en unos minutos.",
+      };
+    }
+
+    if (!response.ok || !body.data) {
+      this.logger.error(
+        `Verifik error ${response.status} on ${path}: ${sanitizeForLog(
+          typeof body.message === "string" ? body.message : "unknown",
+        )}`,
+      );
+      return {
+        ok: false,
+        reason: "unavailable",
+        message: "La verificacion de identidad no esta disponible.",
+      };
+    }
+
+    return { ok: true, record: this.normalize(body.data, body.id) };
   }
 
   /**

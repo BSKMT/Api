@@ -94,7 +94,9 @@ export class PublicProfileController {
     field: string,
   ): string {
     const v = section?.[field];
-    return typeof v === "string" ? v : typeof v === "number" ? String(v) : "";
+    if (typeof v === "string") return v;
+    if (typeof v === "number") return String(v);
+    return "";
   }
 
   /**
@@ -108,95 +110,47 @@ export class PublicProfileController {
     return typeof v === "number" ? v : null;
   }
 
-  @Get("public/:identifier")
-  @Throttle({ default: { ttl: 10000, limit: 20 } })
-  async getPublicProfile(
-    @Param("identifier") identifier: string,
-    @Req() req: Request,
-  ) {
+  private async findUserByIdentifier(
+    identifier: string,
+  ): Promise<Awaited<ReturnType<UsersService["findById"]>>> {
     if (!identifier || identifier.length > 64) {
-      throw new NotFoundException("Perfil no encontrado");
+      return null;
     }
-
-    let user: Awaited<ReturnType<UsersService["findById"]>> = null;
-
-    if (identifier.toUpperCase().startsWith("BSK-")) {
-      user = await this.usersService.findByMemberNumber(
-        identifier.toUpperCase(),
-      );
-    } else if (/^[0-9a-fA-F]{24}$/.test(identifier)) {
-      user = await this.usersService.findById(identifier);
+    const upper = identifier.toUpperCase();
+    if (upper.startsWith("BSK-")) {
+      return this.usersService.findByMemberNumber(upper);
     }
-
-    if (!user) {
-      throw new NotFoundException("Perfil no encontrado");
+    if (/^[0-9a-fA-F]{24}$/.test(identifier)) {
+      return this.usersService.findById(identifier);
     }
+    return null;
+  }
 
-    if (!user.profileCompleted) {
-      throw new NotFoundException("Perfil no disponible");
-    }
-
-    const requesterUserId = await this.getUserIdFromSession(req);
-    const isOwner =
-      requesterUserId !== null && requesterUserId === user.betterAuthId;
-
-    const privacy = {
-      profileVisible: this.privacyFlag(
-        user as unknown as Record<string, unknown>,
-        "profileVisible",
-        true,
-      ),
-      showLocation: this.privacyFlag(
-        user as unknown as Record<string, unknown>,
-        "showLocation",
-        true,
-      ),
+  private buildPrivacyFlags(user: unknown) {
+    const record = user as Record<string, unknown>;
+    return {
+      profileVisible: this.privacyFlag(record, "profileVisible", true),
+      showLocation: this.privacyFlag(record, "showLocation", true),
       allowFriendRequests: this.privacyFlag(
-        user as unknown as Record<string, unknown>,
+        record,
         "allowFriendRequests",
         false,
       ),
-      shareStats: this.privacyFlag(
-        user as unknown as Record<string, unknown>,
-        "shareStats",
-        true,
-      ),
-      showMotorcycle: this.privacyFlag(
-        user as unknown as Record<string, unknown>,
-        "showMotorcycle",
-        true,
-      ),
+      shareStats: this.privacyFlag(record, "shareStats", true),
+      showMotorcycle: this.privacyFlag(record, "showMotorcycle", true),
     };
+  }
 
-    if (!isOwner && !privacy.profileVisible) {
-      throw new NotFoundException("Perfil no disponible");
-    }
-
-    const profile = user.profile ?? {};
-    const displayName = this.deriveDisplayName(profile, user.email);
-    const membSection = profile["membresia-ecosistema"] ?? {};
-    const memberNumber = this.str(membSection, "numeroMiembro");
-
-    const response: Record<string, unknown> = {
-      displayName,
-      firstName:
-        (profile["datos-personales"] ?? {}).primerNombre ?? displayName,
-      memberNumber,
-      membershipLevel: user.membershipLevel ?? null,
-      role: user.role,
-      memberSince: (user as unknown as { createdAt?: Date }).createdAt
-        ? new Date(
-            (user as unknown as { createdAt?: Date }).createdAt!,
-          ).toISOString()
-        : null,
-      profileCompleted: user.profileCompleted,
-      isOwner,
-      privacy,
-    };
+  private buildOptionalSections(
+    profile: Record<string, Record<string, unknown>>,
+    privacy: ReturnType<PublicProfileController["buildPrivacyFlags"]>,
+    isOwner: boolean,
+  ): Record<string, unknown> {
+    const sections: Record<string, unknown> = {};
 
     if (isOwner || privacy.showMotorcycle) {
       const moto = profile["motocicleta"];
-      response["motorcycle"] = moto
+      sections["motorcycle"] = moto
         ? {
             marcaMoto: this.str(moto, "marcaMoto"),
             lineaMoto: this.str(moto, "lineaMoto"),
@@ -208,7 +162,7 @@ export class PublicProfileController {
         : null;
 
       const equip = profile["equipamiento"];
-      response["equipment"] = equip
+      sections["equipment"] = equip
         ? {
             cascoMarca: this.str(equip, "cascoMarca"),
             cascoCertificacion: this.str(equip, "cascoCertificacion"),
@@ -226,7 +180,7 @@ export class PublicProfileController {
 
     if (isOwner || privacy.showLocation) {
       const contacto = profile["contacto"];
-      response["location"] = contacto
+      sections["location"] = contacto
         ? {
             ciudad: this.str(contacto, "ciudad"),
             departamento: this.str(contacto, "departamento"),
@@ -236,7 +190,7 @@ export class PublicProfileController {
 
     if (isOwner || privacy.shareStats) {
       const exp = profile["experiencia-motera"];
-      response["stats"] = exp
+      sections["stats"] = exp
         ? {
             anosExperiencia: this.num(exp, "anosExperiencia"),
             kilometrosMensuales: this.num(exp, "kilometrosMensuales"),
@@ -245,6 +199,55 @@ export class PublicProfileController {
           }
         : null;
     }
+
+    return sections;
+  }
+
+  @Get("public/:identifier")
+  @Throttle({ default: { ttl: 10000, limit: 20 } })
+  async getPublicProfile(
+    @Param("identifier") identifier: string,
+    @Req() req: Request,
+  ) {
+    const user = await this.findUserByIdentifier(identifier);
+    if (!user) {
+      throw new NotFoundException("Perfil no encontrado");
+    }
+    if (!user.profileCompleted) {
+      throw new NotFoundException("Perfil no disponible");
+    }
+
+    const requesterUserId = await this.getUserIdFromSession(req);
+    const isOwner =
+      requesterUserId !== null && requesterUserId === user.betterAuthId;
+
+    const privacy = this.buildPrivacyFlags(user);
+    if (!isOwner && !privacy.profileVisible) {
+      throw new NotFoundException("Perfil no disponible");
+    }
+
+    const profile = user.profile ?? {};
+    const displayName = this.deriveDisplayName(profile, user.email);
+    const membSection = profile["membresia-ecosistema"] ?? {};
+    const memberNumber = this.str(membSection, "numeroMiembro");
+    const personalSection = profile["datos-personales"];
+
+    const response: Record<string, unknown> = {
+      displayName,
+      firstName: personalSection?.primerNombre ?? displayName,
+      memberNumber,
+      membershipLevel: user.membershipLevel ?? null,
+      role: user.role,
+      memberSince: (user as unknown as { createdAt?: Date }).createdAt
+        ? new Date(
+            (user as unknown as { createdAt?: Date }).createdAt!,
+          ).toISOString()
+        : null,
+      profileCompleted: user.profileCompleted,
+      isOwner,
+      privacy,
+      ...this.buildOptionalSections(profile, privacy, isOwner),
+    };
 
     return response;
   }

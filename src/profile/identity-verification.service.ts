@@ -14,6 +14,7 @@ import {
   VerifikService,
   type VerifikIdentityRecord,
   type VerifikDocumentType,
+  type VerifikLookupResult,
 } from "../verifik/verifik.service";
 import { maskDocument } from "../common/utils/log-redact.util";
 
@@ -231,39 +232,8 @@ export class IdentityVerificationService {
     }
 
     const personal = user.profile?.["datos-personales"] ?? {};
-    const rawType =
-      typeof personal.tipoDocumento === "string" ? personal.tipoDocumento : "";
-    const rawNumber =
-      typeof personal.numeroDocumento === "string"
-        ? personal.numeroDocumento
-        : "";
-
-    const verifikType = mapDocumentType(rawType);
-    if (!verifikType) {
-      throw new BadRequestException(
-        "El tipo de documento registrado no admite verificacion automatica. Contacta al equipo BSK.",
-      );
-    }
-
-    const documentNumber = rawNumber.replace(/\D/g, "");
-    if (!DOCUMENT_NUMBER_PATTERN[verifikType].test(documentNumber)) {
-      throw new BadRequestException(
-        verifikType === "PEP"
-          ? "El numero de PEP debe tener exactamente 15 digitos."
-          : "El numero de documento no tiene un formato valido. Corrigelo en tu perfil e intenta de nuevo.",
-      );
-    }
-
-    // Foreigner routes need the document issue date.
-    let verifikExpeditionDate: string | null = null;
-    if (REQUIRES_EXPEDITION_DATE[verifikType]) {
-      verifikExpeditionDate = this.toVerifikDate(expeditionDate);
-      if (!verifikExpeditionDate) {
-        throw new BadRequestException(
-          "Debes ingresar la fecha de expedicion de tu documento (DD/MM/AAAA).",
-        );
-      }
-    }
+    const { verifikType, documentNumber, verifikExpeditionDate } =
+      this.extractAndValidateDocument(personal, expeditionDate);
 
     this.enforceAttemptThrottle(userId);
 
@@ -276,16 +246,7 @@ export class IdentityVerificationService {
     this.recordAttempt(userId);
 
     if (!lookup.ok) {
-      if (lookup.reason === "not_found") {
-        throw new BadRequestException(lookup.message);
-      }
-      if (lookup.reason === "invalid_input") {
-        throw new BadRequestException(lookup.message);
-      }
-      this.logger.warn(
-        `Verifik lookup failed (${lookup.reason}) for user ${userId} doc ${maskDocument(documentNumber)}`,
-      );
-      throw new ServiceUnavailableException(lookup.message);
+      this.handleLookupFailure(lookup, userId, documentNumber);
     }
 
     const record = lookup.record;
@@ -348,6 +309,64 @@ export class IdentityVerificationService {
     };
   }
 
+  private extractAndValidateDocument(
+    personal: Record<string, unknown>,
+    expeditionDate?: string,
+  ): {
+    verifikType: VerifikDocumentType;
+    documentNumber: string;
+    verifikExpeditionDate: string | null;
+  } {
+    const rawType =
+      typeof personal.tipoDocumento === "string" ? personal.tipoDocumento : "";
+    const rawNumber =
+      typeof personal.numeroDocumento === "string"
+        ? personal.numeroDocumento
+        : "";
+
+    const verifikType = mapDocumentType(rawType);
+    if (!verifikType) {
+      throw new BadRequestException(
+        "El tipo de documento registrado no admite verificacion automatica. Contacta al equipo BSK.",
+      );
+    }
+
+    const documentNumber = rawNumber.replace(/\D/g, "");
+    if (!DOCUMENT_NUMBER_PATTERN[verifikType].test(documentNumber)) {
+      throw new BadRequestException(
+        verifikType === "PEP"
+          ? "El numero de PEP debe tener exactamente 15 digitos."
+          : "El numero de documento no tiene un formato valido. Corrigelo en tu perfil e intenta de nuevo.",
+      );
+    }
+
+    let verifikExpeditionDate: string | null = null;
+    if (REQUIRES_EXPEDITION_DATE[verifikType]) {
+      verifikExpeditionDate = this.toVerifikDate(expeditionDate);
+      if (!verifikExpeditionDate) {
+        throw new BadRequestException(
+          "Debes ingresar la fecha de expedicion de tu documento (DD/MM/AAAA).",
+        );
+      }
+    }
+
+    return { verifikType, documentNumber, verifikExpeditionDate };
+  }
+
+  private handleLookupFailure(
+    lookup: Extract<VerifikLookupResult, { ok: false }>,
+    userId: string,
+    documentNumber: string,
+  ): never {
+    if (lookup.reason === "not_found" || lookup.reason === "invalid_input") {
+      throw new BadRequestException(lookup.message);
+    }
+    this.logger.warn(
+      `Verifik lookup failed (${lookup.reason}) for user ${userId} doc ${maskDocument(documentNumber)}`,
+    );
+    throw new ServiceUnavailableException(lookup.message);
+  }
+
   // ── Check evaluation ─────────────────────────────────────────────────
 
   /**
@@ -373,63 +392,66 @@ export class IdentityVerificationService {
       [record.firstName, record.lastName].filter(Boolean).join(" ") ??
       record.arrayName.join(" ");
 
-    const names: CheckOutcome =
-      normalizeName(declaredFirst).length > 0 &&
-      namesMatch(declaredFirst, officialName)
-        ? "match"
-        : "mismatch";
-
-    // Birth date / gender are only returned by the CC premium route.
-    let birthDate: CheckOutcome = "not_applicable";
-    let gender: CheckOutcome = "not_applicable";
-
-    if (verifikType === "CC") {
-      const declaredDob = asString(personal.fechaNacimiento);
-
-      if (!record.dateOfBirth) {
-        birthDate = "not_provided";
-      } else if (!declaredDob) {
-        birthDate = "auto_filled";
-      } else {
-        birthDate =
-          this.toIsoDate(declaredDob) === this.toIsoDate(record.dateOfBirth)
-            ? "match"
-            : "mismatch";
-      }
-
-      const declaredGender = asString(personal.genero);
-      if (!record.gender) {
-        gender = "not_provided";
-      } else if (!declaredGender) {
-        gender = "auto_filled";
-      } else {
-        const mapped = mapOfficialGender(record.gender);
-        if (mapped === null) {
-          gender = "not_comparable";
-        } else {
-          const normalizedDeclared = normalizeName(declaredGender);
-          gender =
-            normalizedDeclared === mapped
-              ? "match"
-              : normalizedDeclared === "NO BINARIO" ||
-                  normalizedDeclared === "PREFIERO NO DECIR"
-                ? "not_comparable"
-                : "mismatch";
-        }
-      }
-    }
-
-    // Immigration status only applies to foreigner documents.
-    let documentStatus: CheckOutcome = "not_applicable";
-    if (verifikType !== "CC") {
-      documentStatus = record.status
-        ? record.status.trim().toUpperCase() === "VIGENTE"
-          ? "match"
-          : "mismatch"
-        : "not_provided";
-    }
+    const names = this.evaluateNameCheck(declaredFirst, officialName);
+    const birthDate =
+      verifikType === "CC"
+        ? this.evaluateBirthDateCheck(
+            asString(personal.fechaNacimiento),
+            record.dateOfBirth,
+          )
+        : "not_applicable";
+    const gender =
+      verifikType === "CC"
+        ? this.evaluateGenderCheck(asString(personal.genero), record.gender)
+        : "not_applicable";
+    const documentStatus =
+      verifikType !== "CC"
+        ? this.evaluateDocumentStatusCheck(record.status)
+        : "not_applicable";
 
     return { names, birthDate, gender, documentStatus };
+  }
+
+  private evaluateNameCheck(declared: string, official: string): CheckOutcome {
+    if (normalizeName(declared).length > 0 && namesMatch(declared, official)) {
+      return "match";
+    }
+    return "mismatch";
+  }
+
+  private evaluateBirthDateCheck(
+    declaredDob: string | null,
+    officialDob: string | null,
+  ): CheckOutcome {
+    if (!officialDob) return "not_provided";
+    if (!declaredDob) return "auto_filled";
+    return this.toIsoDate(declaredDob) === this.toIsoDate(officialDob)
+      ? "match"
+      : "mismatch";
+  }
+
+  private evaluateGenderCheck(
+    declaredGender: string | null,
+    officialGender: string | null,
+  ): CheckOutcome {
+    if (!officialGender) return "not_provided";
+    if (!declaredGender) return "auto_filled";
+    const mapped = mapOfficialGender(officialGender);
+    if (mapped === null) return "not_comparable";
+    const normalizedDeclared = normalizeName(declaredGender);
+    if (normalizedDeclared === mapped) return "match";
+    if (
+      normalizedDeclared === "NO BINARIO" ||
+      normalizedDeclared === "PREFIERO NO DECIR"
+    ) {
+      return "not_comparable";
+    }
+    return "mismatch";
+  }
+
+  private evaluateDocumentStatusCheck(status: string | null): CheckOutcome {
+    if (!status) return "not_provided";
+    return status.trim().toUpperCase() === "VIGENTE" ? "match" : "mismatch";
   }
 
   /** Hard failures that block verification. */
@@ -645,11 +667,9 @@ function mapOfficialGender(gender: string): string | null {
 /** Official gender → the profile's select label. */
 function mapOfficialGenderToLabel(gender: string): string | null {
   const mapped = mapOfficialGender(gender);
-  return mapped === "MASCULINO"
-    ? "Masculino"
-    : mapped === "FEMENINO"
-      ? "Femenino"
-      : null;
+  if (mapped === "MASCULINO") return "Masculino";
+  if (mapped === "FEMENINO") return "Femenino";
+  return null;
 }
 
 /**
