@@ -419,7 +419,7 @@ export class AlegraService {
       payload,
     );
 
-    if (!invoice || !invoice.id) {
+    if (!invoice?.id) {
       this.logger.warn(
         `Failed to create Alegra invoice for ref=${maskReference(context.transactionReference)}`,
       );
@@ -504,7 +504,7 @@ export class AlegraService {
       payload,
     );
 
-    if (!payment || !payment.id) {
+    if (!payment?.id) {
       this.logger.warn(
         `Failed to create Alegra payment for invoiceId=${invoiceId}`,
       );
@@ -728,7 +728,7 @@ export class AlegraService {
       `/invoices/${invoiceId}?fields=pdf`,
     );
 
-    if (!invoice || !invoice.pdf) {
+    if (!invoice?.pdf) {
       this.logger.warn(`Failed to get PDF URL for invoice ${invoiceId}`);
       return null;
     }
@@ -756,7 +756,7 @@ export class AlegraService {
       purpose,
     });
 
-    if (!record || !record.alegraInvoiceId || record.alegraInvoiceId === "0") {
+    if (!record?.alegraInvoiceId || record.alegraInvoiceId === "0") {
       return null;
     }
 
@@ -835,7 +835,7 @@ export class AlegraService {
     subject: string,
   ): Promise<void> {
     const invoice = payload?.message?.invoice;
-    if (!invoice || !invoice.id) {
+    if (!invoice?.id) {
       this.logger.warn("Alegra invoice webhook without valid invoice data");
       return;
     }

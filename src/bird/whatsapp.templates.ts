@@ -28,7 +28,7 @@ const WHATSAPP_MAX_LEN = 4096;
 function sanitizeText(text: string): string {
   return text
     .replace(/[\r\n\t\v\f\0]/g, " ")
-    .replace(/\u00a0/g, " ")
+    .replaceAll("\u00a0", " ")
     .trim();
 }
 

@@ -371,6 +371,40 @@ export class MembershipService {
     return crypto.createHash("sha256").update(concatenated).digest("hex");
   }
 
+  private async assertNoPendingMembershipTransaction(
+    userId: string,
+    paymentPlan: string,
+    isRenewal: boolean,
+    installmentNumber: number,
+  ): Promise<void> {
+    if (paymentPlan === "installment") {
+      const pendingForSameKey = await this.transactionModel.findOne({
+        userId,
+        paymentPlan: "installment",
+        isRenewal,
+        installmentNumber,
+        status: "PENDING",
+      });
+      if (pendingForSameKey) {
+        throw new ConflictException(
+          `Ya tienes un pago pendiente (${pendingForSameKey.reference}). Continúa o cancélalo antes de iniciar uno nuevo.`,
+        );
+      }
+    } else if (paymentPlan === "single") {
+      const pendingSingle = await this.transactionModel.findOne({
+        userId,
+        paymentPlan: "single",
+        isRenewal,
+        status: "PENDING",
+      });
+      if (pendingSingle) {
+        throw new ConflictException(
+          `Ya tienes un pago pendiente de membresía (${pendingSingle.reference}). Continúa o cancélalo antes de iniciar uno nuevo.`,
+        );
+      }
+    }
+  }
+
   async createMembershipPayment(
     userId: string,
     dto: CreateMembershipPaymentDto,
@@ -407,40 +441,12 @@ export class MembershipService {
         ? await this.computeNextInstallmentNumber(userId, isRenewal)
         : 1;
 
-    // A-6: Reject new intents when a PENDING transaction already exists
-    // for the same installment key. This prevents the "two tabs /
-    // double-click" pattern from generating two Bold checkout links
-    // (both of which a user can pay), which would otherwise produce
-    // duplicate charges for the same cuota.
-    if (dto.paymentPlan === "installment") {
-      const pendingForSameKey = await this.transactionModel.findOne({
-        userId,
-        paymentPlan: "installment",
-        isRenewal,
-        installmentNumber,
-        status: "PENDING",
-      });
-      if (pendingForSameKey) {
-        throw new ConflictException(
-          `Ya tienes un pago pendiente (${pendingForSameKey.reference}). Continúa o cancélalo antes de iniciar uno nuevo.`,
-        );
-      }
-    }
-
-    // Also block single-payment intents when a PENDING one exists.
-    if (dto.paymentPlan === "single") {
-      const pendingSingle = await this.transactionModel.findOne({
-        userId,
-        paymentPlan: "single",
-        isRenewal,
-        status: "PENDING",
-      });
-      if (pendingSingle) {
-        throw new ConflictException(
-          `Ya tienes un pago pendiente de membresía (${pendingSingle.reference}). Continúa o cancélalo antes de iniciar uno nuevo.`,
-        );
-      }
-    }
+    await this.assertNoPendingMembershipTransaction(
+      userId,
+      dto.paymentPlan,
+      isRenewal,
+      installmentNumber,
+    );
 
     const { creditUsedAmount, remainingAmount } =
       await this.applyCreditIfRequested(

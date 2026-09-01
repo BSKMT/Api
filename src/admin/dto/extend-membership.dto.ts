@@ -1,5 +1,5 @@
 import {
-  IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsDateString,
@@ -8,7 +8,7 @@ import {
 } from "class-validator";
 
 export class ExtendMembershipDto {
-  @IsEnum(["days", "months", "years"])
+  @IsIn(["days", "months", "years"])
   unit!: "days" | "months" | "years";
 
   @IsInt()

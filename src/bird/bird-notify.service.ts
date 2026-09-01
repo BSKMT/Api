@@ -168,105 +168,119 @@ export class BirdNotifyService {
     }
 
     const notifSettings = user.settings.notifications;
+    const { title, message, category, userId } = data;
 
-    const emailEnabled = this.isChannelEnabled(
-      notifSettings,
-      "email",
-      data.category,
-    );
-    const smsEnabled = this.isChannelEnabled(
-      notifSettings,
-      "sms",
-      data.category,
-    );
-    const whatsappEnabled = this.isChannelEnabled(
-      notifSettings,
-      "whatsapp",
-      data.category,
-    );
-
-    if (emailEnabled && user.emailVerified) {
-      const email = user.email;
-      this.emailService
-        .sendNotificationEmail({
-          to: email,
-          title: data.title,
-          message: data.message,
-        })
-        .then((ok) => {
-          if (!ok) {
-            this.logger.warn(
-              `No se pudo enviar el correo a ${maskEmail(email)}`,
-            );
-          }
-        })
-        .catch((err: unknown) => {
-          this.logger.warn(
-            `Error correo notif a ${maskEmail(email)}: ${sanitizeForLog(err instanceof Error ? err.message : String(err))}`,
-          );
-        });
-    } else if (emailEnabled && !user.emailVerified) {
-      this.logger.debug(
-        `Email habilitado pero usuario ${data.userId} sin correo verificado — skip`,
-      );
+    if (this.isChannelEnabled(notifSettings, "email", category)) {
+      this.dispatchEmailNotification(user, title, message, userId);
     }
-
-    if (smsEnabled && user.phone && user.phoneVerified) {
-      const phone = user.phone;
-      this.smsService
-        .sendNotificationSms({
-          to: phone,
-          title: data.title,
-          message: data.message,
-        })
-        .then((ok) => {
-          if (!ok) {
-            this.logger.warn(`No se pudo enviar SMS a ${maskPhone(phone)}`);
-          }
-        })
-        .catch((err: unknown) => {
-          this.logger.warn(
-            `Error SMS notif a ${maskPhone(phone)}: ${sanitizeForLog(err instanceof Error ? err.message : String(err))}`,
-          );
-        });
-    } else if (smsEnabled && user.phone && !user.phoneVerified) {
-      this.logger.debug(
-        `SMS habilitado pero usuario ${data.userId} sin telefono verificado — skip`,
-      );
-    } else if (smsEnabled && !user.phone) {
-      this.logger.debug(
-        `SMS habilitado pero usuario ${data.userId} sin telefono`,
-      );
+    if (this.isChannelEnabled(notifSettings, "sms", category)) {
+      this.dispatchSmsNotification(user, title, message, userId);
     }
-
-    if (whatsappEnabled && user.phone && user.phoneVerified) {
-      const phone = user.phone;
-      this.whatsappService
-        .sendNotificationWhatsapp({
-          to: phone,
-          title: data.title,
-          message: data.message,
-        })
-        .then((ok) => {
-          if (!ok) {
-            this.logger.warn(
-              `No se pudo enviar WhatsApp a ${maskPhone(phone)}`,
-            );
-          }
-        })
-        .catch((err: unknown) => {
-          this.logger.warn(
-            `Error WhatsApp notif a ${maskPhone(phone)}: ${sanitizeForLog(err instanceof Error ? err.message : String(err))}`,
-          );
-        });
-    } else if (whatsappEnabled && user.phone && !user.phoneVerified) {
-      this.logger.debug(
-        `WhatsApp habilitado pero usuario ${data.userId} sin telefono verificado — skip`,
-      );
-    } else if (whatsappEnabled && !user.phone) {
-      this.logger.debug(
-        `WhatsApp habilitado pero usuario ${data.userId} sin telefono — skip`,
-      );
+    if (this.isChannelEnabled(notifSettings, "whatsapp", category)) {
+      this.dispatchWhatsappNotification(user, title, message, userId);
     }
+  }
+
+  private dispatchEmailNotification(
+    user: UserNotifyInfo,
+    title: string,
+    message: string,
+    userId: string,
+  ): void {
+    if (!user.emailVerified) {
+      this.logger.debug(
+        `Email habilitado pero usuario ${userId} sin correo verificado — skip`,
+      );
+      return;
+    }
+    const email = user.email;
+    this.emailService
+      .sendNotificationEmail({
+        to: email,
+        title,
+        message,
+      })
+      .then((ok) => {
+        if (!ok) {
+          this.logger.warn(`No se pudo enviar el correo a ${maskEmail(email)}`);
+        }
+      })
+      .catch((err: unknown) => {
+        this.logger.warn(
+          `Error correo notif a ${maskEmail(email)}: ${sanitizeForLog(err instanceof Error ? err.message : String(err))}`,
+        );
+      });
+  }
+
+  private dispatchSmsNotification(
+    user: UserNotifyInfo,
+    title: string,
+    message: string,
+    userId: string,
+  ): void {
+    if (!user.phone) {
+      this.logger.debug(`SMS habilitado pero usuario ${userId} sin telefono`);
+      return;
+    }
+    if (!user.phoneVerified) {
+      this.logger.debug(
+        `SMS habilitado pero usuario ${userId} sin telefono verificado — skip`,
+      );
+      return;
+    }
+    const phone = user.phone;
+    this.smsService
+      .sendNotificationSms({
+        to: phone,
+        title,
+        message,
+      })
+      .then((ok) => {
+        if (!ok) {
+          this.logger.warn(`No se pudo enviar SMS a ${maskPhone(phone)}`);
+        }
+      })
+      .catch((err: unknown) => {
+        this.logger.warn(
+          `Error SMS notif a ${maskPhone(phone)}: ${sanitizeForLog(err instanceof Error ? err.message : String(err))}`,
+        );
+      });
+  }
+
+  private dispatchWhatsappNotification(
+    user: UserNotifyInfo,
+    title: string,
+    message: string,
+    userId: string,
+  ): void {
+    if (!user.phone) {
+      this.logger.debug(
+        `WhatsApp habilitado pero usuario ${userId} sin telefono — skip`,
+      );
+      return;
+    }
+    if (!user.phoneVerified) {
+      this.logger.debug(
+        `WhatsApp habilitado pero usuario ${userId} sin telefono verificado — skip`,
+      );
+      return;
+    }
+    const phone = user.phone;
+    this.whatsappService
+      .sendNotificationWhatsapp({
+        to: phone,
+        title,
+        message,
+      })
+      .then((ok) => {
+        if (!ok) {
+          this.logger.warn(`No se pudo enviar WhatsApp a ${maskPhone(phone)}`);
+        }
+      })
+      .catch((err: unknown) => {
+        this.logger.warn(
+          `Error WhatsApp notif a ${maskPhone(phone)}: ${sanitizeForLog(err instanceof Error ? err.message : String(err))}`,
+        );
+      });
   }
 }
