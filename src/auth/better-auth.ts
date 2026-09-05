@@ -209,6 +209,31 @@ export function setAuthDependencies(
 async function initAuth(): Promise<AuthInstance> {
   const { betterAuth, mongodbAdapter } = await loadBetterAuthDeps();
 
+  // Better Auth 1.7 migration: in v1.7, account lookups strictly match
+  // account.issuer === "local:credential". Legacy accounts created in Better Auth <= 1.6
+  // lack the issuer field, causing sign-in to emit "WARN [Better Auth]: User not found"
+  // and fail with 401. This backfill runs idempotently on cold start.
+  try {
+    const migrationResult = await mongoDb.collection("account").updateMany(
+      {
+        providerId: "credential",
+        $or: [{ issuer: { $exists: false } }, { issuer: null }, { issuer: "" }],
+      },
+      {
+        $set: { issuer: "local:credential" },
+      },
+    );
+    if (migrationResult.modifiedCount > 0) {
+      authLogger.log(
+        `[BetterAuth 1.7 Migration] Backfilled issuer="local:credential" on ${migrationResult.modifiedCount} legacy credential account(s).`,
+      );
+    }
+  } catch (migrationErr) {
+    authLogger.error(
+      `[BetterAuth 1.7 Migration] Failed to backfill account issuer: ${migrationErr instanceof Error ? migrationErr.message : String(migrationErr)}`,
+    );
+  }
+
   const landingPageUrl =
     injectedLandingPageUrl ??
     process.env.LANDING_PAGE_URL ??
