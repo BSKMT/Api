@@ -41,6 +41,49 @@ export type VerifikLookupResult =
       message: string;
     };
 
+/** Official SOAT record retrieved from RUNT via Verifik. */
+export interface VerifikSoatRecord {
+  status: string | null;
+  policyNumber: string | null;
+  insuranceCompany: string | null;
+  startDate: string | null;
+  expiryDate: string | null;
+}
+
+/** Official Revisión Técnico-Mecánica (RTM) record from RUNT via Verifik. */
+export interface VerifikRtmRecord {
+  status: string | null;
+  certificateNumber: string | null;
+  cdaName: string | null;
+  expeditionDate: string | null;
+  expiryDate: string | null;
+}
+
+/** Normalized RUNT vehicle record from Verifik. */
+export interface VerifikRuntVehicleRecord {
+  plate: string;
+  brand: string | null;
+  modelLine: string | null;
+  year: number | null;
+  displacementCc: number | null;
+  color: string | null;
+  serviceType: string | null;
+  classType: string | null;
+  engineNumber: string | null;
+  vinOrChassis: string | null;
+  soat: VerifikSoatRecord | null;
+  rtm: VerifikRtmRecord | null;
+  verifikId: string | null;
+}
+
+export type VerifikRuntLookupResult =
+  | { ok: true; record: VerifikRuntVehicleRecord }
+  | {
+      ok: false;
+      reason: "not_found" | "invalid_input" | "unauthorized" | "unavailable";
+      message: string;
+    };
+
 /** Supported Colombian document types on the Verifik v2 API. */
 export type VerifikDocumentType = "CC" | "CE" | "PPT" | "PEP";
 
@@ -61,44 +104,139 @@ interface VerifikRawData {
 }
 
 interface VerifikRawResponse {
-  data?: VerifikRawData;
+  data?: unknown;
   signature?: { message?: unknown; dateTime?: unknown };
   id?: unknown;
   message?: unknown;
   code?: unknown;
 }
 
-/**
- * VerifikService — typed HTTP client for the Verifik v2 Colombia
- * identity-verification API (https://api.verifik.co).
- *
- * Endpoints used (per the Verifik documentation):
- *
- *  - CC  → GET /v2/co/cedula/premium
- *          Full civil-registry record: names, date of birth, gender,
- *          alive status and expedition data. Only `documentNumber`
- *          required (the issue date is resolved server-side).
- *  - CE  → GET /v2/co/foreigner-id/ce   (Migración Colombia)
- *  - PPT → GET /v2/co/foreigner-id/ppt  (Migración Colombia)
- *  - PEP → GET /v2/co/foreigner-id/pep  (Migración Colombia)
- *          The three foreigner routes require `documentNumber` plus the
- *          document `expeditionDate` in DD/MM/YYYY and return the
- *          immigration status (e.g. VIGENTE) alongside the names.
- *
- * Security (OWASP 2025):
- *
- *  - A04 (Cryptographic Failures): the bearer token lives only in the
- *    server environment; it is never logged and never returned to any
- *    client. Requests to Verifik always go over HTTPS.
- *  - A05 (Injection): every parameter is strictly validated before it
- *    is placed on the query string (digits-only document numbers, a
- *    DD/MM/YYYY expedition date) and encoded via URLSearchParams.
- *  - A09 (Security Logging): failures are logged with sanitized
- *    messages and masked document numbers — never full personal data.
- *  - A10 (Mishandling of Exceptional Conditions): every outbound call
- *    is wrapped with an AbortController timeout and mapped to a typed
- *    result instead of throwing raw upstream errors to callers.
- */
+function normalizeRuntDate(val: unknown): string | null {
+  if (typeof val !== "string" || !val.trim()) {
+    return null;
+  }
+  const s = val.trim();
+  const ddmmyyyyMatch = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
+  if (ddmmyyyyMatch) {
+    const [, d, m, y] = ddmmyyyyMatch;
+    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+  return s;
+}
+
+function extractFirstObject(raw: unknown): Record<string, unknown> | null {
+  if (!raw) return null;
+  if (Array.isArray(raw)) {
+    const first = raw[0];
+    return typeof first === "object" && first !== null
+      ? (first as Record<string, unknown>)
+      : null;
+  }
+  return typeof raw === "object" ? (raw as Record<string, unknown>) : null;
+}
+
+function extractSoat(raw: unknown): VerifikSoatRecord | null {
+  const item = extractFirstObject(raw);
+  if (!item) return null;
+
+  return {
+    status: (item.estado ?? item.status ?? item.estadoPoliza ?? null) as
+      | string
+      | null,
+    policyNumber: (item.numeroPoliza ??
+      item.policyNumber ??
+      item.numero ??
+      null) as string | null,
+    insuranceCompany: (item.entidadAseguradora ??
+      item.aseguradora ??
+      item.insuranceCompany ??
+      null) as string | null,
+    startDate: normalizeRuntDate(
+      item.fechaVigenciaInicio ?? item.fechaInicio ?? item.startDate,
+    ),
+    expiryDate: normalizeRuntDate(
+      item.fechaVigenciaFin ?? item.fechaVencimiento ?? item.expiryDate,
+    ),
+  };
+}
+
+function extractRtm(raw: unknown): VerifikRtmRecord | null {
+  const item = extractFirstObject(raw);
+  if (!item) return null;
+
+  return {
+    status: (item.estado ?? item.status ?? item.estadoCertificado ?? null) as
+      | string
+      | null,
+    certificateNumber: (item.numeroCertificado ??
+      item.certificateNumber ??
+      item.control ??
+      null) as string | null,
+    cdaName: (item.cda ??
+      item.centroDiagnostico ??
+      item.cdaName ??
+      item.nombreCda ??
+      null) as string | null,
+    expeditionDate: normalizeRuntDate(
+      item.fechaExpedicion ??
+        item.fechaExpedicionCertificado ??
+        item.expeditionDate,
+    ),
+    expiryDate: normalizeRuntDate(
+      item.fechaVigenciaFin ?? item.fechaVencimiento ?? item.expiryDate,
+    ),
+  };
+}
+
+function normalizeRuntVehicle(
+  data: Record<string, unknown>,
+  id: unknown,
+  fallbackPlate: string,
+): VerifikRuntVehicleRecord {
+  const str = (v: unknown): string | null =>
+    typeof v === "string" && v.trim() ? v.trim() : null;
+
+  const num = (v: unknown): number | null => {
+    if (typeof v === "number" && !Number.isNaN(v)) return v;
+    if (typeof v === "string") {
+      const parsed = Number(v.replace(/\D/g, ""));
+      return !Number.isNaN(parsed) && parsed > 0 ? parsed : null;
+    }
+    return null;
+  };
+
+  const plate = str(data.plate) ?? str(data.placa) ?? fallbackPlate;
+  const brand = str(data.marca) ?? str(data.brand);
+  const modelLine = str(data.linea) ?? str(data.modelLine) ?? str(data.line);
+  const year = num(data.modelo) ?? num(data.year);
+  const displacementCc = num(data.cilindraje) ?? num(data.displacementCc);
+  const color = str(data.color);
+  const serviceType = str(data.servicio) ?? str(data.serviceType);
+  const classType = str(data.clase) ?? str(data.classType);
+  const engineNumber = str(data.numeroMotor) ?? str(data.engineNumber);
+  const vinOrChassis =
+    str(data.numeroChasis) ?? str(data.vin) ?? str(data.chasis);
+
+  const rawSoat = data.soat ?? data.polizaSoat;
+  const rawRtm = data.tecnomecanica ?? data.rtm ?? data.revisionTecnicomecanica;
+
+  return {
+    plate,
+    brand,
+    modelLine,
+    year,
+    displacementCc,
+    color,
+    serviceType,
+    classType,
+    engineNumber,
+    vinOrChassis,
+    soat: extractSoat(rawSoat),
+    rtm: extractRtm(rawRtm),
+    verifikId: str(id),
+  };
+}
+
 @Injectable()
 export class VerifikService {
   private readonly logger = new Logger(VerifikService.name);
@@ -113,80 +251,95 @@ export class VerifikService {
   }
 
   /**
-   * Verifies a Colombian *Cédula de Ciudadanía* (CC) via the premium
-   * route, which resolves the issue date server-side and returns the
-   * full identity record (names, date of birth, gender, alive status).
-   *
-   * @param documentNumber CC number, 5–10 digits (digits only).
+   * Verifies a Colombian Cédula de Ciudadanía (CC) via the premium route.
    */
   async verifyCedulaPremium(
     documentNumber: string,
   ): Promise<VerifikLookupResult> {
-    return this.get("/v2/co/cedula/premium", { documentNumber });
+    return this.getIdentity("/v2/co/cedula/premium", { documentNumber });
   }
 
   /**
-   * Verifies a *Cédula de Extranjería* (CE) against Migración Colombia.
-   *
-   * @param documentNumber CE number, digits only (usually 6–7 digits).
-   * @param expeditionDate Issue date on the document, `DD/MM/YYYY`.
+   * Verifies a Cédula de Extranjería (CE) against Migración Colombia.
    */
   async verifyCe(
     documentNumber: string,
     expeditionDate: string,
   ): Promise<VerifikLookupResult> {
-    return this.get("/v2/co/foreigner-id/ce", {
+    return this.getIdentity("/v2/co/foreigner-id/ce", {
       documentNumber,
       expeditionDate,
     });
   }
 
   /**
-   * Verifies a *Permiso de Protección Temporal* (PPT) immigration
-   * status against Migración Colombia.
-   *
-   * @param documentNumber PPT number, digits only (usually ≤ 7 digits).
-   * @param expeditionDate Issue date on the document, `DD/MM/YYYY`.
+   * Verifies a Permiso de Protección Temporal (PPT) against Migración Colombia.
    */
   async verifyPpt(
     documentNumber: string,
     expeditionDate: string,
   ): Promise<VerifikLookupResult> {
-    return this.get("/v2/co/foreigner-id/ppt", {
+    return this.getIdentity("/v2/co/foreigner-id/ppt", {
       documentNumber,
       expeditionDate,
     });
   }
 
   /**
-   * Verifies a *Permiso Especial de Permanencia* (PEP — immigration
-   * permit) against Migración Colombia. PEP numbers are always 15 digits.
-   *
-   * @param documentNumber PEP number, exactly 15 digits.
-   * @param expeditionDate Issue date on the document, `DD/MM/YYYY`.
+   * Verifies a Permiso Especial de Permanencia (PEP) against Migración Colombia.
    */
   async verifyPep(
     documentNumber: string,
     expeditionDate: string,
   ): Promise<VerifikLookupResult> {
-    return this.get("/v2/co/foreigner-id/pep", {
+    return this.getIdentity("/v2/co/foreigner-id/pep", {
       documentNumber,
       expeditionDate,
     });
   }
 
+  /**
+   * Verifies vehicle and official SOAT & RTM documentation against RUNT via Verifik.
+   *
+   * @param documentType   CC | CE | NIT | etc.
+   * @param documentNumber Document number of registered owner
+   * @param plate          Vehicle plate (e.g. ABC12D)
+   */
+  async verifyRuntVehicle(
+    documentType: string,
+    documentNumber: string,
+    plate: string,
+  ): Promise<VerifikRuntLookupResult> {
+    const cleanDocNumber = documentNumber.replace(/\D/g, "");
+    const cleanPlate = plate.trim().toUpperCase();
+    const cleanDocType = documentType.trim().toUpperCase();
+
+    return this.getRuntVehicle("/v2/co/runt/vehiculo", {
+      documentType: cleanDocType,
+      documentNumber: cleanDocNumber,
+      plate: cleanPlate,
+    });
+  }
+
   // ── Internals ────────────────────────────────────────────────────────
 
-  private async get(
+  private async executeFetch(
     path: string,
     params: Record<string, string>,
-  ): Promise<VerifikLookupResult> {
+  ): Promise<
+    | { ok: true; response: Response; body: VerifikRawResponse }
+    | {
+        ok: false;
+        reason: "unavailable" | "unauthorized" | "not_found" | "invalid_input";
+        message: string;
+      }
+  > {
     const token = this.configService.get<string>("VERIFIK_API_TOKEN");
     if (!token) {
       return {
         ok: false,
         reason: "unavailable",
-        message: "La verificacion de identidad no esta disponible.",
+        message: "El servicio de verificación Verifik no está configurado.",
       };
     }
 
@@ -220,7 +373,7 @@ export class VerifikService {
         return {
           ok: false,
           reason: "unauthorized",
-          message: "La verificacion de identidad no esta disponible.",
+          message: "El servicio de verificación no está disponible.",
         };
       }
 
@@ -234,11 +387,11 @@ export class VerifikService {
         return {
           ok: false,
           reason: "unavailable",
-          message: "La verificacion de identidad no esta disponible.",
+          message: "El servicio de verificación no está disponible.",
         };
       }
 
-      return this.mapResponseToResult(response, body, path);
+      return { ok: true, response, body };
     } catch (err: unknown) {
       if (err instanceof Error && err.name === "AbortError") {
         this.logger.warn(`Verifik request to ${path} timed out`);
@@ -252,24 +405,30 @@ export class VerifikService {
       return {
         ok: false,
         reason: "unavailable",
-        message: "La verificacion de identidad no esta disponible.",
+        message: "El servicio de verificación no está disponible.",
       };
     } finally {
       clearTimeout(timeout);
     }
   }
 
-  private mapResponseToResult(
-    response: Response,
-    body: VerifikRawResponse,
+  private async getIdentity(
     path: string,
-  ): VerifikLookupResult {
+    params: Record<string, string>,
+  ): Promise<VerifikLookupResult> {
+    const fetchResult = await this.executeFetch(path, params);
+    if (!fetchResult.ok) {
+      return fetchResult;
+    }
+
+    const { response, body } = fetchResult;
+
     if (response.status === 404) {
       return {
         ok: false,
         reason: "not_found",
         message:
-          "No encontramos registros para el documento. Verifica el numero y la fecha de expedicion.",
+          "No encontramos registros para el documento. Verifica el número y la fecha de expedición.",
       };
     }
 
@@ -278,7 +437,7 @@ export class VerifikService {
         ok: false,
         reason: "invalid_input",
         message:
-          "Los datos del documento no cumplen el formato requerido. Verifica el numero y la fecha de expedicion.",
+          "Los datos del documento no cumplen el formato requerido. Verifica el número y la fecha de expedición.",
       };
     }
 
@@ -288,7 +447,7 @@ export class VerifikService {
         ok: false,
         reason: "unavailable",
         message:
-          "El servicio de verificacion esta saturado. Intenta de nuevo en unos minutos.",
+          "El servicio de verificación está saturado. Intenta de nuevo en unos minutos.",
       };
     }
 
@@ -301,19 +460,83 @@ export class VerifikService {
       return {
         ok: false,
         reason: "unavailable",
-        message: "La verificacion de identidad no esta disponible.",
+        message: "La verificación de identidad no está disponible.",
       };
     }
 
-    return { ok: true, record: this.normalize(body.data, body.id) };
+    return {
+      ok: true,
+      record: this.normalizeIdentity(body.data, body.id),
+    };
   }
 
-  /**
-   * Maps a raw Verifik `data` payload into the normalized record,
-   * tolerating absent fields (each document type returns a different
-   * subset) and rejecting values with unexpected types.
-   */
-  private normalize(data: VerifikRawData, id: unknown): VerifikIdentityRecord {
+  private async getRuntVehicle(
+    path: string,
+    params: Record<string, string>,
+  ): Promise<VerifikRuntLookupResult> {
+    const fetchResult = await this.executeFetch(path, params);
+    if (!fetchResult.ok) {
+      return fetchResult;
+    }
+
+    const { response, body } = fetchResult;
+
+    if (response.status === 404) {
+      return {
+        ok: false,
+        reason: "not_found",
+        message:
+          "No encontramos registros en el RUNT para la placa y documento consultados.",
+      };
+    }
+
+    if (response.status === 409) {
+      return {
+        ok: false,
+        reason: "invalid_input",
+        message:
+          "Los datos de la placa o documento no cumplen el formato requerido por el RUNT.",
+      };
+    }
+
+    if (response.status === 429) {
+      this.logger.warn(`Verifik rate limit hit on ${path}`);
+      return {
+        ok: false,
+        reason: "unavailable",
+        message:
+          "El servicio de consulta RUNT está saturado. Intenta de nuevo en unos minutos.",
+      };
+    }
+
+    if (!response.ok || !body.data) {
+      this.logger.error(
+        `Verifik RUNT error ${response.status} on ${path}: ${sanitizeForLog(
+          typeof body.message === "string" ? body.message : "unknown",
+        )}`,
+      );
+      return {
+        ok: false,
+        reason: "unavailable",
+        message:
+          "La verificación con el RUNT no está disponible en este momento.",
+      };
+    }
+
+    return {
+      ok: true,
+      record: normalizeRuntVehicle(
+        body.data as Record<string, unknown>,
+        body.id,
+        params.plate,
+      ),
+    };
+  }
+
+  private normalizeIdentity(
+    data: VerifikRawData,
+    id: unknown,
+  ): VerifikIdentityRecord {
     const str = (v: unknown): string | null =>
       typeof v === "string" && v.trim() ? v.trim() : null;
 
