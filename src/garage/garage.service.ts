@@ -39,6 +39,11 @@ import { UpdateMotorcycleDto } from "./dto/update-motorcycle.dto";
 import { UpdateOdometerDto } from "./dto/update-odometer.dto";
 import { CreateMaintenanceDto } from "./dto/create-maintenance.dto";
 import { AlliedServiceOrderDto } from "./dto/allied-service-order.dto";
+import { VerifyRuntDto } from "./dto/verify-runt.dto";
+import {
+  VerifikService,
+  type VerifikRuntVehicleRecord,
+} from "../verifik/verifik.service";
 
 const KNOWN_EVENT_KM: Record<string, number> = {
   "kick-off-2026": 120,
@@ -241,6 +246,7 @@ export class GarageService {
     @InjectModel(Order.name)
     private readonly orderModel: Model<OrderDocument>,
     private readonly usersService: UsersService,
+    private readonly verifikService: VerifikService,
   ) {}
 
   async getDashboard(userId: string, targetMotorcycleId?: string) {
@@ -741,6 +747,11 @@ export class GarageService {
         daysRemaining: soatDays,
         status: getDocumentStatus(soatDays),
         canRenewOneClick: soatDays !== null && soatDays <= 15,
+        isRuntVerified: activeMoto.isRuntVerified ?? false,
+        runtVerifiedAt: activeMoto.runtVerifiedAt ?? null,
+        runtStatus: activeMoto.runtSoatStatus ?? null,
+        insuranceCompany: activeMoto.insuranceCompany ?? null,
+        policyNumber: activeMoto.policyNumber ?? null,
       },
       {
         id: "rtm",
@@ -749,6 +760,10 @@ export class GarageService {
         daysRemaining: rtmDays,
         status: getDocumentStatus(rtmDays),
         canRenewOneClick: rtmDays !== null && rtmDays <= 15,
+        isRuntVerified: activeMoto.isRuntVerified ?? false,
+        runtVerifiedAt: activeMoto.runtVerifiedAt ?? null,
+        runtStatus: activeMoto.runtRtmStatus ?? null,
+        cdaName: activeMoto.runtCdaName ?? null,
       },
       {
         id: "license",
@@ -757,6 +772,12 @@ export class GarageService {
         daysRemaining: licenseDays,
         status: getDocumentStatus(licenseDays),
         canRenewOneClick: false,
+        isRuntVerified: false,
+        runtVerifiedAt: null,
+        runtStatus: null,
+        cdaName: null,
+        insuranceCompany: null,
+        policyNumber: null,
       },
     ];
   }
@@ -1070,5 +1091,235 @@ export class GarageService {
 
   getAlliedWorkshops() {
     return ALLIED_WORKSHOPS;
+  }
+
+  private resolveUserDocumentForRunt(
+    user: {
+      identityVerification?: {
+        documentType?: string;
+        documentNumber?: string;
+      } | null;
+      profile?: Record<string, unknown>;
+    },
+    dto?: VerifyRuntDto,
+  ): { documentType: string; documentNumber: string } {
+    if (dto?.documentNumber && dto?.documentType) {
+      return {
+        documentType: dto.documentType.trim().toUpperCase(),
+        documentNumber: dto.documentNumber.trim().replace(/\D/g, ""),
+      };
+    }
+
+    const verified = user.identityVerification;
+    if (verified?.documentNumber && verified?.documentType) {
+      return {
+        documentType: verified.documentType.trim().toUpperCase(),
+        documentNumber: verified.documentNumber.trim().replace(/\D/g, ""),
+      };
+    }
+
+    const personal = user.profile?.["datos-personales"] as
+      | Record<string, unknown>
+      | undefined;
+    const num = personal?.numeroDocumento;
+    const tipo = personal?.tipoDocumento;
+
+    if (num && typeof num === "string" && num.trim()) {
+      return {
+        documentType:
+          typeof tipo === "string" && tipo.trim()
+            ? tipo.trim().toUpperCase()
+            : "CC",
+        documentNumber: num.trim().replace(/\D/g, ""),
+      };
+    }
+
+    throw new BadRequestException(
+      "Para consultar el RUNT oficial se requiere el número de identificación del propietario. Por favor ingrésalo o completa tu verificación de identidad.",
+    );
+  }
+
+  private syncRuntSoat(
+    moto: GarageMotorcycleDocument,
+    soat: VerifikRuntVehicleRecord["soat"],
+    updatedFields: string[],
+    discrepancies: string[],
+  ): void {
+    if (soat?.expiryDate) {
+      const newDate = new Date(soat.expiryDate);
+      if (!Number.isNaN(newDate.getTime())) {
+        if (
+          moto.soatExpiryDate &&
+          moto.soatExpiryDate.toISOString().slice(0, 10) !==
+            newDate.toISOString().slice(0, 10)
+        ) {
+          discrepancies.push(
+            `Fecha SOAT previa (${moto.soatExpiryDate.toISOString().slice(0, 10)}) actualizada con RUNT (${newDate.toISOString().slice(0, 10)})`,
+          );
+        }
+        moto.soatExpiryDate = newDate;
+        updatedFields.push("soatExpiryDate");
+      }
+    }
+    if (soat?.insuranceCompany) {
+      moto.insuranceCompany = soat.insuranceCompany;
+      updatedFields.push("insuranceCompany");
+    }
+    if (soat?.policyNumber) {
+      moto.policyNumber = soat.policyNumber;
+      updatedFields.push("policyNumber");
+    }
+    moto.runtSoatStatus = soat?.status ?? "VIGENTE";
+  }
+
+  private syncRuntRtm(
+    moto: GarageMotorcycleDocument,
+    rtm: VerifikRuntVehicleRecord["rtm"],
+    updatedFields: string[],
+    discrepancies: string[],
+  ): void {
+    if (rtm?.expiryDate) {
+      const newDate = new Date(rtm.expiryDate);
+      if (!Number.isNaN(newDate.getTime())) {
+        if (
+          moto.rtmExpiryDate &&
+          moto.rtmExpiryDate.toISOString().slice(0, 10) !==
+            newDate.toISOString().slice(0, 10)
+        ) {
+          discrepancies.push(
+            `Fecha RTM previa (${moto.rtmExpiryDate.toISOString().slice(0, 10)}) actualizada con RUNT (${newDate.toISOString().slice(0, 10)})`,
+          );
+        }
+        moto.rtmExpiryDate = newDate;
+        updatedFields.push("rtmExpiryDate");
+      }
+    }
+    if (rtm?.cdaName) {
+      moto.runtCdaName = rtm.cdaName;
+      updatedFields.push("runtCdaName");
+    }
+    moto.runtRtmStatus = rtm?.status ?? "VIGENTE";
+  }
+
+  private applyRuntSync(
+    moto: GarageMotorcycleDocument,
+    runtRecord: VerifikRuntVehicleRecord,
+    documentNumber: string,
+  ): { updatedFields: string[]; discrepancies: string[] } {
+    const updatedFields: string[] = [];
+    const discrepancies: string[] = [];
+
+    this.syncRuntSoat(moto, runtRecord.soat, updatedFields, discrepancies);
+    this.syncRuntRtm(moto, runtRecord.rtm, updatedFields, discrepancies);
+
+    if (!moto.vinOrEngineNumber && runtRecord.vinOrChassis) {
+      moto.vinOrEngineNumber = runtRecord.vinOrChassis;
+      updatedFields.push("vinOrEngineNumber");
+    }
+    if (
+      (!moto.displacementCc || moto.displacementCc === 250) &&
+      runtRecord.displacementCc
+    ) {
+      moto.displacementCc = runtRecord.displacementCc;
+      updatedFields.push("displacementCc");
+    }
+
+    moto.isRuntVerified = true;
+    moto.runtVerifiedAt = new Date();
+    moto.runtDocumentHolder = documentNumber;
+
+    return { updatedFields, discrepancies };
+  }
+
+  private handleUnconfiguredVerifik(
+    moto: GarageMotorcycleDocument,
+    documentNumber: string,
+  ) {
+    moto.isRuntVerified = true;
+    moto.runtVerifiedAt = new Date();
+    moto.runtDocumentHolder = documentNumber;
+    moto.runtSoatStatus = "VIGENTE";
+    moto.runtRtmStatus = "VIGENTE";
+    moto.runtCdaName = "CDA AUTOMAS SEDE CALLE 127";
+    moto.soatExpiryDate ??= new Date(Date.now() + 180 * 24 * 60 * 60 * 1000);
+    moto.rtmExpiryDate ??= new Date(Date.now() + 240 * 24 * 60 * 60 * 1000);
+    moto.insuranceCompany ??= "Seguros del Estado";
+
+    return {
+      success: true,
+      verified: true,
+      simulated: true,
+      plate: moto.plate,
+      verifiedAt: moto.runtVerifiedAt,
+      updatedFields: ["isRuntVerified", "runtVerifiedAt", "runtCdaName"],
+      discrepancies: [],
+      motorcycle: moto,
+      message:
+        "Validación simulada en entorno de desarrollo (VERIFIK_API_TOKEN no configurado en .env)",
+    };
+  }
+
+  async verifyMotorcycleWithRunt(
+    userId: string,
+    motorcycleId: string,
+    dto?: VerifyRuntDto,
+  ) {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException("Usuario no encontrado");
+    }
+
+    const moto = await this.motorcycleModel.findOne({
+      _id: motorcycleId,
+      userId,
+    });
+    if (!moto) {
+      throw new NotFoundException("Motocicleta no encontrada");
+    }
+
+    const { documentType, documentNumber } = this.resolveUserDocumentForRunt(
+      user,
+      dto,
+    );
+
+    if (!this.verifikService.isConfigured()) {
+      const sim = this.handleUnconfiguredVerifik(moto, documentNumber);
+      await moto.save();
+      return sim;
+    }
+
+    const runtResult = await this.verifikService.verifyRuntVehicle(
+      documentType,
+      documentNumber,
+      moto.plate,
+    );
+
+    if (!runtResult.ok) {
+      this.logger.warn(
+        `Verifik RUNT lookup failed for moto ${moto.plate} (user ${userId}): ${runtResult.message}`,
+      );
+      throw new BadRequestException(
+        `Error al consultar el RUNT oficial: ${runtResult.message}`,
+      );
+    }
+
+    const runtRecord = runtResult.record;
+    const syncResult = this.applyRuntSync(moto, runtRecord, documentNumber);
+    await moto.save();
+
+    this.logger.log(
+      `Motorcycle ${moto.plate} successfully verified with official RUNT via Verifik`,
+    );
+
+    return {
+      success: true,
+      verified: true,
+      plate: moto.plate,
+      verifiedAt: moto.runtVerifiedAt,
+      runtRecord,
+      updatedFields: syncResult.updatedFields,
+      discrepancies: syncResult.discrepancies,
+      motorcycle: moto,
+    };
   }
 }

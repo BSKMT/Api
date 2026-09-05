@@ -21,6 +21,7 @@ import { UpdateMotorcycleDto } from "./dto/update-motorcycle.dto";
 import { UpdateOdometerDto } from "./dto/update-odometer.dto";
 import { CreateMaintenanceDto } from "./dto/create-maintenance.dto";
 import { AlliedServiceOrderDto } from "./dto/allied-service-order.dto";
+import { VerifyRuntDto } from "./dto/verify-runt.dto";
 import { ensureString } from "../common/utils/sanitize-query.util";
 
 interface AuthenticatedRequest extends Request {
@@ -85,6 +86,20 @@ export class GarageController {
     @Body() dto: CreateMaintenanceDto,
   ) {
     return this.garageService.createMaintenance(req.user.userId, id, dto);
+  }
+
+  @Post("motorcycles/:id/verify-runt")
+  @HttpCode(HttpStatus.OK)
+  async verifyRunt(
+    @Req() req: AuthenticatedRequest,
+    @Param("id") id: string,
+    @Body() dto?: VerifyRuntDto,
+  ) {
+    return this.garageService.verifyMotorcycleWithRunt(
+      req.user.userId,
+      id,
+      dto,
+    );
   }
 
   @Public()
