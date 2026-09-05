@@ -8,10 +8,7 @@ import {
   MaintenanceLog,
   MaintenanceLogSchema,
 } from "./schemas/maintenance-log.schema";
-import {
-  OdometerLog,
-  OdometerLogSchema,
-} from "./schemas/odometer-log.schema";
+import { OdometerLog, OdometerLogSchema } from "./schemas/odometer-log.schema";
 import {
   EventRegistration,
   EventRegistrationSchema,
