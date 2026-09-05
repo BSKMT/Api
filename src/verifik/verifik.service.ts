@@ -141,8 +141,7 @@ function extractSoat(raw: unknown): VerifikSoatRecord | null {
 
   return {
     status: (item.estado ?? item.status ?? item.estadoPoliza ?? null) as
-      | string
-      | null,
+      string | null,
     policyNumber: (item.numeroPoliza ??
       item.policyNumber ??
       item.numero ??
@@ -166,8 +165,7 @@ function extractRtm(raw: unknown): VerifikRtmRecord | null {
 
   return {
     status: (item.estado ?? item.status ?? item.estadoCertificado ?? null) as
-      | string
-      | null,
+      string | null,
     certificateNumber: (item.numeroCertificado ??
       item.certificateNumber ??
       item.control ??
