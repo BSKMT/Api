@@ -372,8 +372,7 @@ export class GarageService {
     userId: string,
   ): Promise<void> {
     const profileMoto = user.profile?.["motocicleta"] as
-      | ProfileMotorcycleData
-      | undefined;
+      ProfileMotorcycleData | undefined;
 
     if (!profileMoto?.marcaMoto || !profileMoto?.placaMoto) {
       return;
@@ -1119,8 +1118,7 @@ export class GarageService {
     }
 
     const personal = user.profile?.["datos-personales"] as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     const num = personal?.numeroDocumento;
     const tipo = personal?.tipoDocumento;
 
