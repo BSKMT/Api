@@ -142,4 +142,7 @@ export class CreateEventDto {
   @IsString({ each: true })
   @IsOptional()
   autogestionadoFeatures?: string[];
+
+  @IsOptional()
+  routeData?: Record<string, unknown>;
 }

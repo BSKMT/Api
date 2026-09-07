@@ -132,6 +132,9 @@ export class Event {
 
   @Prop({ type: Object, default: {} })
   metadata!: Record<string, unknown>;
+
+  @Prop({ type: Object, default: null })
+  routeData!: Record<string, unknown> | null;
 }
 
 export const EventSchema = SchemaFactory.createForClass(Event);
