@@ -65,6 +65,7 @@ export interface EnvironmentConfig {
   BIRD_WEBHOOK_SECRET: string;
 
   LANDING_PAGE_URL: string;
+  PANEL_URL?: string;
   /**
    * A-7: Secret shared between Vercel Cron and the `/api/internal/cron/*`
    * and `/api/membership/internal/cron/*` endpoints. Without it (or if a

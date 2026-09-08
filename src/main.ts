@@ -136,10 +136,40 @@ async function bootstrap() {
     "http://localhost:4321";
   setAuthDependencies(emailService, landingPageUrl);
 
-  const corsOrigin =
-    configService.get("CORS_ORIGIN", { infer: true }) ?? "https://bskmt.com";
+  const panelUrl =
+    configService.get<string>("PANEL_URL", { infer: true }) ??
+    "http://localhost:3000";
+
+  const rawCorsOrigin =
+    configService.get<string>("CORS_ORIGIN", { infer: true }) ??
+    "https://bskmt.com";
+  const configuredOrigins = rawCorsOrigin
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+
+  const allowedOriginsList = Array.from(
+    new Set([
+      ...configuredOrigins,
+      "https://bskmt.com",
+      "https://www.bskmt.com",
+      "https://dash.bskmt.com",
+      landingPageUrl,
+      panelUrl,
+      "http://localhost:3000",
+      "http://localhost:4321",
+      "http://localhost:4322",
+    ]),
+  );
+
   app.enableCors({
-    origin: corsOrigin,
+    origin: (origin, callback) => {
+      if (!origin || allowedOriginsList.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(null, false);
+      }
+    },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     credentials: true,
     allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"],
@@ -147,11 +177,7 @@ async function bootstrap() {
   });
 
   // M-1: CSRF protection — verify Origin/Referer for state-changing requests
-  const allowedOrigins = new Set([
-    corsOrigin,
-    "https://www.bskmt.com",
-    "https://bskmt.com",
-  ]);
+  const allowedOrigins = new Set(allowedOriginsList);
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
       return next();
