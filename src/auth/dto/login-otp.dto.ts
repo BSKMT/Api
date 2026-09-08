@@ -21,6 +21,10 @@ export class LoginOtpInitiateDto {
   @IsBoolean()
   @IsOptional()
   rememberMe?: boolean;
+
+  @IsString()
+  @IsOptional()
+  turnstileToken?: string;
 }
 
 /**
