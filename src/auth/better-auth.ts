@@ -427,9 +427,15 @@ async function initAuth(): Promise<AuthInstance> {
 
     trustedOrigins:
       process.env.NODE_ENV === "production"
-        ? ["https://bskmt.com"]
+        ? [
+            "https://bskmt.com",
+            "https://www.bskmt.com",
+            "https://dash.bskmt.com",
+          ]
         : [
             "https://bskmt.com",
+            "https://dash.bskmt.com",
+            "http://localhost:3000",
             "http://localhost:4321",
             "http://localhost:4322",
           ],

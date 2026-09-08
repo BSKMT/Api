@@ -78,6 +78,7 @@ export const configValidationSchema = Joi.object({
   BIRD_WEBHOOK_SECRET: Joi.string().allow("").default(""),
 
   LANDING_PAGE_URL: Joi.string().uri().default("http://localhost:4321"),
+  PANEL_URL: Joi.string().uri().default("http://localhost:3000"),
   CRON_SECRET: Joi.string().min(16).required(),
   TURNSTILE_SECRET_KEY: Joi.string().allow("").default(""),
 
