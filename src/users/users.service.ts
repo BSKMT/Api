@@ -66,7 +66,7 @@ async function generateOfficialNumber(
 export class UsersService {
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
-  ) {}
+  ) { }
 
   async findByEmail(email: string): Promise<UserDocument | null> {
     return this.userModel.findOne({ email: email.toLowerCase() }).lean();
@@ -614,7 +614,7 @@ export class UsersService {
     }
     if (filters.search) {
       const searchRegex = new RegExp(
-        filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+        filters.search.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`),
         "i",
       );
       filter.$or = [
@@ -658,4 +658,3 @@ export class UsersService {
       .lean();
   }
 }
-

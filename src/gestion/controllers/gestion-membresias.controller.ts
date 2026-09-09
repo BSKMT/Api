@@ -36,7 +36,7 @@ export class GestionMembresiasController {
     };
 
     if (search) {
-      const searchRegex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      const searchRegex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`), "i");
       filter.$or = [
         { email: searchRegex },
         { "profile.datos-personales.primerNombre": searchRegex },
