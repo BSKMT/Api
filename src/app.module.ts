@@ -26,6 +26,7 @@ import { BirdModule } from "./bird/bird.module";
 import { AbuseIpDbModule } from "./abuseipdb/abuseipdb.module";
 import { AlegraModule } from "./alegra/alegra.module";
 import { GarageModule } from "./garage/garage.module";
+import { GestionModule } from "./gestion/gestion.module";
 
 @Module({
   imports: [
@@ -82,6 +83,7 @@ import { GarageModule } from "./garage/garage.module";
     ContactModule,
     AlegraModule,
     GarageModule,
+    GestionModule,
   ],
   providers: [
     {

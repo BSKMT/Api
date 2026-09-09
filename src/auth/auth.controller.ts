@@ -60,6 +60,7 @@ export class AuthController {
       membershipStartDate: fullUser?.membershipStartDate ?? null,
       membershipPaymentPlan: fullUser?.membershipPaymentPlan ?? null,
       role: fullUser?.role ?? "user",
+      subrol: fullUser?.subrol ?? null,
       completedSections: fullUser?.completedSections ?? [],
       profile: fullUser?.profile ?? {},
     };

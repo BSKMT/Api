@@ -81,6 +81,7 @@ export class SessionGuard {
     const cached = await this.kvCache.get<{
       _id: string;
       role: string;
+      subrol?: string | null;
       isActive: boolean;
       accountDeletionRequested: boolean;
     }>(cacheKey, true);
@@ -101,6 +102,7 @@ export class SessionGuard {
           {
             _id: String(mongooseUser._id),
             role: mongooseUser.role,
+            subrol: mongooseUser.subrol ?? null,
             isActive: mongooseUser.isActive,
             accountDeletionRequested:
               mongooseUser.accountDeletionRequested ?? false,
@@ -139,6 +141,7 @@ export class SessionGuard {
           userId: string;
           email: string;
           role: string;
+          subrol?: string | null;
           betterAuthId: string;
         };
       }
@@ -146,6 +149,7 @@ export class SessionGuard {
       userId: String(mongooseUser._id),
       email: session.user.email,
       role: mongooseUser.role,
+      subrol: mongooseUser.subrol ?? null,
       betterAuthId: session.user.id,
     };
 

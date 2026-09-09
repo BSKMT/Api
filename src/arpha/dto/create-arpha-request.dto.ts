@@ -1,4 +1,21 @@
-import { IsString, IsIn, IsOptional, MaxLength } from "class-validator";
+import {
+  IsString,
+  IsIn,
+  IsOptional,
+  MaxLength,
+  IsObject,
+  ValidateNested,
+  IsNumber,
+} from "class-validator";
+import { Type } from "class-transformer";
+
+export class CoordinatesDto {
+  @IsNumber()
+  lat!: number;
+
+  @IsNumber()
+  lng!: number;
+}
 
 export class CreateArphaRequestDto {
   @IsString()
@@ -8,6 +25,12 @@ export class CreateArphaRequestDto {
   @IsString()
   @MaxLength(200)
   location!: string;
+
+  @IsObject()
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CoordinatesDto)
+  coordinates?: CoordinatesDto;
 
   @IsString()
   @IsOptional()

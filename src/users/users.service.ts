@@ -11,6 +11,7 @@ import {
   User,
   UserDocument,
   UserRole,
+  UserSubrole,
   CreditType,
   PartialPaymentCredit,
   FriendRequest,
@@ -583,4 +584,78 @@ export class UsersService {
       user.identityVerification = null;
     }
   }
+
+  async updateSubrol(
+    userId: string,
+    subrol: UserSubrole | string | null,
+  ): Promise<UserDocument> {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException("Usuario no encontrado");
+    }
+    user.subrol = subrol ?? null;
+    return user.save();
+  }
+
+  async listUsers(filters: {
+    search?: string;
+    role?: string;
+    subrol?: string;
+    limit?: number;
+    page?: number;
+  }) {
+    const filter: Record<string, unknown> = {};
+
+    if (filters.role) {
+      filter.role = filters.role;
+    }
+    if (filters.subrol) {
+      filter.subrol = filters.subrol;
+    }
+    if (filters.search) {
+      const searchRegex = new RegExp(
+        filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+        "i",
+      );
+      filter.$or = [
+        { email: searchRegex },
+        { "profile.datos-personales.primerNombre": searchRegex },
+        { "profile.datos-personales.primerApellido": searchRegex },
+        { "profile.membresia-ecosistema.numeroMiembro": searchRegex },
+      ];
+    }
+
+    const limit = Math.min(Math.max(filters.limit ?? 20, 1), 100);
+    const page = Math.max(filters.page ?? 1, 1);
+    const skip = (page - 1) * limit;
+
+    const [items, total] = await Promise.all([
+      this.userModel
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.userModel.countDocuments(filter),
+    ]);
+
+    return {
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  async findStaffBySubroles(subroles: string[]) {
+    return this.userModel
+      .find({
+        subrol: { $in: subroles },
+        isActive: true,
+      })
+      .select("_id email role subrol profile.datos-personales phone")
+      .lean();
+  }
 }
+
