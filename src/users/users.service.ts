@@ -256,22 +256,7 @@ export class UsersService {
     );
 
     if (profileCompleted && !user.profileCompleted) {
-      const memSection = profile["membresia-ecosistema"] ?? {};
-      if (!memSection.fechaIngreso) {
-        memSection.fechaIngreso = getColombiaDate();
-      }
-      const numMiembro =
-        typeof memSection.numeroMiembro === "string"
-          ? memSection.numeroMiembro
-          : "";
-      if (!numMiembro || !/^90141[12]\d{4}$/.test(numMiembro)) {
-        const isMember = user.membershipLevel === "Legend";
-        memSection.numeroMiembro = await generateOfficialNumber(
-          this.userModel,
-          isMember,
-        );
-      }
-      profile["membresia-ecosistema"] = memSection;
+      await this.handleProfileCompletionMembership(user, profile);
     }
 
     user.profile = profile;
@@ -280,6 +265,28 @@ export class UsersService {
     user.markModified("profile");
 
     return user.save();
+  }
+
+  private async handleProfileCompletionMembership(
+    user: UserDocument,
+    profile: Record<string, Record<string, unknown>>,
+  ): Promise<void> {
+    const memSection = profile["membresia-ecosistema"] ?? {};
+    if (!memSection.fechaIngreso) {
+      memSection.fechaIngreso = getColombiaDate();
+    }
+    const numMiembro =
+      typeof memSection.numeroMiembro === "string"
+        ? memSection.numeroMiembro
+        : "";
+    if (!numMiembro || !/^90141[12]\d{4}$/.test(numMiembro)) {
+      const isMember = user.membershipLevel === "Legend";
+      memSection.numeroMiembro = await generateOfficialNumber(
+        this.userModel,
+        isMember,
+      );
+    }
+    profile["membresia-ecosistema"] = memSection;
   }
 
   async acceptLegalConsent(userId: string): Promise<UserDocument> {
