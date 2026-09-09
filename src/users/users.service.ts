@@ -25,26 +25,39 @@ function getColombiaDate(): string {
   return new Date(colombiaMs).toISOString().split("T")[0];
 }
 
-async function generateMemberNumber(
+/**
+ * Generates a 10-digit official identification number according to the BSK specification:
+ * - First 3 digits: always "901"
+ * - Middle 3 digits: "411" for regular users (usuarios) or "412" for active members (miembros)
+ * - Last 4 digits: random 4-digit unique number (0000-9999)
+ * Format: 901411xxxx (user) / 901412xxxx (member)
+ */
+async function generateOfficialNumber(
   userModel: Model<UserDocument>,
+  isMember: boolean,
+  fixedSuffix?: string,
 ): Promise<string> {
-  const lastUser = await userModel
-    .find({ membershipLevel: { $ne: null } })
-    .sort({ createdAt: -1 })
-    .limit(1)
-    .lean();
+  const prefix = isMember ? "901412" : "901411";
 
-  let nextNum = 1;
-  if (lastUser && lastUser.length > 0) {
-    const lastProfile = lastUser[0].profile?.["membresia-ecosistema"];
-    const lastNum = lastProfile?.numeroMiembro;
-    if (typeof lastNum === "string") {
-      const match = /BSK-(\d+)/.exec(lastNum);
-      if (match) nextNum = Number.parseInt(match[1], 10) + 1;
-    }
+  if (fixedSuffix && /^\d{4}$/.test(fixedSuffix)) {
+    const candidate = `${prefix}${fixedSuffix}`;
+    const exists = await userModel
+      .findOne({ "profile.membresia-ecosistema.numeroMiembro": candidate })
+      .lean();
+    if (!exists) return candidate;
   }
 
-  return `BSK-${String(nextNum).padStart(4, "0")}`;
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const randomSuffix = String(Math.floor(Math.random() * 10000)).padStart(4, "0");
+    const candidate = `${prefix}${randomSuffix}`;
+    const exists = await userModel
+      .findOne({ "profile.membresia-ecosistema.numeroMiembro": candidate })
+      .lean();
+    if (!exists) return candidate;
+  }
+
+  const fallbackSuffix = String(Date.now() % 10000).padStart(4, "0");
+  return `${prefix}${fallbackSuffix}`;
 }
 
 @Injectable()
@@ -67,7 +80,7 @@ export class UsersService {
 
   /**
    * Looks up a user by their auto-generated member number
-   * (stored in profile["membresia-ecosistema"].numeroMiembro, e.g. "BSK-0001").
+   * (stored in profile["membresia-ecosistema"].numeroMiembro, e.g. "9014121234").
    * Used by the public profile endpoint.
    */
   async findByMemberNumber(
@@ -76,6 +89,46 @@ export class UsersService {
     return this.userModel
       .findOne({ "profile.membresia-ecosistema.numeroMiembro": numeroMiembro })
       .lean();
+  }
+
+  /**
+   * Guarantees that a user has a valid 10-digit official number matching their
+   * current status: 901411xxxx (usuario) or 901412xxxx (miembro).
+   * Migrates legacy "BSK-0001" or missing numbers automatically.
+   */
+  async ensureOfficialNumber(user: UserDocument | Record<string, unknown>): Promise<string> {
+    const profile = (user as { profile?: Record<string, Record<string, unknown>> }).profile ?? {};
+    const memSection = profile["membresia-ecosistema"] ?? {};
+    const currentNum = typeof memSection.numeroMiembro === "string" ? memSection.numeroMiembro : "";
+    const isMember = (user as { membershipLevel?: string }).membershipLevel === "Legend";
+    const expectedPrefix = isMember ? "901412" : "901411";
+
+    if (new RegExp(`^${expectedPrefix}\\d{4}$`).test(currentNum)) {
+      return currentNum;
+    }
+
+    let suffix: string | undefined;
+    const match10 = /^90141[12](\d{4})$/.exec(currentNum);
+    if (match10) {
+      suffix = match10[1];
+    }
+
+    const newNumber = await generateOfficialNumber(this.userModel, isMember, suffix);
+
+    const userId = (user as { _id?: string })._id;
+    if (userId) {
+      memSection.numeroMiembro = newNumber;
+      if (!memSection.fechaIngreso) {
+        memSection.fechaIngreso = getColombiaDate();
+      }
+      profile["membresia-ecosistema"] = memSection;
+      await this.userModel.updateOne(
+        { _id: userId },
+        { $set: { "profile.membresia-ecosistema": memSection } },
+      );
+    }
+
+    return newNumber;
   }
 
   /**
@@ -110,6 +163,7 @@ export class UsersService {
   /**
    * Creates a Mongoose business-data user linked to a Better Auth account.
    * Called from the Better Auth `databaseHooks.user.create.after` hook.
+   * Automatically provisions a 10-digit official user number (901411xxxx).
    */
   async create(betterAuthId: string, email: string): Promise<UserDocument> {
     const existing = await this.findByBetterAuthId(betterAuthId);
@@ -117,13 +171,20 @@ export class UsersService {
       throw new ConflictException("El usuario ya existe en la base de datos");
     }
 
+    const officialNumber = await generateOfficialNumber(this.userModel, false);
+
     const created = new this.userModel({
       email: email.toLowerCase(),
       betterAuthId,
       role: "user",
       profileCompleted: false,
       completedSections: [],
-      profile: {},
+      profile: {
+        "membresia-ecosistema": {
+          numeroMiembro: officialNumber,
+          fechaIngreso: getColombiaDate(),
+        },
+      },
     });
 
     return created.save();
@@ -186,8 +247,9 @@ export class UsersService {
       if (!memSection.fechaIngreso) {
         memSection.fechaIngreso = getColombiaDate();
       }
-      if (!memSection.numeroMiembro) {
-        memSection.numeroMiembro = await generateMemberNumber(this.userModel);
+      if (!memSection.numeroMiembro || !/^90141[12]\d{4}$/.test(String(memSection.numeroMiembro))) {
+        const isMember = user.membershipLevel === "Legend";
+        memSection.numeroMiembro = await generateOfficialNumber(this.userModel, isMember);
       }
       profile["membresia-ecosistema"] = memSection;
     }

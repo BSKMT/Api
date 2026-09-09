@@ -33,10 +33,21 @@ export class AuthController {
   async me(@Req() req: AuthenticatedRequest) {
     const user = req.user;
     const fullUser = await this.usersService.findById(user.userId);
+    let memberNumber = null;
+    if (fullUser) {
+      memberNumber = await this.usersService.ensureOfficialNumber(fullUser);
+    }
+    const personal = (fullUser?.profile?.["datos-personales"] ?? {}) as Record<string, unknown>;
+
     return {
       userId: user.userId,
       email: user.email,
       emailVerified: fullUser?.emailVerified ?? false,
+      primerNombre: (personal.primerNombre as string) ?? null,
+      segundoNombre: (personal.segundoNombre as string) ?? null,
+      primerApellido: (personal.primerApellido as string) ?? null,
+      segundoApellido: (personal.segundoApellido as string) ?? null,
+      memberNumber,
       phone: fullUser?.phone ?? null,
       phoneVerified: fullUser?.phoneVerified ?? false,
       pendingPhone: fullUser?.pendingPhone ?? null,
