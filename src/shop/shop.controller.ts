@@ -71,7 +71,7 @@ export class ShopController {
    * (OWASP A01 — server-side enforcement).
    */
   @UseGuards(SessionGuard, IdentityVerifiedGuard)
-  @Post("order")
+  @Post(["order", "orders"])
   @HttpCode(HttpStatus.CREATED)
   async createOrder(
     @Req() req: AuthenticatedRequest,
