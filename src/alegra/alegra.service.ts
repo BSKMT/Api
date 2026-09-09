@@ -374,7 +374,71 @@ export class AlegraService {
     return contacts.find((c) => c.identification === identification) ?? null;
   }
 
-  /* ─── Invoice Management ───────────────────────────────────────── */
+  /* ─── Item & Account Discovery ─────────────────────────────────── */
+
+  private async getDefaultItemId(): Promise<string | null> {
+    const configured =
+      this.configService.get<string>("ALEGRA_ITEM_ID", { infer: true }) ||
+      process.env.ALEGRA_ITEM_ID;
+    if (configured) return configured;
+
+    const cacheKey = `${ALEGRA_KV_PREFIX}default_item_id`;
+    const cached = await this.kvCache.get<string>(cacheKey, true);
+    if (cached) return cached;
+
+    try {
+      const items = await this.makeRequest<Array<{ id: string | number }>>(
+        "GET",
+        "/items?limit=1",
+      );
+      if (items && Array.isArray(items) && items.length > 0 && items[0].id) {
+        const idStr = String(items[0].id);
+        await this.kvCache.set(cacheKey, idStr, 86400, true);
+        this.logger.log(`Alegra default item auto-discovered: id=${idStr}`);
+        return idStr;
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+
+  private async getDefaultBankAccountId(): Promise<string | null> {
+    const configured =
+      this.configService.get<string>("ALEGRA_BANK_ACCOUNT_ID", {
+        infer: true,
+      }) || process.env.ALEGRA_BANK_ACCOUNT_ID;
+    if (configured) return configured;
+
+    const cacheKey = `${ALEGRA_KV_PREFIX}default_bank_account_id`;
+    const cached = await this.kvCache.get<string>(cacheKey, true);
+    if (cached) return cached;
+
+    try {
+      const accounts = await this.makeRequest<Array<{ id: string | number }>>(
+        "GET",
+        "/bank-accounts?limit=1",
+      );
+      if (
+        accounts &&
+        Array.isArray(accounts) &&
+        accounts.length > 0 &&
+        accounts[0].id
+      ) {
+        const idStr = String(accounts[0].id);
+        await this.kvCache.set(cacheKey, idStr, 86400, true);
+        this.logger.log(
+          `Alegra default bank account auto-discovered: id=${idStr}`,
+        );
+        return idStr;
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+
+  /* ─── Invoice Management ────────────────────────────────────────── */
 
   async createInvoice(
     context: AlegraBillingContext,
@@ -385,12 +449,15 @@ export class AlegraService {
     const dateStr = new Date().toLocaleDateString("sv-SE", {
       timeZone: "America/Bogota",
     });
-    const sellerId = process.env.ALEGRA_SELLER_ID || "";
-    const itemId = process.env.ALEGRA_ITEM_ID || "";
+    const sellerId =
+      this.configService.get<string>("ALEGRA_SELLER_ID", { infer: true }) ||
+      process.env.ALEGRA_SELLER_ID ||
+      "";
+    const itemId = await this.getDefaultItemId();
 
     if (!itemId) {
       this.logger.warn(
-        "ALEGRA_ITEM_ID not configured — cannot create invoice without a catalog item ID",
+        "ALEGRA_ITEM_ID not configured and could not be auto-discovered — cannot create invoice without a catalog item ID",
       );
       return null;
     }
@@ -477,11 +544,11 @@ export class AlegraService {
     if (!this.isConfigured()) return null;
     if (amount <= 0) return null;
 
-    const bankAccountId = process.env.ALEGRA_BANK_ACCOUNT_ID || "";
+    const bankAccountId = await this.getDefaultBankAccountId();
 
     if (!bankAccountId) {
       this.logger.warn(
-        "ALEGRA_BANK_ACCOUNT_ID not configured — payment not recorded in Alegra",
+        "ALEGRA_BANK_ACCOUNT_ID not configured and could not be auto-discovered — payment not recorded in Alegra",
       );
       return null;
     }
