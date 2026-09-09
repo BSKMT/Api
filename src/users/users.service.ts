@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import {
   Injectable,
   ConflictException,
@@ -48,7 +49,7 @@ async function generateOfficialNumber(
   }
 
   for (let attempt = 0; attempt < 50; attempt++) {
-    const randomSuffix = String(Math.floor(Math.random() * 10000)).padStart(4, "0");
+    const randomSuffix = String(randomInt(0, 10000)).padStart(4, "0");
     const candidate = `${prefix}${randomSuffix}`;
     const exists = await userModel
       .findOne({ "profile.membresia-ecosistema.numeroMiembro": candidate })
@@ -96,14 +97,22 @@ export class UsersService {
    * current status: 901411xxxx (usuario) or 901412xxxx (miembro).
    * Migrates legacy "BSK-0001" or missing numbers automatically.
    */
-  async ensureOfficialNumber(user: UserDocument | Record<string, unknown>): Promise<string> {
-    const profile = (user as { profile?: Record<string, Record<string, unknown>> }).profile ?? {};
+  async ensureOfficialNumber(
+    user: UserDocument | Record<string, unknown>,
+  ): Promise<string> {
+    const profile =
+      (user as { profile?: Record<string, Record<string, unknown>> }).profile ??
+      {};
     const memSection = profile["membresia-ecosistema"] ?? {};
-    const currentNum = typeof memSection.numeroMiembro === "string" ? memSection.numeroMiembro : "";
-    const isMember = (user as { membershipLevel?: string }).membershipLevel === "Legend";
+    const currentNum =
+      typeof memSection.numeroMiembro === "string"
+        ? memSection.numeroMiembro
+        : "";
+    const isMember =
+      (user as { membershipLevel?: string }).membershipLevel === "Legend";
     const expectedPrefix = isMember ? "901412" : "901411";
 
-    if (new RegExp(`^${expectedPrefix}\\d{4}$`).test(currentNum)) {
+    if (new RegExp(String.raw`^${expectedPrefix}\d{4}$`).test(currentNum)) {
       return currentNum;
     }
 
@@ -113,7 +122,11 @@ export class UsersService {
       suffix = match10[1];
     }
 
-    const newNumber = await generateOfficialNumber(this.userModel, isMember, suffix);
+    const newNumber = await generateOfficialNumber(
+      this.userModel,
+      isMember,
+      suffix,
+    );
 
     const userId = (user as { _id?: string })._id;
     if (userId) {
@@ -247,9 +260,16 @@ export class UsersService {
       if (!memSection.fechaIngreso) {
         memSection.fechaIngreso = getColombiaDate();
       }
-      if (!memSection.numeroMiembro || !/^90141[12]\d{4}$/.test(String(memSection.numeroMiembro))) {
+      const numMiembro =
+        typeof memSection.numeroMiembro === "string"
+          ? memSection.numeroMiembro
+          : "";
+      if (!numMiembro || !/^90141[12]\d{4}$/.test(numMiembro)) {
         const isMember = user.membershipLevel === "Legend";
-        memSection.numeroMiembro = await generateOfficialNumber(this.userModel, isMember);
+        memSection.numeroMiembro = await generateOfficialNumber(
+          this.userModel,
+          isMember,
+        );
       }
       profile["membresia-ecosistema"] = memSection;
     }

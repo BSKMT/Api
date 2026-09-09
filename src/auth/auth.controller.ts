@@ -37,7 +37,7 @@ export class AuthController {
     if (fullUser) {
       memberNumber = await this.usersService.ensureOfficialNumber(fullUser);
     }
-    const personal = (fullUser?.profile?.["datos-personales"] ?? {}) as Record<string, unknown>;
+    const personal = fullUser?.profile?.["datos-personales"] ?? {};
 
     return {
       userId: user.userId,
