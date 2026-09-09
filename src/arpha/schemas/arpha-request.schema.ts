@@ -45,11 +45,45 @@ export class ArphaRequest {
   @Prop({ required: true })
   location!: string;
 
+  @Prop({
+    type: {
+      lat: { type: Number, required: true },
+      lng: { type: Number, required: true },
+    },
+    default: null,
+    _id: false,
+  })
+  coordinates?: { lat: number; lng: number } | null;
+
   @Prop({ type: String, default: null })
   description!: string | null;
 
   @Prop({ type: String, default: null })
   assignedTechnician!: string | null;
+
+  @Prop({
+    type: String,
+    enum: ["campo", "mesa"],
+    default: null,
+  })
+  assignedType?: "campo" | "mesa" | null;
+
+  @Prop({ type: String, default: null })
+  assignedGestorId?: string | null;
+
+  @Prop({ type: String, default: null })
+  assignedGestorName?: string | null;
+
+  @Prop({
+    type: {
+      lat: { type: Number, required: true },
+      lng: { type: Number, required: true },
+      updatedAt: { type: Date, default: Date.now },
+    },
+    default: null,
+    _id: false,
+  })
+  gestorLocation?: { lat: number; lng: number; updatedAt?: Date } | null;
 
   @Prop({ type: String, default: null })
   eta!: string | null;

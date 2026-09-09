@@ -87,6 +87,29 @@ export enum UserRole {
   MODERATOR = "moderator",
 }
 
+export enum UserSubrole {
+  // ARPHA
+  LIDER_ARPHA = "lider_arpha",
+  GESTOR_CAMPO_ARPHA = "gestor_campo_arpha",
+  GESTOR_MESA_ARPHA = "gestor_mesa_arpha",
+
+  // EVENTOS
+  LIDER_EVENTOS = "lider_eventos",
+  GESTOR_EVENTOS = "gestor_eventos",
+
+  // CURSOS
+  LIDER_CURSOS = "lider_cursos",
+  GESTOR_CURSOS = "gestor_cursos",
+
+  // TIENDA
+  LIDER_TIENDA = "lider_tienda",
+  GESTOR_TIENDA = "gestor_tienda",
+
+  // MEMBRESIAS
+  LIDER_MEMBRESIAS = "lider_membresias",
+  GESTOR_MEMBRESIAS = "gestor_membresias",
+}
+
 export enum CreditType {
   PENDING = "pending",
   MEMBERSHIP = "membership",
@@ -162,6 +185,14 @@ export class User {
     default: UserRole.USER,
   })
   role!: string;
+
+  @Prop({
+    type: String,
+    enum: [...Object.values(UserSubrole), null],
+    default: null,
+    index: true,
+  })
+  subrol?: string | null;
 
   @Prop({ default: false })
   profileCompleted!: boolean;

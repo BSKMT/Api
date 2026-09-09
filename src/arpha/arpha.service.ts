@@ -69,6 +69,9 @@ export class ArphaService {
       requestType: dto.requestType,
       status: ArphaRequestStatus.PENDING,
       location: dto.location,
+      coordinates: dto.coordinates
+        ? { lat: dto.coordinates.lat, lng: dto.coordinates.lng }
+        : null,
       description: dto.description ?? null,
       isMember,
       amount,

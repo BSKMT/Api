@@ -6,6 +6,7 @@ import { AdminShopController } from "./controllers/admin-shop.controller";
 import { AdminArphaController } from "./controllers/admin-arpha.controller";
 import { AdminMembershipController } from "./controllers/admin-membership.controller";
 import { AdminSettingsController } from "./controllers/admin-settings.controller";
+import { AdminUsersController } from "./controllers/admin-users.controller";
 import { AdminEventsService } from "./services/admin-events.service";
 import { AdminCoursesService } from "./services/admin-courses.service";
 import { AdminShopService } from "./services/admin-shop.service";
@@ -70,6 +71,7 @@ import { UsersModule } from "../users/users.module";
     AdminArphaController,
     AdminMembershipController,
     AdminSettingsController,
+    AdminUsersController,
   ],
   providers: [
     AdminEventsService,
