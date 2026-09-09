@@ -57,7 +57,7 @@ export class GestionEventosController {
     };
 
     if (search) {
-      const searchRegex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      const searchRegex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`), "i");
       filter.$and = [
         {
           $or: [
