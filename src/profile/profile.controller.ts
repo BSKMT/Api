@@ -21,8 +21,14 @@ import {
   InitiateEmailChangeDto,
   CheckEmailChangeDto,
 } from "./dto/verify-channel.dto";
+import { IsIn } from "class-validator";
 import { ChannelVerificationService } from "./channel-verification.service";
 import { REQUIRED_PROFILE_SECTIONS } from "../users/schemas/user.schema";
+
+export class RespondFriendRequestDto {
+  @IsIn(["accepted", "declined"])
+  status!: "accepted" | "declined";
+}
 
 interface AuthenticatedRequest extends Request {
   user: { userId: string };
@@ -126,7 +132,7 @@ export class ProfileController {
   async respondToFriendRequest(
     @Req() req: AuthenticatedRequest,
     @Param("requestId") requestId: string,
-    @Body() body: { status: "accepted" | "declined" },
+    @Body() body: RespondFriendRequestDto,
   ) {
     if (!body?.status || !["accepted", "declined"].includes(body.status)) {
       return { message: "Estado invalido" };

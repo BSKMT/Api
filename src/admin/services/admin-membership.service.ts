@@ -212,7 +212,7 @@ export class AdminMembershipService {
 
   async extendMembership(
     userId: string,
-    unit: "days" | "months" | "years",
+    unit: string,
     amount: number = 1,
     baseDateStr?: string,
     actorId = "",
@@ -240,7 +240,8 @@ export class AdminMembershipService {
 
     const expiry = new Date(start);
     const qty = Math.max(1, Math.floor(amount));
-    switch (unit) {
+    const normalizedUnit = unit.endsWith("s") ? unit : `${unit}s`;
+    switch (normalizedUnit) {
       case "days":
         expiry.setDate(expiry.getDate() + qty);
         break;

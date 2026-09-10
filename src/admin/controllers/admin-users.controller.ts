@@ -10,14 +10,18 @@ import {
   HttpStatus,
   BadRequestException,
 } from "@nestjs/common";
+import { IsOptional, IsString, ValidateIf } from "class-validator";
 import { SessionGuard } from "../../auth/session.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles, Role } from "../../common/decorators";
 import { UsersService } from "../../users/users.service";
 import { UserSubrole } from "../../users/schemas/user.schema";
 
-class UpdateSubrolDto {
-  subrol!: string | null;
+export class UpdateSubrolDto {
+  @IsOptional()
+  @ValidateIf((_obj, val) => val !== null && val !== undefined)
+  @IsString()
+  subrol?: string | null;
 }
 
 @Controller("admin/users")
@@ -49,7 +53,7 @@ export class AdminUsersController {
     @Param("id") id: string,
     @Body() dto: UpdateSubrolDto,
   ) {
-    const subrol = dto.subrol;
+    const subrol = dto.subrol ?? null;
     if (subrol !== null && !Object.values(UserSubrole).includes(subrol as UserSubrole)) {
       throw new BadRequestException(
         `Subrol inválido. Opciones válidas: ${Object.values(UserSubrole).join(", ")} o null`,

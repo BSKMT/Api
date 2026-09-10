@@ -11,10 +11,21 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
+import { IsString, IsOptional, MaxLength } from "class-validator";
 import type { Request } from "express";
 import { UsersService } from "../users/users.service";
 import { SessionGuard } from "../auth/session.guard";
 import { getAuth } from "../auth/better-auth";
+
+export class SendFriendRequestDto {
+  @IsString()
+  targetMemberNumber!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  message?: string;
+}
 
 /**
  * Public profile controller — endpoints NOT behind SessionGuard.
@@ -257,7 +268,7 @@ export class PublicProfileController {
   @Throttle({ default: { ttl: 60000, limit: 5 } })
   async sendFriendRequest(
     @Req() req: Request & { user: { userId: string } },
-    @Body() body: { targetMemberNumber?: string; message?: string },
+    @Body() body: SendFriendRequestDto,
   ) {
     const { targetMemberNumber, message } = body;
 

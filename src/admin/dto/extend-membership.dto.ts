@@ -8,8 +8,8 @@ import {
 } from "class-validator";
 
 export class ExtendMembershipDto {
-  @IsIn(["days", "months", "years"])
-  unit!: "days" | "months" | "years";
+  @IsIn(["day", "days", "month", "months", "year", "years"])
+  unit!: "day" | "days" | "month" | "months" | "year" | "years";
 
   @IsInt()
   @Min(1)

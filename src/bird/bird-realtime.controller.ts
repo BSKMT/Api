@@ -16,6 +16,20 @@ import { BirdService } from "./bird.service";
 import type { BirdWebhookEvent } from "./bird.service";
 import { Public } from "../common/decorators/public.decorator";
 import { sanitizeForLog } from "../common/utils/log-redact.util";
+import { IsString } from "class-validator";
+
+export class AuthMemberDto {
+  @IsString()
+  connection_id!: string;
+}
+
+export class AuthChannelDto {
+  @IsString()
+  connection_id!: string;
+
+  @IsString()
+  channel_name!: string;
+}
 
 /**
  * BirdRealtimeController — Endpoints for Bird Realtime client auth,
@@ -87,7 +101,7 @@ export class BirdRealtimeController {
     req: Request & {
       user?: { betterAuthId?: string; role?: string; email?: string };
     },
-    @Body() body: { connection_id?: string },
+    @Body() body: AuthMemberDto,
   ): { auth: string; member_data: string } {
     // SessionGuard already rejected unauthenticated callers (401).
     // If somehow user is missing, fail with 403.
@@ -150,7 +164,7 @@ export class BirdRealtimeController {
     req: Request & {
       user?: { betterAuthId?: string; role?: string; email?: string };
     },
-    @Body() body: { connection_id?: string; channel_name?: string },
+    @Body() body: AuthChannelDto,
   ): { auth: string; member_data?: string } {
     const betterAuthId = req.user?.betterAuthId;
     if (!betterAuthId) {
