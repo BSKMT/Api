@@ -12,23 +12,48 @@ import {
   ArphaRequestDocument,
   ArphaRequestStatus,
 } from "../../arpha/schemas/arpha-request.schema";
+import {
+  IsString,
+  MinLength,
+  IsIn,
+  IsOptional,
+  IsNumber,
+  IsEnum,
+} from "class-validator";
 import { UsersService } from "../../users/users.service";
 import { UserRole, UserSubrole } from "../../users/schemas/user.schema";
 
 export class AssignArphaDto {
+  @IsString()
+  @MinLength(1)
   gestorId!: string;
+
+  @IsString()
+  @MinLength(1)
   gestorName!: string;
+
+  @IsIn(["campo", "mesa"])
   assignedType!: "campo" | "mesa";
+
+  @IsOptional()
+  @IsString()
   eta?: string;
 }
 
 export class UpdateGestorLocationDto {
+  @IsNumber()
   lat!: number;
+
+  @IsNumber()
   lng!: number;
 }
 
 export class UpdateGestionStatusDto {
+  @IsEnum(ArphaRequestStatus)
   status!: ArphaRequestStatus;
+
+  @IsOptional()
+  @IsString()
   resolution?: string;
 }
 

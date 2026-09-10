@@ -21,9 +21,24 @@ import {
   CourseEnrollment,
   CourseEnrollmentDocument,
 } from "../../events/schemas/course-enrollment.schema";
+import {
+  IsNumber,
+  Min,
+  Max,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from "class-validator";
 
 class UpdateCourseProgressDto {
+  @IsNumber()
+  @Min(0)
+  @Max(100)
   progress!: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
   status?: string;
 }
 

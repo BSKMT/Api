@@ -16,9 +16,13 @@ import { SessionGuard } from "../../auth/session.guard";
 import { GestionGuard } from "../../common/guards/gestion.guard";
 import { RequireSubroles } from "../../common/decorators/subroles.decorator";
 import { UserSubrole } from "../../users/schemas/user.schema";
+import { IsString, MinLength, MaxLength } from "class-validator";
 import { Order, OrderDocument, OrderStatus } from "../../shop/schemas/order.schema";
 
 class DispatchOrderDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
   trackingNumber!: string;
 }
 
