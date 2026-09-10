@@ -17,7 +17,11 @@ import { GestionGuard } from "../../common/guards/gestion.guard";
 import { RequireSubroles } from "../../common/decorators/subroles.decorator";
 import { UserSubrole } from "../../users/schemas/user.schema";
 import { IsString, MinLength, MaxLength } from "class-validator";
-import { Order, OrderDocument, OrderStatus } from "../../shop/schemas/order.schema";
+import {
+  Order,
+  OrderDocument,
+  OrderStatus,
+} from "../../shop/schemas/order.schema";
 
 class DispatchOrderDto {
   @IsString()
@@ -53,10 +57,7 @@ export class GestionTiendaController {
 
   @Post("orders/:id/dispatch")
   @HttpCode(HttpStatus.OK)
-  async dispatchOrder(
-    @Param("id") id: string,
-    @Body() dto: DispatchOrderDto,
-  ) {
+  async dispatchOrder(@Param("id") id: string, @Body() dto: DispatchOrderDto) {
     const order = await this.orderModel.findById(id);
     if (!order) {
       throw new NotFoundException("Orden no encontrada");

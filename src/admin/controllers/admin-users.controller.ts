@@ -49,12 +49,12 @@ export class AdminUsersController {
 
   @Patch(":id/subrol")
   @HttpCode(HttpStatus.OK)
-  async updateSubrol(
-    @Param("id") id: string,
-    @Body() dto: UpdateSubrolDto,
-  ) {
+  async updateSubrol(@Param("id") id: string, @Body() dto: UpdateSubrolDto) {
     const subrol = dto.subrol ?? null;
-    if (subrol !== null && !Object.values(UserSubrole).includes(subrol as UserSubrole)) {
+    if (
+      subrol !== null &&
+      !Object.values(UserSubrole).includes(subrol as UserSubrole)
+    ) {
       throw new BadRequestException(
         `Subrol inválido. Opciones válidas: ${Object.values(UserSubrole).join(", ")} o null`,
       );
