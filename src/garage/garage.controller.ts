@@ -109,7 +109,8 @@ export class GarageController {
     return this.garageService.recordAlliedServiceOrder(dto);
   }
 
-  @Get("allied/workshops")
+  @Public()
+  @Get(["allied/workshops", "allied-workshops"])
   getAlliedWorkshops() {
     return this.garageService.getAlliedWorkshops();
   }

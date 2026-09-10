@@ -121,7 +121,7 @@ export class CoursesController {
   }
 
   @UseGuards(SessionGuard)
-  @Get("my-enrollment/:courseSlug")
+  @Get(["my-enrollment/:courseSlug", "enrollment/:courseSlug"])
   async getMyEnrollment(
     @Req() req: AuthenticatedRequest,
     @Param("courseSlug") courseSlug: string,
