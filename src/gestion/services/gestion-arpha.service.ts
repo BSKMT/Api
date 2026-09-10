@@ -73,8 +73,7 @@ export class GestionArphaService {
     subrol?: string | null;
   }) {
     const isLeaderOrAdmin =
-      user.role === UserRole.ADMIN ||
-      user.subrol === UserSubrole.LIDER_ARPHA;
+      user.role === UserRole.ADMIN || user.subrol === UserSubrole.LIDER_ARPHA;
 
     let filter: Record<string, unknown> = {};
 
@@ -100,7 +99,9 @@ export class GestionArphaService {
           ],
         };
       } else {
-        throw new ForbiddenException("No tienes permisos para consultar solicitudes ARPHA");
+        throw new ForbiddenException(
+          "No tienes permisos para consultar solicitudes ARPHA",
+        );
       }
     }
 
@@ -132,7 +133,9 @@ export class GestionArphaService {
       request.status === ArphaRequestStatus.COMPLETED ||
       request.status === ArphaRequestStatus.CANCELLED
     ) {
-      throw new BadRequestException("No se puede asignar una solicitud completada o cancelada");
+      throw new BadRequestException(
+        "No se puede asignar una solicitud completada o cancelada",
+      );
     }
 
     request.assignedGestorId = dto.gestorId;
@@ -161,11 +164,12 @@ export class GestionArphaService {
     }
 
     const isLeaderOrAdmin =
-      user.role === UserRole.ADMIN ||
-      user.subrol === UserSubrole.LIDER_ARPHA;
+      user.role === UserRole.ADMIN || user.subrol === UserSubrole.LIDER_ARPHA;
 
     if (!isLeaderOrAdmin && request.assignedGestorId !== user.userId) {
-      throw new ForbiddenException("No estás asignado como gestor de esta solicitud");
+      throw new ForbiddenException(
+        "No estás asignado como gestor de esta solicitud",
+      );
     }
 
     request.gestorLocation = {
@@ -193,11 +197,12 @@ export class GestionArphaService {
     }
 
     const isLeaderOrAdmin =
-      user.role === UserRole.ADMIN ||
-      user.subrol === UserSubrole.LIDER_ARPHA;
+      user.role === UserRole.ADMIN || user.subrol === UserSubrole.LIDER_ARPHA;
 
     if (!isLeaderOrAdmin && request.assignedGestorId !== user.userId) {
-      throw new ForbiddenException("No tienes autorización para modificar esta solicitud");
+      throw new ForbiddenException(
+        "No tienes autorización para modificar esta solicitud",
+      );
     }
 
     request.status = dto.status;
