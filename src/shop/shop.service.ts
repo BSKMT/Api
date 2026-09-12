@@ -145,7 +145,7 @@ export class ShopService {
       let discountPercent = 0;
 
       if (isMember) {
-        discountPercent = product.memberDiscountPercent ?? 20;
+        discountPercent = product.memberDiscountPercent ?? 15;
         unitPrice = Math.round(publicPrice * (1 - discountPercent / 100));
       }
 

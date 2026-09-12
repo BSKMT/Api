@@ -46,7 +46,8 @@ import {
   maskUserId,
 } from "../common/utils/log-redact.util";
 import {
-  SINGLE_PAYMENT_AMOUNT,
+  MEMBERSHIP_NEW_MEMBER_AMOUNT,
+  MEMBERSHIP_RENEWAL_AMOUNT,
   INSTALLMENT_AMOUNT,
   INSTALLMENTS_TOTAL,
   MEMBERSHIP_DURATION_MS,
@@ -432,8 +433,11 @@ export class MembershipService {
       this.validateNewMembershipEligibility(user.role, membershipExpired);
     }
 
+    const singleAmount = isRenewal
+      ? MEMBERSHIP_RENEWAL_AMOUNT
+      : MEMBERSHIP_NEW_MEMBER_AMOUNT;
     const totalAmount =
-      dto.paymentPlan === "single" ? SINGLE_PAYMENT_AMOUNT : INSTALLMENT_AMOUNT;
+      dto.paymentPlan === "single" ? singleAmount : INSTALLMENT_AMOUNT;
     const installmentTotal =
       dto.paymentPlan === "single" ? 1 : INSTALLMENTS_TOTAL;
     const installmentNumber =
