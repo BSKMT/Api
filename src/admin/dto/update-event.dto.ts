@@ -95,6 +95,16 @@ export class UpdateEventDto {
   @IsNumber()
   @Min(0)
   @IsOptional()
+  memberPrice?: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  memberDiscountPercent?: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
   companionPrice?: number;
 
   @IsNumber()

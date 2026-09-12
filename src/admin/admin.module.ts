@@ -38,6 +38,15 @@ import {
   ServiceCreditTransactionSchema,
 } from "../membership/schemas/service-credit-transaction.schema";
 import { User, UserSchema } from "../users/schemas/user.schema";
+import {
+  SystemPricingConfig,
+  SystemPricingConfigSchema,
+} from "./schemas/system-pricing-config.schema";
+import {
+  PublicPricingConfigController,
+  AdminPricingConfigController,
+} from "./controllers/system-pricing-config.controller";
+import { SystemPricingConfigService } from "./services/system-pricing-config.service";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { UsersModule } from "../users/users.module";
 
@@ -60,6 +69,10 @@ import { UsersModule } from "../users/users.module";
         schema: ServiceCreditTransactionSchema,
       },
       { name: User.name, schema: UserSchema },
+      {
+        name: SystemPricingConfig.name,
+        schema: SystemPricingConfigSchema,
+      },
     ]),
     NotificationsModule,
     UsersModule,
@@ -72,6 +85,8 @@ import { UsersModule } from "../users/users.module";
     AdminMembershipController,
     AdminSettingsController,
     AdminUsersController,
+    PublicPricingConfigController,
+    AdminPricingConfigController,
   ],
   providers: [
     AdminEventsService,
@@ -80,6 +95,8 @@ import { UsersModule } from "../users/users.module";
     AdminArphaService,
     AdminMembershipService,
     AdminSettingsService,
+    SystemPricingConfigService,
   ],
+  exports: [SystemPricingConfigService],
 })
 export class AdminModule {}
