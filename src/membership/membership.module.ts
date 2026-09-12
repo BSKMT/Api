@@ -12,6 +12,7 @@ import {
 } from "./schemas/service-credit-transaction.schema";
 import { UsersModule } from "../users/users.module";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { AdminModule } from "../admin/admin.module";
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { NotificationsModule } from "../notifications/notifications.module";
     ]),
     UsersModule,
     NotificationsModule,
+    AdminModule,
   ],
   controllers: [MembershipController],
   providers: [MembershipService],

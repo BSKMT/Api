@@ -53,6 +53,7 @@ import {
   MEMBERSHIP_DURATION_MS,
   CREDIT_EXPIRY_MONTHS,
 } from "./membership.constants";
+import { SystemPricingConfigService } from "../admin/services/system-pricing-config.service";
 
 @Injectable()
 export class MembershipService {
@@ -67,6 +68,7 @@ export class MembershipService {
     private readonly notificationsService: NotificationsService,
     private readonly configService: ConfigService<EnvironmentConfig>,
     private readonly alegraService: AlegraService,
+    private readonly pricingConfigService: SystemPricingConfigService,
   ) {}
 
   /** Format a human-readable membership description across renewal/new plans. */
@@ -433,13 +435,21 @@ export class MembershipService {
       this.validateNewMembershipEligibility(user.role, membershipExpired);
     }
 
-    const singleAmount = isRenewal
-      ? MEMBERSHIP_RENEWAL_AMOUNT
-      : MEMBERSHIP_NEW_MEMBER_AMOUNT;
+    const pricingConfig = await this.pricingConfigService.getConfig();
+    const renewalAmt =
+      pricingConfig.membership?.renewalAmount ?? MEMBERSHIP_RENEWAL_AMOUNT;
+    const newMemberAmt =
+      pricingConfig.membership?.newMemberAmount ?? MEMBERSHIP_NEW_MEMBER_AMOUNT;
+    const singleAmount = isRenewal ? renewalAmt : newMemberAmt;
+
+    const installmentAmt =
+      pricingConfig.membership?.installmentAmount ?? INSTALLMENT_AMOUNT;
     const totalAmount =
-      dto.paymentPlan === "single" ? singleAmount : INSTALLMENT_AMOUNT;
-    const installmentTotal =
-      dto.paymentPlan === "single" ? 1 : INSTALLMENTS_TOTAL;
+      dto.paymentPlan === "single" ? singleAmount : installmentAmt;
+
+    const installmentsTot =
+      pricingConfig.membership?.installmentsTotal ?? INSTALLMENTS_TOTAL;
+    const installmentTotal = dto.paymentPlan === "single" ? 1 : installmentsTot;
     const installmentNumber =
       dto.paymentPlan === "installment"
         ? await this.computeNextInstallmentNumber(userId, isRenewal)

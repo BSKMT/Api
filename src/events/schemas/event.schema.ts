@@ -84,6 +84,12 @@ export class Event {
   nonMemberPrice!: number | null;
 
   @Prop({ type: Number, default: null })
+  memberPrice!: number | null;
+
+  @Prop({ type: Number, default: null })
+  memberDiscountPercent!: number | null;
+
+  @Prop({ type: Number, default: null })
   companionPrice!: number | null;
 
   @Prop({ type: Number, default: null })
