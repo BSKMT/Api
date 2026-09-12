@@ -134,11 +134,13 @@ async function bootstrap() {
   const landingPageUrl =
     configService.get<string>("LANDING_PAGE_URL", { infer: true }) ??
     "http://localhost:4321";
-  setAuthDependencies(emailService, landingPageUrl);
 
   const panelUrl =
     configService.get<string>("PANEL_URL", { infer: true }) ??
     "http://localhost:3000";
+
+  // Auth emails (email verification and password reset) point directly to the panel
+  setAuthDependencies(emailService, panelUrl);
 
   const rawCorsOrigin =
     configService.get<string>("CORS_ORIGIN", { infer: true }) ??
