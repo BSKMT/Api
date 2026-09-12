@@ -857,7 +857,7 @@ export class EventsService {
       case "presencial":
         return {
           amount: Math.round(
-            basePrice * ((course.memberPresencialDiscount ?? 50) / 100),
+            basePrice * (1 - (course.memberPresencialDiscount ?? 20) / 100),
           ),
           tier: "course-member-presencial",
           requiresPayment: basePrice > 0,

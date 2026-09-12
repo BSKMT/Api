@@ -18,10 +18,10 @@ export enum ArphaRequestStatus {
 }
 
 export const ARPHA_PRICING: Record<string, number> = {
-  tecnica: 15000,
-  emergencia: 25000,
-  juridica: 30000,
-  ruta: 20000,
+  tecnica: 55000,
+  ruta: 85000,
+  emergencia: 145000,
+  juridica: 195000,
 };
 
 @Schema({ timestamps: true })
