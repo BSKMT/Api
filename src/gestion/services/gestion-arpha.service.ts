@@ -20,6 +20,7 @@ import {
   IsNumber,
   IsEnum,
 } from "class-validator";
+import { Transform } from "class-transformer";
 import { UsersService } from "../../users/users.service";
 import { UserRole, UserSubrole } from "../../users/schemas/user.schema";
 
@@ -49,6 +50,15 @@ export class UpdateGestorLocationDto {
 }
 
 export class UpdateGestionStatusDto {
+  @Transform(({ value }) => {
+    if (typeof value !== "string") return value;
+    const v = value.toUpperCase().trim();
+    if (v === "RESUELTO" || v === "RESOLVED") return ArphaRequestStatus.COMPLETED;
+    if (v === "CANCELADO") return ArphaRequestStatus.CANCELLED;
+    if (v === "EN_SITIO" || v === "ENSITIO") return ArphaRequestStatus.EN_SITIO;
+    if (v === "EN_CAMINO" || v === "ENCAMINO") return ArphaRequestStatus.EN_CAMINO;
+    return v as ArphaRequestStatus;
+  })
   @IsEnum(ArphaRequestStatus)
   status!: ArphaRequestStatus;
 
@@ -210,7 +220,11 @@ export class GestionArphaService {
       request.resolution = dto.resolution;
     }
 
-    if (dto.status === ArphaRequestStatus.COMPLETED) {
+    if (dto.status === ArphaRequestStatus.EN_SITIO) {
+      if (!request.arrivedAt) {
+        request.arrivedAt = new Date();
+      }
+    } else if (dto.status === ArphaRequestStatus.COMPLETED) {
       request.resolvedAt = new Date();
       request.activeRequestKey = null; // Release slot
     } else if (dto.status === ArphaRequestStatus.CANCELLED) {

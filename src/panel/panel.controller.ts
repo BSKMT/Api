@@ -93,7 +93,11 @@ export class PanelController {
       this.arphaRequestModel.countDocuments({
         userId: user.userId,
         status: {
-          $in: [ArphaRequestStatus.PENDING, ArphaRequestStatus.EN_CAMINO],
+          $in: [
+            ArphaRequestStatus.PENDING,
+            ArphaRequestStatus.EN_CAMINO,
+            ArphaRequestStatus.EN_SITIO,
+          ],
         },
       }),
       this.orderModel.countDocuments({

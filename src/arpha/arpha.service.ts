@@ -50,7 +50,11 @@ export class ArphaService {
     const activeRequest = await this.arphaRequestModel.findOne({
       userId,
       status: {
-        $in: [ArphaRequestStatus.PENDING, ArphaRequestStatus.EN_CAMINO],
+        $in: [
+          ArphaRequestStatus.PENDING,
+          ArphaRequestStatus.EN_CAMINO,
+          ArphaRequestStatus.EN_SITIO,
+        ],
       },
     });
 
@@ -184,7 +188,8 @@ export class ArphaService {
     const active = requests.filter(
       (r) =>
         r.status === ArphaRequestStatus.PENDING ||
-        r.status === ArphaRequestStatus.EN_CAMINO,
+        r.status === ArphaRequestStatus.EN_CAMINO ||
+        r.status === ArphaRequestStatus.EN_SITIO,
     );
     const history = requests.filter(
       (r) =>
@@ -199,7 +204,11 @@ export class ArphaService {
     return this.arphaRequestModel.countDocuments({
       userId,
       status: {
-        $in: [ArphaRequestStatus.PENDING, ArphaRequestStatus.EN_CAMINO],
+        $in: [
+          ArphaRequestStatus.PENDING,
+          ArphaRequestStatus.EN_CAMINO,
+          ArphaRequestStatus.EN_SITIO,
+        ],
       },
     });
   }

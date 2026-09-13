@@ -126,6 +126,18 @@ export class AdminArphaService {
         }
         request.status = ArphaRequestStatus.EN_CAMINO;
         break;
+      case ArphaRequestStatus.EN_SITIO:
+        if (
+          request.status === ArphaRequestStatus.COMPLETED ||
+          request.status === ArphaRequestStatus.CANCELLED
+        ) {
+          throw new BadRequestException(
+            "No se puede cambiar el estado de una solicitud finalizada",
+          );
+        }
+        request.status = ArphaRequestStatus.EN_SITIO;
+        if (!request.arrivedAt) request.arrivedAt = new Date();
+        break;
       case ArphaRequestStatus.COMPLETED:
         if (request.status === ArphaRequestStatus.CANCELLED) {
           throw new BadRequestException(
