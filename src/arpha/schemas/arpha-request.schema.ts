@@ -13,6 +13,7 @@ export enum ArphaRequestType {
 export enum ArphaRequestStatus {
   PENDING = "PENDING",
   EN_CAMINO = "EN_CAMINO",
+  EN_SITIO = "EN_SITIO",
   COMPLETED = "COMPLETED",
   CANCELLED = "CANCELLED",
 }
@@ -96,6 +97,9 @@ export class ArphaRequest {
 
   @Prop({ type: String, default: null })
   comment!: string | null;
+
+  @Prop({ type: Date, default: null })
+  arrivedAt!: Date | null;
 
   @Prop({ type: Date, default: null })
   resolvedAt!: Date | null;
