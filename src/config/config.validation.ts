@@ -100,13 +100,6 @@ export const configValidationSchema = Joi.object({
     then: Joi.required(),
   }),
 
-  ABUSEIPDB_ENABLED: Joi.boolean().default(false),
-  ABUSEIPDB_API_KEY: Joi.string().allow("").when("ABUSEIPDB_ENABLED", {
-    is: true,
-    then: Joi.required(),
-  }),
-  ABUSEIPDB_BLOCK_THRESHOLD: Joi.number().min(25).max(100).default(75),
-
   // Verifik — KYC / identity verification (Colombia: CC, CE, PPT, PEP).
   // Optional on purpose: if the token is missing the identity-verification
   // endpoints degrade to a 503 "no disponible" instead of crashing boot,

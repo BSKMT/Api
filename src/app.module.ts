@@ -23,7 +23,6 @@ import { ShopModule } from "./shop/shop.module";
 import { AdminModule } from "./admin/admin.module";
 import { SettingsModule } from "./settings/settings.module";
 import { BirdModule } from "./bird/bird.module";
-import { AbuseIpDbModule } from "./abuseipdb/abuseipdb.module";
 import { AlegraModule } from "./alegra/alegra.module";
 import { GarageModule } from "./garage/garage.module";
 import { GestionModule } from "./gestion/gestion.module";
@@ -42,7 +41,6 @@ import { GestionModule } from "./gestion/gestion.module";
     }),
     ScheduleModule.forRoot(),
     KvModule,
-    AbuseIpDbModule,
     ThrottlerModule.forRoot([
       {
         name: "default",
