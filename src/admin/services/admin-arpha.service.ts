@@ -144,7 +144,8 @@ export class AdminArphaService {
         }
         request.status = ArphaRequestStatus.COMPLETED;
         request.resolvedAt = new Date();
-        request.activeRequestKey = null; // M16: Release active slot
+        request.activeRequestKey = undefined;
+        request.set("activeRequestKey", undefined);
         if (dto.resolution) request.resolution = dto.resolution;
         break;
       case ArphaRequestStatus.CANCELLED:
@@ -155,7 +156,8 @@ export class AdminArphaService {
         }
         request.status = ArphaRequestStatus.CANCELLED;
         request.cancelledAt = new Date();
-        request.activeRequestKey = null; // M16: Release active slot
+        request.activeRequestKey = undefined;
+        request.set("activeRequestKey", undefined);
         if (dto.resolution) request.resolution = dto.resolution;
         break;
       default:

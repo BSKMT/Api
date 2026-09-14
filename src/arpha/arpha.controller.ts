@@ -56,8 +56,11 @@ export class ArphaController {
     @Req() req: AuthenticatedRequest,
     @Param("id", ParseObjectIdPipe) requestId: string,
   ) {
-    const { userId } = req.user;
-    return this.arphaService.cancelRequest(userId, requestId);
+    return this.arphaService.cancelRequest(
+      req.user.userId,
+      requestId,
+      req.user,
+    );
   }
 
   @Post("rate/:id")

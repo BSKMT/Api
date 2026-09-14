@@ -208,13 +208,50 @@ export class GestionArphaService {
       throw new NotFoundException("Solicitud ARPHA no encontrada");
     }
 
+    if (
+      request.status === ArphaRequestStatus.COMPLETED ||
+      request.status === ArphaRequestStatus.CANCELLED
+    ) {
+      throw new BadRequestException(
+        "La solicitud ya se encuentra finalizada o cancelada",
+      );
+    }
+
+    // Regla de idempotencia: No se puede volver a marcar como EN_SITIO si ya está en ese estado
+    if (
+      dto.status === ArphaRequestStatus.EN_SITIO &&
+      request.status === ArphaRequestStatus.EN_SITIO
+    ) {
+      throw new BadRequestException(
+        "La solicitud ya se encuentra marcada en sitio",
+      );
+    }
+
     const isLeaderOrAdmin =
       user.role === UserRole.ADMIN || user.subrol === UserSubrole.LIDER_ARPHA;
 
-    if (!isLeaderOrAdmin && request.assignedGestorId !== user.userId) {
+    const isAssignedGestor =
+      request.assignedGestorId != null &&
+      String(request.assignedGestorId) === String(user.userId);
+
+    const isFieldGestorClaiming =
+      user.subrol === UserSubrole.GESTOR_CAMPO_ARPHA &&
+      (!request.assignedGestorId ||
+        request.status === ArphaRequestStatus.PENDING);
+
+    if (!isLeaderOrAdmin && !isAssignedGestor && !isFieldGestorClaiming) {
       throw new ForbiddenException(
         "No tienes autorización para modificar esta solicitud",
       );
+    }
+
+    // Auto-asignación para gestores de campo que toman un auxilio disponible
+    if (
+      !request.assignedGestorId &&
+      user.subrol === UserSubrole.GESTOR_CAMPO_ARPHA
+    ) {
+      request.assignedGestorId = user.userId;
+      request.assignedType = "campo";
     }
 
     request.status = dto.status;
@@ -226,10 +263,12 @@ export class GestionArphaService {
       request.arrivedAt ??= new Date();
     } else if (dto.status === ArphaRequestStatus.COMPLETED) {
       request.resolvedAt = new Date();
-      request.activeRequestKey = null; // Release slot
+      request.activeRequestKey = undefined;
+      request.set("activeRequestKey", undefined);
     } else if (dto.status === ArphaRequestStatus.CANCELLED) {
       request.cancelledAt = new Date();
-      request.activeRequestKey = null; // Release slot
+      request.activeRequestKey = undefined;
+      request.set("activeRequestKey", undefined);
     }
 
     return request.save();

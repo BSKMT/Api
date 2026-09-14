@@ -119,16 +119,19 @@ export class ArphaRequest {
   @Prop({ type: Number, default: 0 })
   amount!: number;
 
-  // M16: Sparse unique key preventing concurrent active requests per user
-  @Prop({ type: String, default: null })
-  activeRequestKey!: string | null;
+  // M16: Unique key preventing concurrent active requests per user (partial filter ignores nulls)
+  @Prop({ type: String, default: undefined, required: false })
+  activeRequestKey?: string | null;
 }
 
 export const ArphaRequestSchema = SchemaFactory.createForClass(ArphaRequest);
 
 ArphaRequestSchema.index({ userId: 1, createdAt: -1 });
-// M16: Sparse unique index ensures only one active request per user
+// M16: Unique index with partialFilterExpression ensures only active requests with string keys are indexed
 ArphaRequestSchema.index(
   { activeRequestKey: 1 },
-  { unique: true, sparse: true },
+  {
+    unique: true,
+    partialFilterExpression: { activeRequestKey: { $type: "string" } },
+  },
 );
