@@ -123,3 +123,46 @@ export async function executeRevertPartialPaymentCredit(
   );
   return false;
 }
+
+export async function executeUpdateInstallmentsPaid(
+  userModel: Model<UserDocument>,
+  userId: string,
+  count: number,
+): Promise<void> {
+  await userModel.updateOne({ _id: userId }, { installmentsPaid: count });
+}
+
+export async function executeIncrementInstallmentsPaid(
+  userModel: Model<UserDocument>,
+  userId: string,
+): Promise<number> {
+  const updated = await userModel.findOneAndUpdate(
+    { _id: userId },
+    { $inc: { installmentsPaid: 1 } },
+    { new: true },
+  );
+  return updated?.installmentsPaid ?? 0;
+}
+
+export async function executeUpdateMembershipRenewal(
+  userModel: Model<UserDocument>,
+  userId: string,
+  renewalCount: number,
+): Promise<void> {
+  await userModel.updateOne(
+    { _id: userId },
+    { renewalInstallmentsPaid: renewalCount },
+  );
+}
+
+export async function executeIncrementRenewalInstallmentsPaid(
+  userModel: Model<UserDocument>,
+  userId: string,
+): Promise<number> {
+  const updated = await userModel.findOneAndUpdate(
+    { _id: userId },
+    { $inc: { renewalInstallmentsPaid: 1 } },
+    { new: true },
+  );
+  return updated?.renewalInstallmentsPaid ?? 0;
+}

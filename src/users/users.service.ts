@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  ConflictException,
-  NotFoundException,
-} from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import {
@@ -13,10 +9,7 @@ import {
   PartialPaymentCredit,
   FriendRequest,
 } from "./schemas/user.schema";
-import {
-  getColombiaDate,
-  generateOfficialNumber,
-} from "./users-official-number.helper";
+import { executeCreateUser } from "./users-create.helper";
 import {
   executeActivateMembership,
   executeUpdatePartialPaymentCredit,
@@ -25,6 +18,10 @@ import {
   executeCreatePartialPaymentCredit,
   executeClearPartialPaymentCredit,
   executeRevertPartialPaymentCredit,
+  executeUpdateInstallmentsPaid,
+  executeIncrementInstallmentsPaid,
+  executeUpdateMembershipRenewal,
+  executeIncrementRenewalInstallmentsPaid,
 } from "./users-credit.helper";
 import {
   executeEnsureOfficialNumber,
@@ -90,28 +87,7 @@ export class UsersService {
   }
 
   async create(betterAuthId: string, email: string): Promise<UserDocument> {
-    const existing = await this.findByBetterAuthId(betterAuthId);
-    if (existing) {
-      throw new ConflictException("El usuario ya existe en la base de datos");
-    }
-
-    const officialNumber = await generateOfficialNumber(this.userModel, false);
-
-    const created = new this.userModel({
-      email: email.toLowerCase(),
-      betterAuthId,
-      role: "user",
-      profileCompleted: false,
-      completedSections: [],
-      profile: {
-        "membresia-ecosistema": {
-          numeroMiembro: officialNumber,
-          fechaIngreso: getColombiaDate(),
-        },
-      },
-    });
-
-    return created.save();
+    return executeCreateUser(this.userModel, betterAuthId, email);
   }
 
   async updateProfileSection(
@@ -159,38 +135,22 @@ export class UsersService {
   }
 
   async updateInstallmentsPaid(userId: string, count: number): Promise<void> {
-    await this.userModel.updateOne(
-      { _id: userId },
-      { installmentsPaid: count },
-    );
+    return executeUpdateInstallmentsPaid(this.userModel, userId, count);
   }
 
   async incrementInstallmentsPaid(userId: string): Promise<number> {
-    const updated = await this.userModel.findOneAndUpdate(
-      { _id: userId },
-      { $inc: { installmentsPaid: 1 } },
-      { new: true },
-    );
-    return updated?.installmentsPaid ?? 0;
+    return executeIncrementInstallmentsPaid(this.userModel, userId);
   }
 
   async updateMembershipRenewal(
     userId: string,
     renewalCount: number,
   ): Promise<void> {
-    await this.userModel.updateOne(
-      { _id: userId },
-      { renewalInstallmentsPaid: renewalCount },
-    );
+    return executeUpdateMembershipRenewal(this.userModel, userId, renewalCount);
   }
 
   async incrementRenewalInstallmentsPaid(userId: string): Promise<number> {
-    const updated = await this.userModel.findOneAndUpdate(
-      { _id: userId },
-      { $inc: { renewalInstallmentsPaid: 1 } },
-      { new: true },
-    );
-    return updated?.renewalInstallmentsPaid ?? 0;
+    return executeIncrementRenewalInstallmentsPaid(this.userModel, userId);
   }
 
   async updatePartialPaymentCredit(
