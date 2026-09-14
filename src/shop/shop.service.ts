@@ -2,7 +2,6 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  ConflictException,
   BadRequestException,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
@@ -27,6 +26,10 @@ import {
   rollbackStock,
   restoreOrderStock,
 } from "./shop.helpers";
+import {
+  executeAddToWishlist,
+  executeRemoveFromWishlist,
+} from "./shop-wishlist.helpers";
 
 @Injectable()
 export class ShopService {
@@ -217,39 +220,18 @@ export class ShopService {
     userId: string,
     productSlug: string,
   ): Promise<WishlistItemDocument> {
-    const product = await this.productModel.findOne({ slug: productSlug });
-    if (!product) {
-      throw new NotFoundException("Producto no encontrado");
-    }
-
-    const existing = await this.wishlistModel.findOne({
+    return executeAddToWishlist(
+      this.productModel,
+      this.wishlistModel,
       userId,
       productSlug,
-    });
-
-    if (existing) {
-      throw new ConflictException("El producto ya está en tu lista de deseos");
-    }
-
-    const item = new this.wishlistModel({ userId, productSlug });
-    return item.save();
+    );
   }
 
   async removeFromWishlist(
     userId: string,
     productSlug: string,
   ): Promise<{ message: string }> {
-    const result = await this.wishlistModel.deleteOne({
-      userId,
-      productSlug,
-    });
-
-    if (result.deletedCount === 0) {
-      throw new NotFoundException(
-        "Producto no encontrado en la lista de deseos",
-      );
-    }
-
-    return { message: "Producto removido de la lista de deseos" };
+    return executeRemoveFromWishlist(this.wishlistModel, userId, productSlug);
   }
 }

@@ -31,10 +31,12 @@ import {
 } from "./alegra-api.helpers";
 import {
   executeApprovedPaymentFlow,
-  queryInvoicesForUser,
-  queryInvoicePdfUrlByTransaction,
   executeRetryFailedInvoice,
 } from "./alegra-payment.helpers";
+import {
+  queryInvoicesForUser,
+  queryInvoicePdfUrlByTransaction,
+} from "./alegra-query.helpers";
 import { processInvoiceWebhookEvent } from "./alegra-webhook.helpers";
 
 @Injectable()

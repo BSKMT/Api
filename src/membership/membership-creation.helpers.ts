@@ -1,11 +1,6 @@
-import { NotFoundException, Logger } from "@nestjs/common";
+import { NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Model } from "mongoose";
-import { MembershipTransactionDocument } from "./schemas/membership-transaction.schema";
-import { ServiceCreditTransactionDocument } from "./schemas/service-credit-transaction.schema";
 import { CreateMembershipPaymentDto } from "./dto/create-membership-payment.dto";
-import { UsersService } from "../users/users.service";
-import { SystemPricingConfigService } from "../admin/services/system-pricing-config.service";
 import {
   maskAmount,
   maskReference,
@@ -32,15 +27,9 @@ import {
   assertNoPendingMembershipTransaction,
 } from "./membership-formatting.helpers";
 
-export interface MembershipCreationDeps {
-  transactionModel: Model<MembershipTransactionDocument>;
-  creditTransactionModel: Model<ServiceCreditTransactionDocument>;
-  usersService: UsersService;
-  pricingConfigService: SystemPricingConfigService;
-  configService: ConfigService<EnvironmentConfig>;
-  logger: Logger;
-  processApprovedPayment: (t: MembershipTransactionDocument) => Promise<void>;
-}
+import type { MembershipCreationDeps } from "./membership.interfaces";
+
+export type { MembershipCreationDeps };
 
 export function buildPendingPaymentResponse(
   configService: ConfigService<EnvironmentConfig>,

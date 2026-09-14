@@ -1,9 +1,4 @@
-import { Logger } from "@nestjs/common";
-import { Model } from "mongoose";
-import { MembershipTransactionDocument } from "./schemas/membership-transaction.schema";
-import { UsersService } from "../users/users.service";
-import { NotificationsService } from "../notifications/notifications.service";
-import { AlegraService } from "../alegra/alegra.service";
+import type { MembershipTransactionDocument } from "./schemas/membership-transaction.schema";
 import {
   NotificationType,
   NotificationPriority,
@@ -16,13 +11,9 @@ import {
 import { formatRenewalActivationMessage } from "./membership-formatting.helpers";
 import { processAlegraInvoicingHelper } from "./membership-invoicing.helpers";
 
-export interface MembershipActivationDeps {
-  transactionModel: Model<MembershipTransactionDocument>;
-  usersService: UsersService;
-  notificationsService: NotificationsService;
-  alegraService: AlegraService;
-  logger: Logger;
-}
+import type { MembershipActivationDeps } from "./membership.interfaces";
+
+export type { MembershipActivationDeps };
 
 export async function processApprovedPaymentHelper(
   deps: MembershipActivationDeps,
