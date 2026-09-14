@@ -3,10 +3,12 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   ConflictException,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
+import { UserRole, UserSubrole } from "../users/schemas/user.schema";
 import {
   ArphaRequest,
   ArphaRequestDocument,
@@ -103,11 +105,17 @@ export class ArphaService {
   async cancelRequest(
     userId: string,
     requestId: string,
+    callerUser?: { userId: string; role?: string; subrol?: string | null },
   ): Promise<{ message: string }> {
-    const request = await this.arphaRequestModel.findOne({
-      _id: requestId,
-      userId,
-    });
+    const isLeaderOrAdmin =
+      callerUser?.role === UserRole.ADMIN ||
+      callerUser?.subrol === UserSubrole.LIDER_ARPHA;
+
+    const query = isLeaderOrAdmin
+      ? { _id: requestId }
+      : { _id: requestId, userId };
+
+    const request = await this.arphaRequestModel.findOne(query);
 
     if (!request) {
       throw new NotFoundException("Solicitud no encontrada");
@@ -122,12 +130,22 @@ export class ArphaService {
       );
     }
 
+    // A request marked as EN_SITIO cannot be cancelled by a regular user; only by a leader or admin
+    if (request.status === ArphaRequestStatus.EN_SITIO && !isLeaderOrAdmin) {
+      throw new ForbiddenException(
+        "La solicitud ya se encuentra marcada en sitio. Solo un líder operativo puede cancelar este auxilio.",
+      );
+    }
+
     request.status = ArphaRequestStatus.CANCELLED;
     request.cancelledAt = new Date();
-    request.activeRequestKey = null; // M16: Release active slot
+    request.activeRequestKey = undefined;
+    request.set("activeRequestKey", undefined);
     await request.save();
 
-    this.logger.log(`ARPHA request cancelled: id=${requestId} user=${userId}`);
+    this.logger.log(
+      `ARPHA request cancelled: id=${requestId} by user=${userId}`,
+    );
 
     return { message: "Solicitud cancelada exitosamente" };
   }
