@@ -33,11 +33,8 @@ import {
   executeCancelRegistration,
   executeSweepStaleRegistrations,
 } from "./events-sweep.helpers";
-import { CoursePricing, MEMBER_LEVELS } from "./events.constants";
-import type { CoursePricingInput } from "./events-course-pricing.helpers";
-
-export type { CoursePricing, CoursePricingInput };
-export { MEMBER_LEVELS };
+export { MEMBER_LEVELS, type CoursePricing } from "./events.constants";
+export type { CoursePricingInput } from "./events-course-pricing.helpers";
 
 @Injectable()
 export class EventsService {
