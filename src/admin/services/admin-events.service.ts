@@ -19,6 +19,12 @@ import {
 } from "../../events/schemas/event-registration.schema";
 import { CreateEventDto } from "../dto/create-event.dto";
 import { UpdateEventDto } from "../dto/update-event.dto";
+import {
+  clampEventsPagination,
+  sanitizeRegistrationsForActor,
+  incrementSeatOnReconfirm,
+  invalidateEventCacheHelper,
+} from "./admin-events.helpers";
 
 @Injectable()
 export class AdminEventsService {
@@ -32,13 +38,6 @@ export class AdminEventsService {
     private readonly kvCache: KvCacheService,
   ) {}
 
-  private async invalidateEventCache(slug?: string): Promise<void> {
-    await this.kvCache.delete("events:stats");
-    await this.kvCache.invalidatePrefix("events:upcoming:");
-    await this.kvCache.invalidatePrefix("events:featured:");
-    if (slug) await this.kvCache.delete(`event:slug:${slug}`);
-  }
-
   async listEvents(filters: {
     status?: string;
     category?: string;
@@ -49,9 +48,10 @@ export class AdminEventsService {
     if (filters.status) filter.status = filters.status;
     if (filters.category) filter.category = filters.category;
 
-    const limit = Math.min(Math.max(filters.limit ?? 50, 1), 100);
-    const page = filters.page ?? 1;
-    const skip = (page - 1) * limit;
+    const { limit, page, skip } = clampEventsPagination(
+      filters.limit,
+      filters.page,
+    );
 
     const [items, total] = await Promise.all([
       this.eventModel
@@ -95,7 +95,7 @@ export class AdminEventsService {
     });
 
     this.logger.log(`Event created: slug=${dto.slug} by admin`);
-    await this.invalidateEventCache();
+    await invalidateEventCacheHelper(this.kvCache);
     return created;
   }
 
@@ -106,7 +106,6 @@ export class AdminEventsService {
     }
 
     const update: Record<string, unknown> = { ...dto };
-    // A-7: Defense-in-depth — never allow slug change on update
     delete update.slug;
     if (dto.date) update.date = new Date(dto.date);
     if (dto.endDate) update.endDate = new Date(dto.endDate);
@@ -119,7 +118,7 @@ export class AdminEventsService {
     );
 
     this.logger.log(`Event updated: slug=${slug}`);
-    await this.invalidateEventCache(slug);
+    await invalidateEventCacheHelper(this.kvCache, slug);
     return updated as EventDocument;
   }
 
@@ -138,7 +137,7 @@ export class AdminEventsService {
       throw new NotFoundException("Evento no encontrado");
     }
     this.logger.log(`Event deleted: slug=${slug}`);
-    await this.invalidateEventCache(slug);
+    await invalidateEventCacheHelper(this.kvCache, slug);
     return { message: "Evento eliminado exitosamente" };
   }
 
@@ -152,7 +151,7 @@ export class AdminEventsService {
       throw new NotFoundException("Evento no encontrado");
     }
     this.logger.log(`Event status set: slug=${slug} status=${status}`);
-    await this.invalidateEventCache(slug);
+    await invalidateEventCacheHelper(this.kvCache, slug);
     return event;
   }
 
@@ -173,14 +172,10 @@ export class AdminEventsService {
     const filter: Record<string, unknown> = { eventSlug };
     if (filters.status) filter.status = filters.status;
 
-    // M-11: paginate the registrations listing (previously returned
-    // the full unbounded result, which could OOM on big events and
-    // also meant EVENT_MANAGER (e.g. the inductor) saw the full
-    // `companionData.{documentId, phone, email}` of every attendee —
-    // special-category PII under Ley 1581/GDPR Art.9.
-    const limit = Math.min(Math.max(filters.limit ?? 50, 1), 100);
-    const page = Math.max(filters.page ?? 1, 1);
-    const skip = (page - 1) * limit;
+    const { limit, page, skip } = clampEventsPagination(
+      filters.limit,
+      filters.page,
+    );
 
     const [items, total] = await Promise.all([
       this.registrationModel
@@ -192,8 +187,6 @@ export class AdminEventsService {
       this.registrationModel.countDocuments(filter),
     ]);
 
-    const isAdmin = filters.actorRole === "admin";
-
     return {
       event: {
         slug: event.slug,
@@ -202,28 +195,7 @@ export class AdminEventsService {
         registeredCount: event.registeredCount,
         maxCapacity: event.maxCapacity,
       },
-      registrations: items.map((r) => {
-        if (isAdmin) return r;
-        // EVENT_MANAGER: redact special-category companion PII.
-        if (
-          r &&
-          typeof r === "object" &&
-          "companionData" in r &&
-          (r as { companionData?: Record<string, unknown> }).companionData
-        ) {
-          const copy: Record<string, unknown> = { ...r };
-          const redacted: Record<string, unknown> = {
-            ...(copy["companionData"] as Record<string, unknown>),
-          };
-          delete redacted["documentId"];
-          delete redacted["phone"];
-          delete redacted["email"];
-          copy["companionData"] =
-            Object.keys(redacted).length > 0 ? redacted : copy["companionData"];
-          return copy as unknown as typeof r;
-        }
-        return r;
-      }),
+      registrations: sanitizeRegistrationsForActor(items, filters.actorRole),
       total,
       page,
       limit,
@@ -240,36 +212,8 @@ export class AdminEventsService {
       throw new BadRequestException("El registro ya está confirmado");
     }
 
-    // M19: If re-confirming a CANCELLED registration, re-increment the seat count
     if (registration.status === "CANCELLED") {
-      const event = await this.eventModel.findOne({
-        slug: registration.eventSlug,
-      });
-      if (event) {
-        const maxCap = event.maxCapacity;
-        if (maxCap != null && maxCap > 0) {
-          const updateResult = await this.eventModel.findOneAndUpdate(
-            {
-              slug: registration.eventSlug,
-              $expr: {
-                $lt: [{ $ifNull: ["$registeredCount", 0] }, maxCap],
-              },
-            },
-            { $inc: { registeredCount: 1 } },
-            { new: true },
-          );
-          if (!updateResult) {
-            throw new BadRequestException(
-              "El evento ha alcanzado su capacidad máxima",
-            );
-          }
-        } else {
-          await this.eventModel.updateOne(
-            { slug: registration.eventSlug },
-            { $inc: { registeredCount: 1 } },
-          );
-        }
-      }
+      await incrementSeatOnReconfirm(this.eventModel, registration.eventSlug);
     }
 
     registration.status = "CONFIRMED";
@@ -291,7 +235,6 @@ export class AdminEventsService {
     registration.confirmedAt = null;
     await registration.save();
 
-    // M3: Decrement registeredCount atomically
     await this.eventModel.findOneAndUpdate(
       { slug: registration.eventSlug, registeredCount: { $gt: 0 } },
       { $inc: { registeredCount: -1 } },

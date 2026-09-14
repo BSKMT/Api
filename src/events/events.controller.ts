@@ -28,6 +28,8 @@ import { ConfirmEventDto } from "./dto/confirm-event.dto";
 import { CancelEventDto } from "./dto/cancel-event.dto";
 import type { EnvironmentConfig } from "../config/config.interface";
 
+import { clampPaginationLimit, assertCronSecret } from "./events.helpers";
+
 interface AuthenticatedRequest extends Request {
   user: { userId: string; email?: string };
 }
@@ -47,25 +49,14 @@ export class EventsController {
   @Throttle({ long: { ttl: 60000, limit: 30 } })
   @Get("upcoming")
   async getUpcomingEvents(@Query("limit") limit?: string) {
-    // M-2: Clamp pagination to prevent DoS via massive limit values
-    const raw = limit ? Number.parseInt(limit, 10) : 6;
-    const parsedLimit = Math.min(
-      Math.max(Number.isFinite(raw) ? raw : 6, 1),
-      100,
-    );
-    return this.eventsService.getUpcomingEvents(parsedLimit);
+    return this.eventsService.getUpcomingEvents(clampPaginationLimit(limit, 6));
   }
 
   @Public()
   @Throttle({ long: { ttl: 60000, limit: 30 } })
   @Get("featured")
   async getFeaturedEvents(@Query("limit") limit?: string) {
-    const raw = limit ? Number.parseInt(limit, 10) : 3;
-    const parsedLimit = Math.min(
-      Math.max(Number.isFinite(raw) ? raw : 3, 1),
-      100,
-    );
-    return this.eventsService.getFeaturedEvents(parsedLimit);
+    return this.eventsService.getFeaturedEvents(clampPaginationLimit(limit, 3));
   }
 
   @Public()
@@ -223,7 +214,12 @@ export class EventsController {
     @Headers("x-cron-secret") headerSecret: string | undefined,
     @Headers("authorization") authorization: string | undefined,
   ) {
-    this.assertCronSecret(headerSecret, authorization);
+    assertCronSecret(
+      this.configService,
+      this.logger,
+      headerSecret,
+      authorization,
+    );
     const startedAt = Date.now();
     const result = await this.eventsService.sweepStaleRegistrations();
     const elapsed = Date.now() - startedAt;
@@ -231,28 +227,5 @@ export class EventsController {
       `sweep-stale-registrations cron completed in ${elapsed}ms — ${result.eventsCancelled} events, ${result.coursesCancelled} courses`,
     );
     return { ok: true, ...result, elapsedMs: elapsed };
-  }
-
-  private assertCronSecret(
-    headerSecret: string | undefined,
-    authorization: string | undefined,
-  ): void {
-    const expected =
-      this.configService.get<string>("CRON_SECRET", { infer: true }) ?? "";
-    if (!expected) {
-      throw new BadRequestException("CRON_SECRET not configured");
-    }
-    const provided =
-      headerSecret ??
-      (authorization?.startsWith("Bearer ")
-        ? authorization.slice("Bearer ".length)
-        : undefined) ??
-      "";
-    if (provided.length !== expected.length || provided !== expected) {
-      this.logger.warn(
-        "Unauthorized cron invocation — secret mismatch (or missing).",
-      );
-      throw new BadRequestException("Invalid or missing cron secret");
-    }
   }
 }

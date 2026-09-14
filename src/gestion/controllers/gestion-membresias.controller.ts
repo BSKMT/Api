@@ -14,7 +14,11 @@ import { Model } from "mongoose";
 import { SessionGuard } from "../../auth/session.guard";
 import { GestionGuard } from "../../common/guards/gestion.guard";
 import { RequireSubroles } from "../../common/decorators/subroles.decorator";
-import { User, UserDocument, UserSubrole } from "../../users/schemas/user.schema";
+import {
+  User,
+  UserDocument,
+  UserSubrole,
+} from "../../users/schemas/user.schema";
 
 @Controller("gestion/membresias")
 @UseGuards(SessionGuard, GestionGuard)
@@ -36,7 +40,10 @@ export class GestionMembresiasController {
     };
 
     if (search) {
-      const searchRegex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`), "i");
+      const searchRegex = new RegExp(
+        search.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`),
+        "i",
+      );
       filter.$or = [
         { email: searchRegex },
         { "profile.datos-personales.primerNombre": searchRegex },
@@ -45,7 +52,10 @@ export class GestionMembresiasController {
       ];
     }
 
-    const lim = Math.min(Math.max(limit ? Number.parseInt(limit, 10) : 25, 1), 100);
+    const lim = Math.min(
+      Math.max(limit ? Number.parseInt(limit, 10) : 25, 1),
+      100,
+    );
     const pg = Math.max(page ? Number.parseInt(page, 10) : 1, 1);
     const skip = (pg - 1) * lim;
 
@@ -78,7 +88,9 @@ export class GestionMembresiasController {
       })
       .sort({ updatedAt: -1 })
       .limit(50)
-      .select("_id email role subrol profile.datos-personales phone identityVerified")
+      .select(
+        "_id email role subrol profile.datos-personales phone identityVerified",
+      )
       .lean();
 
     return { pending };

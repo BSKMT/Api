@@ -1,148 +1,29 @@
 import { MongoClient } from "mongodb";
 import { Logger } from "@nestjs/common";
 import type { BirdEmailService } from "../bird/bird-email.service";
-import { maskEmail } from "../common/utils/log-redact.util";
+import type {
+  BetterAuthCoreModule,
+  BetterAuthMongoModule,
+  BetterAuthDeps,
+  AuthInstance,
+  BetterAuthSessionData,
+} from "./better-auth.types";
+import { createBetterAuthHooks } from "./better-auth-hooks";
+import {
+  createPasswordResetCallback,
+  createVerificationEmailCallback,
+} from "./better-auth-email.helpers";
 
-/* ------------------------------------------------------------------ *
- * Dynamic import of ESM-only `better-auth` submodules.
- *
- * `better-auth` is published as `"type": "module"` (every deep import is
- * a `.mjs` file). The project is compiled to CommonJS by `nest build`,
- * so any top-level `import` of `better-auth/*` becomes a `require()`
- * call at runtime — and requiring an ES Module throws `ERR_REQUIRE_ESM`.
- *
- * To stay CommonJS-compatible we lazily load the required functions via
- * `await import(...)` and cache the resolved module shape so the
- * dynamic import only happens once per cold start.
- * ------------------------------------------------------------------ */
-
-/** Typed shape of `better-auth` core module. */
-interface BetterAuthCoreModule {
-  betterAuth: (options: Record<string, unknown>) => AuthInstance;
-}
-/** Typed shape of `better-auth/adapters/mongodb`. */
-interface BetterAuthMongoModule {
-  mongodbAdapter: (db: unknown, opts: Record<string, unknown>) => unknown;
-}
-
-/* ------------------------------------------------------------------ *
- * Explicit type definitions
- *
- * better-auth exports extremely deep generic types (Auth<Options>,
- * InferPluginTypes, InferAPI, …). The TypeScript language server in
- * some editor environments cannot resolve those generics within the
- * ESLint type-checked rules, reporting them as "error" types which
- * cascade into dozens of `no-unsafe-*` violations.
- *
- * To keep the code type-safe and lint-clean without suppressing any
- * rule, we define concrete interfaces that mirror the runtime shapes
- * we actually use. The imported functions are re-typed through
- * `unknown` (double-cast) so every call site is fully typed.
- * ------------------------------------------------------------------ */
-
-/** Base user fields returned by better-auth (mirrors `userSchema`). */
-export interface BetterAuthUser {
-  id: string;
-  email: string;
-  emailVerified: boolean;
-  name: string;
-  image?: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  /** Additional fields declared in `user.additionalFields`. */
-  role?: string;
-  primerNombre?: string;
-  segundoNombre?: string;
-  primerApellido?: string;
-  segundoApellido?: string;
-  country?: string;
-  birthDate?: string;
-}
-
-/** Session document shape (mirrors `sessionSchema`). */
-export interface BetterAuthSession {
-  id: string;
-  token: string;
-  expiresAt: Date;
-  createdAt: Date;
-  updatedAt: Date;
-  userId: string;
-  ipAddress?: string | null;
-  userAgent?: string | null;
-}
-
-/** Result of `auth.api.getSession()` — `null` when no session found. */
-export interface BetterAuthSessionData {
-  session: BetterAuthSession;
-  user: BetterAuthUser;
-}
-
-/** Headers accepted by better-auth API methods (Web `Headers` or plain record). */
-type AuthHeaders = Headers | Record<string, string | string[] | undefined>;
-
-/** Parámetros base para `auth.api.signInEmail()`. */
-interface SignInEmailBaseParams {
-  body: { email: string; password: string; rememberMe?: boolean };
-  headers?: AuthHeaders;
-}
-
-/** Llamada con `asResponse: true` → devuelve `Response`. */
-interface SignInEmailAsResponseParams extends SignInEmailBaseParams {
-  asResponse: true;
-}
-
-/** Llamada sin `asResponse` (o `false`) → devuelve datos (unknown). */
-interface SignInEmailDataParams extends SignInEmailBaseParams {
-  asResponse?: false;
-}
-
-/**
- * Sobrecarga de `signInEmail` para reflejar el tipo condicional de
- * retorno segun `asResponse` (mejora sugerida por la verificación con
- * `Docs_Better_auth/concepts/api.md:175-203`):
- *   - `asResponse: true`  → `Promise<Response>`
- *   - `asResponse?: false` (omitido) → `Promise<unknown>` (data object)
- */
-interface SignInEmailFn {
-  (params: SignInEmailAsResponseParams): Promise<Response>;
-  (params: SignInEmailDataParams): Promise<unknown>;
-}
-
-/** Minimal subset of the `Auth` instance we consume across the app. */
-export interface AuthInstance {
-  handler: (request: Request) => Promise<Response>;
-  api: {
-    getSession: (params: {
-      headers: AuthHeaders;
-    }) => Promise<BetterAuthSessionData | null>;
-    changePassword: (params: {
-      body: { currentPassword: string; newPassword: string };
-      headers: AuthHeaders;
-    }) => Promise<unknown>;
-    signInEmail: SignInEmailFn;
-  };
-  options: unknown;
-  $ERROR_CODES: Record<string, string>;
-  $Infer: {
-    Session: BetterAuthSessionData;
-  };
-}
-
-/** Re-typed better-auth factory — avoids deep generic inference. */
-type BetterAuthFn = (options: Record<string, unknown>) => AuthInstance;
-type MongodbAdapterFn = (db: unknown, opts: Record<string, unknown>) => unknown;
-interface BetterAuthDeps {
-  betterAuth: BetterAuthFn;
-  mongodbAdapter: MongodbAdapterFn;
-}
+export type {
+  BetterAuthUser,
+  BetterAuthSession,
+  BetterAuthSessionData,
+  AuthInstance,
+} from "./better-auth.types";
+export type Session = BetterAuthSessionData;
 
 let depsPromise: Promise<BetterAuthDeps> | null = null;
 
-/**
- * Lazily resolve and cache the ESM-only `better-auth` factory and the
- * MongoDB adapter. Subsequent calls return the same promise so the
- * dynamic import only fires once.
- */
 async function loadBetterAuthDeps(): Promise<BetterAuthDeps> {
   depsPromise ??= (async (): Promise<BetterAuthDeps> => {
     const [coreRaw, mongoRaw] = await Promise.all([
@@ -167,11 +48,6 @@ if (!mongoUrl) {
 const mongoClient = new MongoClient(mongoUrl);
 const mongoDb = mongoClient.db();
 
-/**
- * Returns the shared MongoClient Db instance (singleton).
- * Use this instead of creating ad-hoc MongoClient instances to avoid
- * connection pool exhaustion in serverless environments.
- */
 export function getMongoDb() {
   return mongoDb;
 }
@@ -183,15 +59,6 @@ let injectedLandingPageUrl: string | null = null;
 
 const authLogger = new Logger("BetterAuth");
 
-/**
- * Inyecta el BirdEmailService para que los callbacks de correo de Better Auth
- * (envío de verificación y restablecimiento de contraseña) puedan enviar correos
- * reales a través de Bird Email API.
- *
- * Debe llamarse desde `main.ts` despues de que el contenedor de NestJS este listo,
- * y **antes** de que se inicialice la instancia de Better Auth (es decir, antes
- * de la primera llamada a `getAuth()`).
- */
 export function setAuthDependencies(
   emailService: BirdEmailService,
   landingPageUrl: string,
@@ -200,8 +67,7 @@ export function setAuthDependencies(
   injectedLandingPageUrl = landingPageUrl;
   if (authInstance) {
     authLogger.warn(
-      "setAuthDependencies se llamo despues de la inicializacion. " +
-        "Los callbacks de correo ya fueron configurados sin EmailService.",
+      "setAuthDependencies se llamo despues de la inicializacion.",
     );
   }
 }
@@ -209,10 +75,6 @@ export function setAuthDependencies(
 async function initAuth(): Promise<AuthInstance> {
   const { betterAuth, mongodbAdapter } = await loadBetterAuthDeps();
 
-  // Better Auth 1.7 migration: in v1.7, account lookups strictly match
-  // account.issuer === "local:credential". Legacy accounts created in Better Auth <= 1.6
-  // lack the issuer field, causing sign-in to emit "WARN [Better Auth]: User not found"
-  // and fail with 401. This backfill runs idempotently on cold start.
   try {
     const migrationResult = await mongoDb.collection("account").updateMany(
       {
@@ -234,7 +96,7 @@ async function initAuth(): Promise<AuthInstance> {
     );
   }
 
-  const landingPageUrl =
+  const getLandingPage = () =>
     injectedLandingPageUrl ??
     process.env.LANDING_PAGE_URL ??
     (process.env.NODE_ENV === "production"
@@ -243,10 +105,7 @@ async function initAuth(): Promise<AuthInstance> {
 
   return betterAuth({
     appName: "BSK Motorcycle Team",
-    database: mongodbAdapter(mongoDb, {
-      client: mongoClient,
-    }),
-
+    database: mongodbAdapter(mongoDb, { client: mongoClient }),
     baseURL:
       process.env.BETTER_AUTH_URL ??
       (process.env.NODE_ENV === "production"
@@ -264,73 +123,21 @@ async function initAuth(): Promise<AuthInstance> {
       maxPasswordLength: 128,
       autoSignIn: false,
       requireEmailVerification: true,
-
-      sendResetPassword: async ({
-        user,
-        token,
-      }: {
-        user: BetterAuthUser;
-        token: string;
-      }): Promise<void> => {
-        const resetUrl = `${landingPageUrl}/restaurar-contrasena#token=${token}`;
-
-        if (injectedEmailService) {
-          const ok = await injectedEmailService.sendPasswordResetEmail({
-            to: user.email,
-            name: user.name ?? user.email,
-            resetUrl,
-          });
-          if (!ok) {
-            authLogger.error(
-              `Password Reset: No se pudo enviar el correo a ${maskEmail(user.email)} — ` +
-                "Bird no configurado (revisa BIRD_API_KEY en Vercel) o la API rechazo el envio. " +
-                "El usuario no podra restablecer su contrasena hasta que se resuelva.",
-            );
-          }
-        } else {
-          authLogger.error(
-            `Password Reset: Email service no inyectado — reset email NOT sent to ${maskEmail(user.email)}. ` +
-              "Verifica que setAuthDependencies() se llame en main.ts antes del primer request.",
-          );
-        }
-      },
-
+      sendResetPassword: createPasswordResetCallback(
+        () => injectedEmailService,
+        getLandingPage,
+        authLogger,
+      ),
       revokeSessionsOnPasswordReset: true,
       resetPasswordTokenExpiresIn: 3600,
     },
 
     emailVerification: {
-      sendVerificationEmail: async ({
-        user,
-        token,
-      }: {
-        user: BetterAuthUser;
-        token: string;
-      }): Promise<void> => {
-        const verificationUrl = `${landingPageUrl}/verificar-correo#token=${token}`;
-
-        if (injectedEmailService) {
-          const ok = await injectedEmailService.sendVerificationEmail({
-            to: user.email,
-            name: user.name ?? user.email,
-            verificationUrl,
-          });
-          if (!ok) {
-            authLogger.error(
-              `Email Verification: No se pudo enviar el correo de verificacion a ${maskEmail(user.email)} — ` +
-                "Bird no configurado (revisa BIRD_API_KEY en Vercel) o la API rechazo el envio. " +
-                "El usuario no podra verificar su cuenta ni iniciar sesion hasta que se resuelva. " +
-                "Buena noticia: el sign-up ya completo (200), pero el flujo esta truncado.",
-            );
-          }
-        } else {
-          authLogger.error(
-            `Email Verification: Email service no inyectado — verification email NOT sent to ${maskEmail(user.email)}. ` +
-              "Verifica que setAuthDependencies() se llame en main.ts antes del primer request.",
-          );
-        }
-      },
-
+      sendVerificationEmail: createVerificationEmailCallback(
+        () => injectedEmailService,
+        getLandingPage,
+        authLogger,
+      ),
       sendOnSignUp: true,
       autoSignInAfterVerification: true,
     },
@@ -385,44 +192,12 @@ async function initAuth(): Promise<AuthInstance> {
     session: {
       expiresIn: 7 * 24 * 60 * 60,
       updateAge: 24 * 60 * 60,
-      cookieCache: {
-        enabled: true,
-        maxAge: 5 * 60,
-      },
+      cookieCache: { enabled: true, maxAge: 5 * 60 },
     },
 
     advanced: {
-      /**
-       * useSecureCookies is false because the Astro proxy (BFF pattern)
-       * handles the `Secure` flag on cookies using `isSecure` (based on
-       * the request protocol). Setting this to `true` causes better-auth
-       * to prepend `__Secure-` to cookie names, which breaks all cookie
-       * lookups in the landing page (middleware, AuthButton, me.ts).
-       *
-       * SECURITY: The API must NEVER be called directly by browsers.
-       * All browser traffic must go through the Astro BFF which adds
-       * the Secure flag. If the API were exposed directly, cookies
-       * would lack the Secure attribute and could leak over HTTP.
-       */
       useSecureCookies: false,
-      /**
-       * SameSite=lax sends the session cookie on same-site requests and
-       * top-level cross-site GET navigations (including redirects back
-       * from third-party providers like Bold's checkout), but blocks it
-       * on cross-site POST/PUT/DELETE subrequests — the vector used by
-       * CSRF attacks.  Combined with the Astro middleware's origin
-       * allow-list and x-csrf-token checks this is the recommended
-       * setting for a BFF pattern where the API is never called directly
-       * by browsers.
-       *
-       * NOTE: `strict` was previously used, but it breaks the payment
-       * flow because Bold redirects from `checkout.bold.co` back to
-       * `bskmt.com/pagos` and the browser drops Strict cookies on that
-       * cross-site redirect, forcing the user to re-authenticate.
-       */
-      defaultCookieAttributes: {
-        sameSite: "lax",
-      },
+      defaultCookieAttributes: { sameSite: "lax" },
     },
 
     trustedOrigins:
@@ -440,139 +215,8 @@ async function initAuth(): Promise<AuthInstance> {
             "http://localhost:4322",
           ],
 
-    /**
-     * A-1: Disable the native `POST /sign-in/email` HTTP route so two-factor
-     * (OTP) login cannot be bypassed. The login flow is exclusively handled
-     * by NestJS (`LoginOtpController` → `LoginOtpService.initiateLogin`)
-     * which calls `auth.api.signInEmail({ asResponse: true })` in-process
-     * (not over HTTP) and gates the session behind an OTP challenge. The
-     * disabledPaths option only blocks the HTTP handler — the in-process
-     * API call still works.
-     */
     disabledPaths: ["/sign-in/email"],
-
-    databaseHooks: {
-      user: {
-        create: {
-          before: (user: BetterAuthUser): BetterAuthUser => {
-            const ALLOWED_DOMAINS = [
-              "outlook.com",
-              "hotmail.com",
-              "live.com",
-              "gmail.com",
-              "icloud.com",
-              "me.com",
-              "mac.com",
-              "yahoo.com",
-              "yahoo.es",
-            ];
-            const email = (user.email ?? "").toLowerCase();
-            const domain = email.split("@")[1] ?? "";
-            if (!ALLOWED_DOMAINS.includes(domain)) {
-              throw new Error(
-                "El dominio del correo no esta permitido. Usa Microsoft (outlook, hotmail, live), Google (gmail), Apple (icloud, me, mac) o Yahoo.",
-              );
-            }
-            return user;
-          },
-          after: async (user: BetterAuthUser): Promise<void> => {
-            try {
-              const primerNombre = user.primerNombre ?? "";
-              const segundoNombre = user.segundoNombre ?? "";
-              const primerApellido = user.primerApellido ?? "";
-              const segundoApellido = user.segundoApellido ?? "";
-              const country = user.country ?? "";
-              const birthDate = user.birthDate ?? "";
-
-              const tieneDatosPersonales = primerNombre || primerApellido;
-
-              await mongoDb.collection("users").insertOne({
-                email: user.email.toLowerCase(),
-                betterAuthId: user.id,
-                role: "user",
-                profileCompleted: false,
-                emailVerified: user.emailVerified ?? false,
-                legalConsentAccepted: false,
-                isActive: true,
-                phone: null,
-                phoneVerified: false,
-                phoneVerifiedAt: null,
-                pendingPhone: null,
-                pendingEmail: null,
-                completedSections: tieneDatosPersonales
-                  ? ["datos-personales"]
-                  : [],
-                profile: tieneDatosPersonales
-                  ? {
-                      "datos-personales": {
-                        primerNombre,
-                        segundoNombre,
-                        primerApellido,
-                        segundoApellido,
-                        nacionalidad: country,
-                        fechaNacimiento: birthDate,
-                      },
-                    }
-                  : {},
-                installmentsPaid: 0,
-                installmentsTotal: 12,
-                renewalInstallmentsPaid: 0,
-                membershipExpired: false,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-              });
-            } catch (err) {
-              // M-15: previously this catch swallowed all errors silently —
-              // the user was left bricked (Better Auth account exists with
-              // the email but no Mongoose user doc, so SessionGuard 401s
-              // and there's no path for a re-signup because the email is
-              // already taken in Better Auth). Now we attempt to clean up
-              // the orphan Better Auth user and re-throw so the sign-up
-              // API surfaces a meaningful error to the client.
-              authLogger.error(
-                `[databaseHooks] Failed to insert Mongoose user for betterAuthId=${user.id} email=${maskEmail(user.email)}: ${err instanceof Error ? err.message : String(err)}`,
-              );
-              try {
-                await mongoDb.collection("account").deleteMany({
-                  userId: user.id,
-                });
-                await mongoDb.collection("session").deleteMany({
-                  userId: user.id,
-                });
-                await mongoDb.collection("user").deleteOne({ id: user.id });
-              } catch (cleanupErr) {
-                authLogger.error(
-                  `[databaseHooks] Failed to cleanup orphan Better Auth user ${user.id}: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`,
-                );
-              }
-              throw new Error(
-                "No se pudo crear el usuario. Intenta de nuevo en unos minutos.",
-              );
-            }
-          },
-        },
-        update: {
-          after: async (user: BetterAuthUser): Promise<void> => {
-            try {
-              await mongoDb.collection("users").updateOne(
-                { betterAuthId: user.id },
-                {
-                  $set: {
-                    emailVerified: user.emailVerified ?? false,
-                    updatedAt: new Date(),
-                  },
-                },
-              );
-            } catch (err) {
-              authLogger.error(
-                "[databaseHooks] Failed to sync emailVerified:",
-                err,
-              );
-            }
-          },
-        },
-      },
-    },
+    databaseHooks: createBetterAuthHooks(mongoDb, authLogger),
   });
 }
 
@@ -584,5 +228,3 @@ export function getAuth(): Promise<AuthInstance> {
   });
   return authPromise;
 }
-
-export type Session = BetterAuthSessionData;

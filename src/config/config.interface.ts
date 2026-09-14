@@ -81,7 +81,6 @@ export interface EnvironmentConfig {
   CF_KV_NAMESPACE_ID_PRIVATE: string;
   CF_KV_API_TOKEN: string;
 
-
   /**
    * Verifik — Colombian KYC / identity-verification provider
    * (https://api.verifik.co).

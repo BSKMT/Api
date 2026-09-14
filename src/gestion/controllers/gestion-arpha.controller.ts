@@ -53,7 +53,9 @@ export class GestionArphaController {
       req.user.subrol === UserSubrole.LIDER_ARPHA;
 
     if (!isLeaderOrAdmin) {
-      throw new ForbiddenException("Solo líderes o administradores pueden listar gestores");
+      throw new ForbiddenException(
+        "Solo líderes o administradores pueden listar gestores",
+      );
     }
     return this.gestionArphaService.listAvailableGestores();
   }
@@ -70,7 +72,9 @@ export class GestionArphaController {
       req.user.subrol === UserSubrole.LIDER_ARPHA;
 
     if (!isLeaderOrAdmin) {
-      throw new ForbiddenException("Solo líderes o administradores pueden asignar solicitudes");
+      throw new ForbiddenException(
+        "Solo líderes o administradores pueden asignar solicitudes",
+      );
     }
     return this.gestionArphaService.assignRequest(id, dto, req.user);
   }

@@ -1,338 +1,53 @@
 import { Injectable, Logger } from "@nestjs/common";
+import type {
+  BirdSdkModule,
+  BirdClientInstance,
+} from "./bird-realtime.interfaces";
 
-/**
- * BirdService — Proveedor compartido del cliente Bird SDK
- * (`@messagebird/sdk`).
- *
- * Centraliza la carga perezosa (dynamic import) y el cacheo del
- * `BirdClient` para que todos los servicios Bird (email, SMS, verify)
- * compartan una sola instancia del cliente y una sola API key.
- *
- * El SDK se publica como ESM puro (`"type": "module"`); la API NestJS se
- * compila a CommonJS. Importarlo estaticamente resultaria en
- * `ERR_REQUIRE_ESM` en runtime, asi que el cliente se carga con
- * `await import("@messagebird/sdk")` y se cachea en una promesa lazy
- * — el mismo patron usado por `better-auth.ts`.
- *
- * Seguridad (OWASP A04:2025 — Cryptographic Failures, A07:2025 —
- * Authentication Failures):
- *
- *  - La API key vive en `BIRD_API_KEY` (env), nunca en el codigo.
- *  - Bird inyecta `Idempotency-Key` en cada mutacion — los reintentos
- *    no duplican envios.
- *  - El SDK enforce retries con jittered exponential backoff en
- *    transitorios (429, 5xx) y nunca retira deterministicos (4xx).
- *  - Si la key no esta configurada, `isConfigured()` devuelve false y
- *    `getClient()` lanza un error generico sin exponer el estado interno.
- */
+export type {
+  BirdEmailSendParams,
+  BirdEmailMessage,
+  BirdSmsSendParams,
+  BirdSmsMessage,
+  BirdWhatsappTextContent,
+  BirdWhatsappSendParams,
+  BirdWhatsappMessage,
+  BirdVerifyRecipient,
+  BirdVerifyCreateParams,
+  BirdVerifyCheckParams,
+  BirdVerificationStatus,
+  BirdVerificationResponse,
+  BirdVerificationCheckResult,
+} from "./bird-communication.interfaces";
 
-/** Tipo del modulo ESM `@messagebird/sdk` tras el dynamic import. */
-export interface BirdSdkModule {
-  BirdClient: new (opts: { apiKey: string }) => unknown;
-}
-
-/**
- * Cliente Bird tipado con la superficie que los servicios usan:
- *  - `email.send()`     — envio de correos transaccionales
- *  - `sms.send()`       — envio de mensajes SMS
- *  - `whatsapp.send()`  — envio de mensajes WhatsApp
- *  - `verify.verifications.create/check` — OTP de login
- *  - `realtime.publish()`          — publica un evento a uno o mas canales
- *  - `realtime.publishBatch()`     — publica hasta 10 eventos en una solicitud
- *  - `realtime.members.send()`     — envia un evento directo a un miembro
- *  - `realtime.members.disconnect()` — cierra todas las conexiones de un miembro
- *  - `realtime.channels.list()`   — consulta cuales canales estan ocupados
- *  - `webhooks.unwrap()`           — verifica y decodifica webhooks de Bird
- *
- * Estos interfaces son una "ventana" minima sobre el BirdClient real
- * (que tiene tipos genericos muy profundos del SDK). El BirdClient se
- * construye y se asigna via `unknown` (double-cast) para evitar
- * problemas de compatibilidad de tipos del SDK ESM.
- */
-export interface BirdClientInstance {
-  readonly email: {
-    send: (params: BirdEmailSendParams) => Promise<BirdEmailMessage>;
-  };
-  readonly sms: {
-    send: (params: BirdSmsSendParams) => Promise<BirdSmsMessage>;
-  };
-  readonly whatsapp: {
-    send: (params: BirdWhatsappSendParams) => Promise<BirdWhatsappMessage>;
-  };
-  readonly verify: {
-    readonly verifications: {
-      create: (
-        params: BirdVerifyCreateParams,
-      ) => Promise<BirdVerificationResponse>;
-      check: (
-        params: BirdVerifyCheckParams,
-      ) => Promise<BirdVerificationCheckResult>;
-    };
-  };
-  readonly realtime: {
-    publish: (
-      appId: string,
-      params: BirdRealtimePublishParams,
-    ) => Promise<BirdRealtimePublishResult>;
-    publishBatch: (
-      appId: string,
-      params: BirdRealtimeBatchParams,
-    ) => Promise<BirdRealtimeBatchResult>;
-    readonly members: {
-      send: (
-        appId: string,
-        memberId: string,
-        params: BirdRealtimeMemberEventParams,
-      ) => Promise<void>;
-      disconnect: (appId: string, memberId: string) => Promise<void>;
-    };
-    readonly channels: {
-      list: (
-        appId: string,
-        opts?: { prefix?: string },
-      ) => Promise<{ data: BirdRealtimeChannelInfo[] }>;
-    };
-  };
-  readonly webhooks: {
-    unwrap: (
-      body: Buffer | string,
-      headers: Record<string, string | string[] | undefined>,
-    ) => BirdWebhookEvent;
-  };
-}
-
-// ── Email ──────────────────────────────────────────────────────────
-
-/** Parametros para enviar un correo via Bird Email API. */
-export interface BirdEmailSendParams {
-  from: string | { email: string; name?: string };
-  to: string[];
-  subject: string;
-  html?: string;
-  text?: string;
-  category?: "transactional" | "marketing";
-  reply_to?: string[];
-  tags?: { name: string; value: string }[];
-  metadata?: Record<string, unknown>;
-  track_opens?: boolean;
-  track_clicks?: boolean;
-}
-
-/** Respuesta de Bird Email (`202 Accepted`). */
-export interface BirdEmailMessage {
-  readonly id: string;
-  readonly status: string;
-  from: { email: string; name?: string };
-  to: { email: string; name?: string }[];
-  subject: string;
-  category: string;
-}
-
-// ── SMS ─────────────────────────────────────────────────────────────
-
-/** Parametros para enviar un SMS via Bird SMS API. */
-export interface BirdSmsSendParams {
-  to: string;
-  from: string;
-  text: string;
-  category: "transactional" | "marketing" | "authentication" | "service";
-  tags?: { name: string; value: string }[];
-  metadata?: Record<string, unknown>;
-}
-
-/** Respuesta de Bird SMS (`202 Accepted`). */
-export interface BirdSmsMessage {
-  readonly id: string;
-  readonly status: string;
-  to: string;
-  from: string;
-  text?: string;
-  category?: string;
-}
-
-// ── WhatsApp ────────────────────────────────────────────────────────
-
-/**
- * Contenido de texto plano para un mensaje WhatsApp.
- * WhatsApp no interpreta HTML; el cuerpo es texto plano.
- */
-export interface BirdWhatsappTextContent {
-  body: string;
-  /**
-   * Si es true, WhatsApp genera un preview de cualquier URL en el
-   * cuerpo. Se establece en false por defecto por seguridad
-   * (defense-in-depth contra phishing via URLs en notificaciones).
-   */
-  preview_url?: boolean;
-}
-
-/**
- * Parametros para enviar un mensaje WhatsApp via Bird WhatsApp API.
- *
- * Se envia free-form text (no template) para notificaciones del
- * sistema. Esto requiere:
- *  - `from`: numero E.164 que el workspace posee y tiene conectado
- *    a un WhatsApp Business Account (WABA).
- *  - `to`: numero E.164 del destinatario.
- *  - Una ventana de servicio al cliente abierta (24h desde el ultimo
- *    mensaje entrante del destinatario). Si la ventana esta cerrada,
- *    Bird acepta el mensaje (202) pero luego falla con
- *    `service_window_expired` en `last_error`.
- *
- * Seguridad (OWASP A04, A05):
- *  - `from` y `to` deben ser E.164 valido.
- *  - El cuerpo del texto se sanitiza (sin CRLF, max 4096 chars).
- *  - `preview_url` se fija en false para evitar previews de URLs.
- */
-export interface BirdWhatsappSendParams {
-  to: string;
-  from?: string;
-  text?: BirdWhatsappTextContent;
-  template?: {
-    slug?: string;
-    id?: string;
-    language?: string;
-    components?: unknown[];
-  };
-  tags?: { name: string; value: string }[];
-  metadata?: Record<string, unknown>;
-}
-
-/** Respuesta de Bird WhatsApp (`202 Accepted`). */
-export interface BirdWhatsappMessage {
-  readonly id: string;
-  readonly status: string;
-  to: string;
-  from?: string;
-  category?: string;
-}
-
-// ── Verify (OTP) ────────────────────────────────────────────────────
-
-/** Destinatario de una verificacion Bird: email o telefono (E.164). */
-export type BirdVerifyRecipient<TRecipient = unknown> = TRecipient;
-
-export interface BirdVerifyCreateParams {
-  to: { email: string } | { phone_number: string };
-  options?: { code_length?: number; channels?: string[] };
-  metadata?: Record<string, unknown>;
-}
-
-export interface BirdVerifyCheckParams {
-  to: { email: string } | { phone_number: string };
-  code: string;
-}
-
-export type BirdVerificationStatus =
-  | "pending"
-  | "verified"
-  | "failed"
-  | "expired"
-  | "canceled"
-  | "blocked"
-  | (string & {});
-
-export interface BirdVerificationResponse {
-  id: string;
-  status: BirdVerificationStatus;
-  reason?: string | null;
-  expires_at: string;
-  verified_at?: string | null;
-}
-
-export interface BirdVerificationCheckResult {
-  success: boolean;
-  reason?: string | null;
-  attempts_remaining?: number | null;
-  verification: BirdVerificationResponse;
-}
-
-// ── Realtime ──────────────────────────────────────────────────────────
-
-/** Parametros para publicar un evento a uno o mas canales. */
-export interface BirdRealtimePublishParams {
-  event: string;
-  channels: string[];
-  data: unknown;
-  /** Excluye una conexion de recibir el evento (opcional). */
-  exclude_connection_id?: string;
-  /** Solicita metadata de los canales tras el publish (opcional). */
-  include?: string[];
-}
-
-/** Resultado de un publish. */
-export interface BirdRealtimePublishResult {
-  id?: string;
-  channels?: Record<string, unknown>;
-}
-
-/** Parametros para publicar un batch de hasta 10 eventos. */
-export interface BirdRealtimeBatchParams {
-  events: {
-    event: string;
-    channels: string[];
-    data: unknown;
-    exclude_connection_id?: string;
-  }[];
-}
-
-/** Resultado de un batch publish. */
-export interface BirdRealtimeBatchResult {
-  id?: string;
-}
-
-/** Parametros para enviar un evento directo a un miembro. */
-export interface BirdRealtimeMemberEventParams {
-  event: string;
-  data: unknown;
-}
-
-/** Informacion de un canal en la lista de canales ocupados. */
-export interface BirdRealtimeChannelInfo {
-  name: string;
-  occupied: boolean;
-  member_count?: number;
-  connection_count?: number;
-}
-
-// ── Webhooks ──────────────────────────────────────────────────────────
-
-/** Evento webhook desenvelopado por `bird.webhooks.unwrap()`. */
-export interface BirdWebhookEvent {
-  id: string;
-  type: string;
-  timestamp: string;
-  data: Record<string, unknown>;
-}
+export type {
+  BirdSdkModule,
+  BirdClientInstance,
+  BirdRealtimePublishParams,
+  BirdRealtimePublishResult,
+  BirdRealtimeBatchParams,
+  BirdRealtimeBatchResult,
+  BirdRealtimeMemberEventParams,
+  BirdRealtimeChannelInfo,
+  BirdWebhookEvent,
+} from "./bird-realtime.interfaces";
 
 @Injectable()
 export class BirdService {
   private readonly logger = new Logger(BirdService.name);
 
-  /** Promesa lazy del modulo ESM — se resuelve una sola vez. */
   private sdkPromise: Promise<BirdSdkModule> | null = null;
-
-  /** Cliente Bird cacheado tras la primera carga del SDK. */
   private client: BirdClientInstance | null = null;
-
-  /** API key leida de `BIRD_API_KEY`. */
   private readonly apiKey: string | undefined;
 
-  /** Realtime config — populated when all four envs are present. */
   private readonly realtimeConfig: {
     appId: string;
     key: string;
     secret: string;
   } | null = null;
 
-  /** Webhook signing secret (optional, for `bird.webhooks.unwrap`). */
   private readonly webhookSecret: string | undefined;
 
-  /**
-   * Valida que la API key tenga el formato correcto de Bird.
-   * Las keys reales tienen prefijo `bk_us1_` o `bk_eu1_` (region-prefixed).
-   * Un placeholder como `bk_xxxxxxxxx` o una key vacia NO pasa esta validacion.
-   */
   private isValidKeyFormat(key: string): boolean {
     return /^bk_(us1|eu1)_\S+$/.test(key);
   }
@@ -342,8 +57,7 @@ export class BirdService {
     if (!rawKey) {
       this.logger.error(
         "BIRD_API_KEY no esta configurada — los servicios de Bird " +
-          "(email, SMS, WhatsApp, verify) NO funcionaran. Configura la env var " +
-          "en Vercel con una key real (formato: bk_us1_... o bk_eu1_...).",
+          "(email, SMS, WhatsApp, verify) NO funcionaran.",
       );
       this.apiKey = undefined;
       return;
@@ -351,8 +65,7 @@ export class BirdService {
     if (!this.isValidKeyFormat(rawKey)) {
       this.logger.error(
         `BIRD_API_KEY tiene formato invalido "${rawKey.slice(0, 7)}..." — ` +
-          "debe empezar con bk_us1_ o bk_eu1_ seguido del secret. " +
-          "Obten una key real desde Bird dashboard > Developers > API keys.",
+          "debe empezar con bk_us1_ o bk_eu1_ seguido del secret.",
       );
       this.apiKey = undefined;
       return;
@@ -363,8 +76,6 @@ export class BirdService {
       `Bird API configurada (region: ${region}) — email, SMS, WhatsApp y verify activos.`,
     );
 
-    // Realtime — los cuatro valores deben estar presentes; si falta alguno,
-    // realtimeService.isRealtimeConfigured() devuelve false y todo degrada.
     const rtAppId = process.env.BIRD_REALTIME_APP_ID ?? "";
     const rtKey = process.env.BIRD_REALTIME_KEY ?? "";
     const rtSecret = process.env.BIRD_REALTIME_SECRET ?? "";
@@ -376,13 +87,10 @@ export class BirdService {
     } else {
       this.realtimeConfig = null;
       this.logger.warn(
-        "Bird Realtime NO configurado — falta alguno de BIRD_REALTIME_APP_ID, BIRD_REALTIME_KEY o BIRD_REALTIME_SECRET. " +
-          "Las notificaciones realtime NO funcionaran, pero el polling de respaldo sigue activo.",
+        "Bird Realtime NO configurado — notificaciones realtime desactivadas.",
       );
     }
 
-    // Webhook secret (for bird.webhooks.unwrap). Optional but strongly
-    // recommended for verifying realtime.* webhook deliveries.
     const webhookSecret = process.env.BIRD_WEBHOOK_SECRET;
     if (webhookSecret) {
       this.webhookSecret = webhookSecret;
@@ -392,45 +100,32 @@ export class BirdService {
     }
   }
 
-  /** Indica si el cliente Bird esta configurado y listo para usarse. */
   isConfigured(): boolean {
     return (
       typeof this.apiKey === "string" && this.isValidKeyFormat(this.apiKey)
     );
   }
 
-  /** Indica si Bird Realtime está configurado (appId + key + secret presentes). */
   isRealtimeConfigured(): boolean {
     return this.realtimeConfig !== null;
   }
 
-  /** Devuelve el appId de Realtime o null si no está configurado. */
   getRealtimeAppId(): string | null {
     return this.realtimeConfig?.appId ?? null;
   }
 
-  /** Devuelve la key pública de Realtime o null. */
   getRealtimeKey(): string | null {
     return this.realtimeConfig?.key ?? null;
   }
 
-  /** Devuelve el secret de Realtime o null. */
   getRealtimeSecret(): string | null {
     return this.realtimeConfig?.secret ?? null;
   }
 
-  /** Devuelve el webhook secret o undefined. */
   getWebhookSecret(): string | undefined {
     return this.webhookSecret;
   }
 
-  /**
-   * Carga perezosa el SDK ESM y construye el BirdClient.
-   * Cachea ambos para que solo ocurra una vez por cold start.
-   *
-   * @returns el `BirdClient` cacheado.
-   * @throws  si `BIRD_API_KEY` no esta configurada.
-   */
   async getClient(): Promise<BirdClientInstance> {
     if (this.client) return this.client;
     if (!this.isConfigured() || !this.apiKey) {
@@ -438,13 +133,10 @@ export class BirdService {
         "Bird no esta configurado (falta BIRD_API_KEY o formato invalido)",
       );
     }
-    this.sdkPromise ??= import("@messagebird/sdk");
+    this.sdkPromise ??=
+      import("@messagebird/sdk") as unknown as Promise<BirdSdkModule>;
     const sdk = await this.sdkPromise;
 
-    // Build constructor options — always include apiKey, conditionally
-    // include realtime { key, secret } and webhooks { secret } blocks.
-    // The SDK enables the `bird.realtime.*` and `bird.webhooks.*`
-    // namespaces only when these blocks are present.
     const clientOpts: Record<string, unknown> = {
       apiKey: this.apiKey,
     };
