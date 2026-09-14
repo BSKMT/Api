@@ -15,8 +15,6 @@ import {
   mapDocumentType,
 } from "./identity-verification-matcher";
 import type {
-  CheckOutcome,
-  IdentityCheckResult,
   IdentityVerificationStatus,
   IdentityVerifyResult,
 } from "./identity-verification.types";
@@ -39,8 +37,8 @@ export type {
   IdentityCheckResult,
   IdentityVerificationStatus,
   IdentityVerifyResult,
-};
-export { mapDocumentType };
+} from "./identity-verification.types";
+export { mapDocumentType } from "./identity-verification-matcher";
 
 @Injectable()
 export class IdentityVerificationService {
