@@ -77,6 +77,32 @@ async function ensureMembershipSectionOnComplete(
   profile["membresia-ecosistema"] = memSection;
 }
 
+function handleSectionPreUpdates(
+  user: UserDocument,
+  sectionId: string,
+  sanitizedData: Record<string, unknown>,
+): void {
+  if (sectionId === "contacto") {
+    syncPhoneIfChanged(user, sanitizedData);
+  } else if (sectionId === "datos-personales" && user.identityVerified) {
+    resetIdentityIfDocumentChanged(user, sanitizedData);
+  }
+}
+
+function applySectionToProfile(
+  profile: Record<string, unknown>,
+  sectionId: string,
+  sanitizedData: Record<string, unknown>,
+): void {
+  if (sectionId === "membresia-ecosistema") {
+    const existing =
+      (profile[sectionId] as Record<string, unknown> | undefined) ?? {};
+    profile[sectionId] = { ...existing, ...sanitizedData };
+  } else {
+    profile[sectionId] = sanitizedData;
+  }
+}
+
 export async function executeUpdateProfileSection(
   userModel: Model<UserDocument>,
   userId: string,
@@ -95,22 +121,10 @@ export async function executeUpdateProfileSection(
     throw new NotFoundException("Usuario no encontrado");
   }
 
-  if (sectionId === "contacto") {
-    syncPhoneIfChanged(user, sanitizedData);
-  }
-
-  if (sectionId === "datos-personales" && user.identityVerified) {
-    resetIdentityIfDocumentChanged(user, sanitizedData);
-  }
+  handleSectionPreUpdates(user, sectionId, sanitizedData);
 
   const profile = user.profile ?? {};
-  if (sectionId === "membresia-ecosistema") {
-    const existing =
-      (profile[sectionId] as Record<string, unknown> | undefined) ?? {};
-    profile[sectionId] = { ...existing, ...sanitizedData };
-  } else {
-    profile[sectionId] = sanitizedData;
-  }
+  applySectionToProfile(profile, sectionId, sanitizedData);
 
   const completedSections = [...(user.completedSections ?? [])];
   if (!completedSections.includes(sectionId)) {
