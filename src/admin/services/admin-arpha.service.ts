@@ -15,6 +15,18 @@ import { AssignArphaRequestDto } from "../dto/assign-arpha-request.dto";
 import { UpdateArphaStatusDto } from "../dto/update-arpha-status.dto";
 import { ensureString } from "../../common/utils/sanitize-query.util";
 
+function validateNotFinalized(
+  request: ArphaRequestDocument,
+  message: string,
+): void {
+  if (
+    request.status === ArphaRequestStatus.COMPLETED ||
+    request.status === ArphaRequestStatus.CANCELLED
+  ) {
+    throw new BadRequestException(message);
+  }
+}
+
 @Injectable()
 export class AdminArphaService {
   private readonly logger = new Logger(AdminArphaService.name);
@@ -33,13 +45,12 @@ export class AdminArphaService {
     // M2: Sanitize filter
     const filter: Record<string, unknown> = {};
     const status = ensureString(filters.status);
-    const requestType = ensureString(filters.requestType);
     if (status) filter.status = status;
+    const requestType = ensureString(filters.requestType);
     if (requestType) filter.requestType = requestType;
 
-    // M1: Clamp limit/page
-    const limit = Math.min(Math.max(filters.limit ?? 50, 1), 100);
-    const page = Math.max(filters.page ?? 1, 1);
+    const page = Math.max(1, filters.page ?? 1);
+    const limit = Math.min(100, Math.max(1, filters.limit ?? 25));
     const skip = (page - 1) * limit;
 
     const [items, total] = await Promise.all([
@@ -62,7 +73,7 @@ export class AdminArphaService {
   }
 
   async getRequest(id: string): Promise<ArphaRequestDocument> {
-    const request = await this.arphaRequestModel.findById(id).lean();
+    const request = await this.arphaRequestModel.findById(id);
     if (!request) {
       throw new NotFoundException("Solicitud no encontrada");
     }
@@ -77,14 +88,11 @@ export class AdminArphaService {
     if (!request) {
       throw new NotFoundException("Solicitud no encontrada");
     }
-    if (
-      request.status === ArphaRequestStatus.COMPLETED ||
-      request.status === ArphaRequestStatus.CANCELLED
-    ) {
-      throw new BadRequestException(
-        "No se puede asignar una solicitud completada o cancelada",
-      );
-    }
+
+    validateNotFinalized(
+      request,
+      "No se puede asignar una solicitud completada o cancelada",
+    );
 
     if (dto.assignedTechnician !== undefined) {
       request.assignedTechnician = dto.assignedTechnician;
@@ -114,29 +122,19 @@ export class AdminArphaService {
           "No se puede revertir a PENDING desde administración",
         );
       case ArphaRequestStatus.EN_CAMINO:
-        if (request.status === ArphaRequestStatus.COMPLETED) {
-          throw new BadRequestException(
-            "No se puede reactivar una solicitud completada",
-          );
-        }
-        if (request.status === ArphaRequestStatus.CANCELLED) {
-          throw new BadRequestException(
-            "No se puede reactivar una solicitud cancelada",
-          );
-        }
+        validateNotFinalized(
+          request,
+          "No se puede reactivar una solicitud finalizada",
+        );
         request.status = ArphaRequestStatus.EN_CAMINO;
         break;
       case ArphaRequestStatus.EN_SITIO:
-        if (
-          request.status === ArphaRequestStatus.COMPLETED ||
-          request.status === ArphaRequestStatus.CANCELLED
-        ) {
-          throw new BadRequestException(
-            "No se puede cambiar el estado de una solicitud finalizada",
-          );
-        }
+        validateNotFinalized(
+          request,
+          "No se puede cambiar el estado de una solicitud finalizada",
+        );
         request.status = ArphaRequestStatus.EN_SITIO;
-        if (!request.arrivedAt) request.arrivedAt = new Date();
+        request.arrivedAt ??= new Date();
         break;
       case ArphaRequestStatus.COMPLETED:
         if (request.status === ArphaRequestStatus.CANCELLED) {

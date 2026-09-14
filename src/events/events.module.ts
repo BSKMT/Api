@@ -13,6 +13,7 @@ import {
 import { EventsController } from "./events.controller";
 import { CoursesController } from "./courses.controller";
 import { EventsService } from "./events.service";
+import { CoursesService } from "./courses.service";
 import { UsersModule } from "../users/users.module";
 // M-4: notifications service wiring so cancelRegistration /
 // cancelCourseEnrollment can emit a notification when a paid entry
@@ -31,7 +32,7 @@ import { NotificationsModule } from "../notifications/notifications.module";
     NotificationsModule,
   ],
   controllers: [EventsController, CoursesController],
-  providers: [EventsService],
-  exports: [EventsService],
+  providers: [EventsService, CoursesService],
+  exports: [EventsService, CoursesService],
 })
 export class EventsModule {}

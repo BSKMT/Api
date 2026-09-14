@@ -2,33 +2,17 @@
  * Cloudflare Workers KV cache service for the BSK Motorcycle Team API.
  *
  * Provides a NestJS-compatible service that wraps the official Cloudflare SDK
- * to read/write cached data via the KV REST API. Used for:
- *   - Public catalog caching (events, shop products, courses, stats).
- *   - Session guard hot-path caching (user auth profile).
- *   - Webhook idempotency/dedup screening (Phase 4).
- *
- * SECURITY (OWASP Top 10 2025):
- *   A02 - The API token is resolved from Vercel env vars, never hardcoded.
- *          Token scope should be limited to KV read+write only.
- *   A04 - All cached values carry an HMAC-SHA256 integrity tag sealed at
- *          write time and verified on read (fail-closed on tamper).
- *   A05 - Cache keys are validated/sanitized before use (no user input
- *          as raw keys).
- *   A10 - Circuit breaker trips after 5 consecutive failures and enters
- *          a 30-second cooldown. All KV errors are caught; callers must
- *          always have a Mongo fallback.
- *
- * @packageDocumentation
+ * to read/write cached data via the KV REST API.
  */
 
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { EnvironmentConfig } from "../config/config.interface";
-
-interface SealedValue<T> {
-  v: T;
-  h: string;
-}
+import {
+  KvCircuitBreaker,
+  KvHmacHelper,
+  type SealedValue,
+} from "./kv-cache.helpers";
 
 @Injectable()
 export class KvCacheService {
@@ -40,11 +24,9 @@ export class KvCacheService {
   private readonly apiToken: string;
   private readonly baseUrl: string;
 
-  private failures = 0;
-  private openUntil = 0;
-  private readonly threshold = 5;
-  private readonly cooldownMs = 30000;
-  private hmacKey: CryptoKey | null = null;
+  private readonly breaker: KvCircuitBreaker;
+  private readonly hmac: KvHmacHelper;
+
   constructor(
     private readonly configService: ConfigService<EnvironmentConfig>,
   ) {
@@ -54,69 +36,21 @@ export class KvCacheService {
     this.privateNsId = process.env.CF_KV_NAMESPACE_ID_PRIVATE ?? "";
     this.apiToken = process.env.CF_KV_API_TOKEN ?? "";
     this.baseUrl = `https://api.cloudflare.com/client/v4/accounts/${this.accountId}/storage/kv/namespaces`;
+
+    this.breaker = new KvCircuitBreaker(5, 30000, this.logger);
+    this.hmac = new KvHmacHelper(process.env.BETTER_AUTH_SECRET ?? "");
   }
 
   isAvailable(): boolean {
-    return this.enabled && !this.isBreakerOpen();
-  }
-
-  private isBreakerOpen(): boolean {
-    if (this.failures < this.threshold) return false;
-    if (Date.now() > this.openUntil) {
-      this.failures = 0;
-      return false;
-    }
-    return true;
-  }
-
-  private recordSuccess(): void {
-    this.failures = 0;
-  }
-
-  private recordFailure(): void {
-    this.failures++;
-    if (this.failures >= this.threshold) {
-      this.openUntil = Date.now() + this.cooldownMs;
-      this.logger.warn(
-        `KV circuit breaker tripped after ${this.failures} consecutive failures. Cooldown: ${this.cooldownMs}ms.`,
-      );
-    }
+    return this.enabled && !this.breaker.isOpen();
   }
 
   private getNamespaceId(isPrivate: boolean): string {
     return isPrivate ? this.privateNsId : this.publicNsId;
   }
 
-  private async getHmacKey(): Promise<CryptoKey> {
-    if (this.hmacKey) return this.hmacKey;
-    const secret = process.env.BETTER_AUTH_SECRET ?? "";
-    this.hmacKey = await crypto.subtle.importKey(
-      "raw",
-      new TextEncoder().encode(secret),
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"],
-    );
-    return this.hmacKey;
-  }
-
-  private async computeTag(payload: string): Promise<string> {
-    const key = await this.getHmacKey();
-    const signature = new Uint8Array(
-      await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload)),
-    );
-    let bin = "";
-    for (const byte of signature) {
-      bin += String.fromCodePoint(byte);
-    }
-    return btoa(bin)
-      .replaceAll("+", "-")
-      .replaceAll("/", "_")
-      .replace(/={1,2}$/, "");
-  }
-
   async get<T>(key: string, isPrivate = false): Promise<T | null> {
-    if (!this.enabled || this.isBreakerOpen()) return null;
+    if (!this.enabled || this.breaker.isOpen()) return null;
     const nsId = this.getNamespaceId(isPrivate);
     if (!nsId) return null;
 
@@ -134,11 +68,11 @@ export class KvCacheService {
       clearTimeout(timeout);
 
       if (res.status === 404) {
-        this.recordSuccess();
+        this.breaker.recordSuccess();
         return null;
       }
       if (!res.ok) {
-        this.recordFailure();
+        this.breaker.recordFailure();
         return null;
       }
 
@@ -148,16 +82,16 @@ export class KvCacheService {
         return null;
       }
 
-      const expectedTag = await this.computeTag(JSON.stringify(sealed.v));
+      const expectedTag = await this.hmac.computeTag(JSON.stringify(sealed.v));
       if (sealed.h !== expectedTag) {
         this.logger.warn(`KV integrity check failed for key: ${key}`);
         return null;
       }
 
-      this.recordSuccess();
+      this.breaker.recordSuccess();
       return sealed.v;
     } catch {
-      this.recordFailure();
+      this.breaker.recordFailure();
       return null;
     }
   }
@@ -168,12 +102,12 @@ export class KvCacheService {
     ttlSeconds: number,
     isPrivate = false,
   ): Promise<void> {
-    if (!this.enabled || this.isBreakerOpen()) return;
+    if (!this.enabled || this.breaker.isOpen()) return;
     const nsId = this.getNamespaceId(isPrivate);
     if (!nsId) return;
 
     try {
-      const tag = await this.computeTag(JSON.stringify(value));
+      const tag = await this.hmac.computeTag(JSON.stringify(value));
       const sealed: SealedValue<T> = { v: value, h: tag };
       const body = JSON.stringify(sealed);
 
@@ -199,17 +133,17 @@ export class KvCacheService {
       clearTimeout(timeout);
 
       if (res.ok) {
-        this.recordSuccess();
+        this.breaker.recordSuccess();
       } else {
-        this.recordFailure();
+        this.breaker.recordFailure();
       }
     } catch {
-      this.recordFailure();
+      this.breaker.recordFailure();
     }
   }
 
   async delete(key: string, isPrivate = false): Promise<void> {
-    if (!this.enabled || this.isBreakerOpen()) return;
+    if (!this.enabled || this.breaker.isOpen()) return;
     const nsId = this.getNamespaceId(isPrivate);
     if (!nsId) return;
 
@@ -228,17 +162,17 @@ export class KvCacheService {
       clearTimeout(timeout);
 
       if (res.ok || res.status === 404) {
-        this.recordSuccess();
+        this.breaker.recordSuccess();
       } else {
-        this.recordFailure();
+        this.breaker.recordFailure();
       }
     } catch {
-      this.recordFailure();
+      this.breaker.recordFailure();
     }
   }
 
   async invalidatePrefix(prefix: string, isPrivate = false): Promise<void> {
-    if (!this.enabled || this.isBreakerOpen()) return;
+    if (!this.enabled || this.breaker.isOpen()) return;
     const nsId = this.getNamespaceId(isPrivate);
     if (!nsId) return;
 
@@ -256,7 +190,7 @@ export class KvCacheService {
       clearTimeout(timeout);
 
       if (!res.ok) {
-        this.recordFailure();
+        this.breaker.recordFailure();
         return;
       }
 
@@ -266,7 +200,7 @@ export class KvCacheService {
       };
       const keys = (data.result ?? []).map((k) => k.name);
       if (keys.length === 0) {
-        this.recordSuccess();
+        this.breaker.recordSuccess();
         return;
       }
 
@@ -285,12 +219,12 @@ export class KvCacheService {
       clearTimeout(delTimeout);
 
       if (delRes.ok) {
-        this.recordSuccess();
+        this.breaker.recordSuccess();
       } else {
-        this.recordFailure();
+        this.breaker.recordFailure();
       }
     } catch {
-      this.recordFailure();
+      this.breaker.recordFailure();
     }
   }
 }

@@ -22,6 +22,12 @@ import { CreateProductDto } from "../dto/create-product.dto";
 import { UpdateProductDto } from "../dto/update-product.dto";
 import { UpdateOrderStatusDto } from "../dto/update-order-status.dto";
 import { ensureString } from "../../common/utils/sanitize-query.util";
+import {
+  clampPagination,
+  validateOrderStatusTransition,
+  invalidateProductCacheHelper,
+  type AdminListProductsFilters,
+} from "./admin-shop.helpers";
 
 @Injectable()
 export class AdminShopService {
@@ -35,18 +41,7 @@ export class AdminShopService {
     private readonly kvCache: KvCacheService,
   ) {}
 
-  private async invalidateProductCache(slug?: string): Promise<void> {
-    await this.kvCache.invalidatePrefix("shop:products:");
-    await this.kvCache.invalidatePrefix("shop:upcoming:");
-    if (slug) await this.kvCache.delete(`shop:product:${slug}`);
-  }
-
-  async listProducts(filters: {
-    status?: string;
-    collection?: string;
-    limit?: number;
-    page?: number;
-  }) {
+  async listProducts(filters: AdminListProductsFilters) {
     // M2: Sanitize filter to prevent NoSQL operator injection
     const filter: Record<string, unknown> = {};
     const status = ensureString(filters.status);
@@ -54,10 +49,7 @@ export class AdminShopService {
     if (status) filter.status = status;
     if (collection) filter.collection = collection;
 
-    // M1: Clamp limit/page to prevent DoS via massive limit values
-    const limit = Math.min(Math.max(filters.limit ?? 50, 1), 100);
-    const page = Math.max(filters.page ?? 1, 1);
-    const skip = (page - 1) * limit;
+    const { limit, page, skip } = clampPagination(filters.limit, filters.page);
 
     const [items, total] = await Promise.all([
       this.productModel
@@ -106,7 +98,7 @@ export class AdminShopService {
     )[0] as unknown as ProductDocument;
 
     this.logger.log(`Product created: slug=${dto.slug} by admin`);
-    await this.invalidateProductCache();
+    await invalidateProductCacheHelper(this.kvCache);
     return created;
   }
 
@@ -124,7 +116,7 @@ export class AdminShopService {
       throw new NotFoundException("Producto no encontrado");
     }
     this.logger.log(`Product updated: slug=${slug}`);
-    await this.invalidateProductCache(slug);
+    await invalidateProductCacheHelper(this.kvCache, slug);
     return updated;
   }
 
@@ -144,7 +136,7 @@ export class AdminShopService {
       throw new NotFoundException("Producto no encontrado");
     }
     this.logger.log(`Product deleted: slug=${slug}`);
-    await this.invalidateProductCache(slug);
+    await invalidateProductCacheHelper(this.kvCache, slug);
     return { message: "Producto eliminado exitosamente" };
   }
 
@@ -161,7 +153,7 @@ export class AdminShopService {
       throw new NotFoundException("Producto no encontrado");
     }
     this.logger.log(`Product status set: slug=${slug} status=${status}`);
-    await this.invalidateProductCache(slug);
+    await invalidateProductCacheHelper(this.kvCache, slug);
     return product;
   }
 
@@ -175,10 +167,7 @@ export class AdminShopService {
     const status = ensureString(filters.status);
     if (status) filter.status = status;
 
-    // M1: Clamp limit/page
-    const limit = Math.min(Math.max(filters.limit ?? 50, 1), 100);
-    const page = Math.max(filters.page ?? 1, 1);
-    const skip = (page - 1) * limit;
+    const { limit, page, skip } = clampPagination(filters.limit, filters.page);
 
     const [items, total] = await Promise.all([
       this.orderModel
@@ -222,42 +211,14 @@ export class AdminShopService {
     }
 
     const previousStatus = order.status;
-
-    // M7: Enforce valid state machine transitions
-    const VALID_TRANSITIONS: Record<string, Set<string>> = {
-      [OrderStatus.PENDING]: new Set([OrderStatus.PAID, OrderStatus.CANCELLED]),
-      [OrderStatus.PAID]: new Set([OrderStatus.SHIPPED, OrderStatus.CANCELLED]),
-      [OrderStatus.SHIPPED]: new Set([OrderStatus.DELIVERED]),
-      [OrderStatus.DELIVERED]: new Set(),
-      [OrderStatus.CANCELLED]: new Set(),
-    };
-    if (
-      dto.status !== previousStatus &&
-      !VALID_TRANSITIONS[previousStatus]?.has(dto.status)
-    ) {
-      throw new BadRequestException(
-        `Transición de estado inválida: ${previousStatus} → ${dto.status}`,
-      );
-    }
-
-    // M-7: Only ADMIN may transition an order to PAID. EVENT_MANAGER
-    // (inductor de eventos) retains the ability to cancel or progress
-    // shipped orders, but cannot synthesize a payment record without
-    // evidence — historically this permitted a rogue event manager to
-    // mark an unpaid PENDING order as PAID, side-stepping the Bold
-    // fingerprint entirely.
-    if (
-      dto.status === OrderStatus.PAID &&
-      previousStatus !== OrderStatus.PAID &&
-      actorRole !== "admin"
-    ) {
-      this.logger.warn(
-        `Blocked order-to-PAID transition by non-admin actor: order=${orderNumber} actor=${actorId ?? "unknown"} role=${actorRole ?? "unknown"}`,
-      );
-      throw new BadRequestException(
-        "Solo un administrador puede marcar un pedido como pagado. Sube la evidencia del pago y pide a un admin que apruebe el cambio.",
-      );
-    }
+    validateOrderStatusTransition(
+      previousStatus,
+      dto.status,
+      actorRole,
+      actorId,
+      orderNumber,
+      this.logger,
+    );
 
     order.status = dto.status;
     if (dto.trackingNumber) order.trackingNumber = dto.trackingNumber;

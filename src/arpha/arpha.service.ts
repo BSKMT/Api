@@ -15,23 +15,9 @@ import {
 } from "./schemas/arpha-request.schema";
 import { CreateArphaRequestDto } from "./dto/create-arpha-request.dto";
 import { RateArphaRequestDto } from "./dto/rate-arpha-request.dto";
+import { ArphaPricingResult, isLegendMember } from "./arpha.constants";
 
-const LEGEND_LEVELS = new Set([
-  "Legend",
-  "Friend",
-  "Rider",
-  "Expert",
-  "Master",
-]);
-
-export interface ArphaPricingResult {
-  request: ArphaRequestDocument;
-  pricing: {
-    amount: number;
-    isMember: boolean;
-    requiresPayment: boolean;
-  };
-}
+export type { ArphaPricingResult };
 
 @Injectable()
 export class ArphaService {
@@ -64,8 +50,7 @@ export class ArphaService {
       );
     }
 
-    const isMember =
-      membershipLevel !== null && LEGEND_LEVELS.has(membershipLevel);
+    const isMember = isLegendMember(membershipLevel);
     const amount = isMember ? 0 : (ARPHA_PRICING[dto.requestType] ?? 15000);
 
     const request = new this.arphaRequestModel({
@@ -239,9 +224,9 @@ export class ArphaService {
   }
 
   getPricingInfo(requestType: string, membershipLevel: string | null) {
-    const isMember =
-      membershipLevel !== null && LEGEND_LEVELS.has(membershipLevel);
+    const isMember = isLegendMember(membershipLevel);
     const amount = isMember ? 0 : (ARPHA_PRICING[requestType] ?? 15000);
+
     return {
       amount,
       isMember,

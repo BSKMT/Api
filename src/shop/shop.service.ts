@@ -20,14 +20,13 @@ import {
 } from "./schemas/wishlist-item.schema";
 import { CreateOrderDto } from "./dto/create-order.dto";
 import { maskAmount, maskUserId } from "../common/utils/log-redact.util";
-
-const LEGEND_LEVELS = new Set([
-  "Legend",
-  "Friend",
-  "Rider",
-  "Expert",
-  "Master",
-]);
+import {
+  isShopMember,
+  generateOrderNumber,
+  processOrderItems,
+  rollbackStock,
+  restoreOrderStock,
+} from "./shop.helpers";
 
 @Injectable()
 export class ShopService {
@@ -103,69 +102,11 @@ export class ShopService {
       throw new BadRequestException("El pedido debe tener al menos un item");
     }
 
-    const isMember =
-      membershipLevel !== null && LEGEND_LEVELS.has(membershipLevel);
+    const isMember = isShopMember(membershipLevel);
+    const { total, publicTotal, memberDiscount, orderItems } =
+      await processOrderItems(this.productModel, dto.items, isMember);
 
-    let total = 0;
-    let publicTotal = 0;
-    let memberDiscount = 0;
-    const orderItems = [];
-
-    for (const item of dto.items) {
-      const qty = item.quantity;
-
-      // A3: Atomic check-and-decrement prevents TOCTOU race on stock
-      const product = await this.productModel.findOneAndUpdate(
-        {
-          slug: item.productSlug,
-          status: ProductStatus.PUBLISHED,
-          stock: { $gte: qty },
-        },
-        { $inc: { stock: -qty } },
-        { new: true },
-      );
-
-      if (!product) {
-        // Rollback all previously decremented stock
-        for (const oi of orderItems) {
-          await this.productModel.updateOne(
-            { slug: oi.productSlug },
-            { $inc: { stock: oi.quantity } },
-          );
-        }
-        throw new NotFoundException(
-          `Producto no encontrado o stock insuficiente: ${item.productSlug}`,
-        );
-      }
-
-      const publicPrice = product.publicPrice;
-      const publicSubtotal = publicPrice * qty;
-
-      let unitPrice = publicPrice;
-      let discountPercent = 0;
-
-      if (isMember) {
-        discountPercent = product.memberDiscountPercent ?? 15;
-        unitPrice = Math.round(publicPrice * (1 - discountPercent / 100));
-      }
-
-      const subtotal = unitPrice * qty;
-      const itemDiscount = publicSubtotal - subtotal;
-
-      total += subtotal;
-      publicTotal += publicSubtotal;
-      memberDiscount += itemDiscount;
-
-      orderItems.push({
-        productSlug: product.slug,
-        productName: product.name,
-        unitPrice,
-        quantity: qty,
-        subtotal,
-      });
-    }
-
-    const orderNumber = `BSK-${Date.now().toString(36)}`;
+    const orderNumber = generateOrderNumber();
     const order = new this.orderModel({
       userId,
       orderNumber,
@@ -180,18 +121,11 @@ export class ShopService {
     try {
       saved = await order.save();
     } catch (err) {
-      // A3: Rollback stock decrements if order save fails
-      for (const oi of orderItems) {
-        await this.productModel.updateOne(
-          { slug: oi.productSlug },
-          { $inc: { stock: oi.quantity } },
-        );
-      }
+      await rollbackStock(this.productModel, orderItems);
       throw err;
     }
 
     this.logger.log(
-      // ADM-13: Redact user ID and amounts in logs
       `Order created: ${orderNumber} user=${maskUserId(userId)} total=${maskAmount(total)} publicTotal=${maskAmount(publicTotal)} discount=${maskAmount(memberDiscount)} member=${isMember}`,
     );
 
@@ -208,7 +142,6 @@ export class ShopService {
     orderNumber: string,
     transactionReference: string,
   ): Promise<OrderDocument> {
-    // M11: Only link payment to PENDING orders — prevents resurrección of CANCELLED orders
     const order = await this.orderModel.findOneAndUpdate(
       { orderNumber, status: OrderStatus.PENDING },
       {
@@ -260,7 +193,6 @@ export class ShopService {
       throw new BadRequestException("El pedido ya está cancelado");
     }
 
-    // M11: Only PENDING orders can be cancelled — PAID orders require admin refund
     if (order.status !== OrderStatus.PENDING) {
       throw new BadRequestException(
         "No se puede cancelar un pedido que ya fue pagado o enviado",
@@ -270,18 +202,7 @@ export class ShopService {
     order.status = OrderStatus.CANCELLED;
     await order.save();
 
-    // M12: Restore stock with rollback logging — if any restore fails, log for manual reconciliation
-    for (const item of order.items) {
-      const restoreResult = await this.productModel.updateOne(
-        { slug: item.productSlug },
-        { $inc: { stock: item.quantity } },
-      );
-      if (restoreResult.modifiedCount === 0) {
-        this.logger.error(
-          `Stock restore failed for ${item.productSlug} (qty ${item.quantity}) on cancelled order ${orderNumber} — manual reconciliation needed`,
-        );
-      }
-    }
+    await restoreOrderStock(this.productModel, order, this.logger, orderNumber);
 
     this.logger.log(`Order cancelled: ${orderNumber} user=${userId}`);
 

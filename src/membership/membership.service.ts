@@ -1,14 +1,7 @@
-import {
-  Injectable,
-  Logger,
-  BadRequestException,
-  NotFoundException,
-  ConflictException,
-} from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { ConfigService } from "@nestjs/config";
 import { Model } from "mongoose";
-import * as crypto from "node:crypto";
 import {
   MembershipTransaction,
   MembershipTransactionDocument,
@@ -16,48 +9,40 @@ import {
 import {
   ServiceCreditTransaction,
   ServiceCreditTransactionDocument,
-  CreditTransactionType,
-  CreditSource,
 } from "./schemas/service-credit-transaction.schema";
 import { CreateMembershipPaymentDto } from "./dto/create-membership-payment.dto";
 import { CreditChoiceDto } from "./dto/credit-choice.dto";
 import { UseCreditDto } from "./dto/use-credit.dto";
 import { UsersService } from "../users/users.service";
-import { UserRole, CreditType } from "../users/schemas/user.schema";
-import type { PartialPaymentCredit } from "../users/schemas/user.schema";
 import { NotificationsService } from "../notifications/notifications.service";
 import { AlegraService } from "../alegra/alegra.service";
-import type { AlegraBillingContext } from "../alegra/alegra.interfaces";
-
-/** Shared contextual shape used to keep helper signatures ≤ 7 parameters. */
-interface MembershipPaymentContext {
-  installmentNumber: number;
-  installmentTotal: number;
-  isRenewal: boolean;
-}
-import {
-  NotificationType,
-  NotificationPriority,
-} from "../notifications/schemas/notification.schema";
-import type { EnvironmentConfig } from "../config/config.interface";
-import {
-  maskAmount,
-  maskReference,
-  maskUserId,
-} from "../common/utils/log-redact.util";
-import {
-  MEMBERSHIP_NEW_MEMBER_AMOUNT,
-  MEMBERSHIP_RENEWAL_AMOUNT,
-  INSTALLMENT_AMOUNT,
-  INSTALLMENTS_TOTAL,
-  MEMBERSHIP_DURATION_MS,
-  CREDIT_EXPIRY_MONTHS,
-} from "./membership.constants";
 import { SystemPricingConfigService } from "../admin/services/system-pricing-config.service";
+import type { EnvironmentConfig } from "../config/config.interface";
+import { TERMINAL_STATUSES } from "./membership.constants";
+import { createMembershipPaymentHelper } from "./membership-creation.helpers";
+import { processApprovedPaymentHelper } from "./membership-activation.helpers";
+import { handleWebhookHelper } from "./membership-webhook.helpers";
+import {
+  getMembershipPaymentHelper,
+  getMembershipStatusHelper,
+  cancelPendingMembershipTransactionHelper,
+} from "./membership-management.helpers";
+import { retryMembershipInvoiceHelper } from "./membership-invoicing.helpers";
+import {
+  chooseCreditOptionHelper,
+  requestRefundHelper,
+} from "./membership-credit-choice.helpers";
+import {
+  useCreditHelper,
+  getCreditBalanceHelper,
+} from "./membership-credit-usage.helpers";
+import { sweepAbandonedPaymentsHelper } from "./membership-sweep.helpers";
 
 @Injectable()
 export class MembershipService {
   private readonly logger = new Logger(MembershipService.name);
+
+  static readonly TERMINAL_STATUSES = TERMINAL_STATUSES;
 
   constructor(
     @InjectModel(MembershipTransaction.name)
@@ -71,1850 +56,166 @@ export class MembershipService {
     private readonly pricingConfigService: SystemPricingConfigService,
   ) {}
 
-  /** Format a human-readable membership description across renewal/new plans. */
-  private formatMembershipDescription(
-    isRenewal: boolean,
-    paymentPlan: string,
-    installmentNumber: number,
-    installmentTotal: number,
-    paidWithCredit = false,
-  ): string {
-    const suffix = paidWithCredit ? " (pagada con crédito)" : "";
-    if (isRenewal) {
-      return `Renovación anticipada membresía BSK — Cuota ${installmentNumber}/${installmentTotal}${suffix}`;
-    }
-    if (paymentPlan === "single") {
-      return `Membresía Legend BSK — Pago único anual${suffix}`;
-    }
-    return `Membresía Legend BSK — Cuota ${installmentNumber}/${installmentTotal}${suffix}`;
-  }
-
-  /** Format the description used in `getMembershipPayment` (renewal/single/installment four-way). */
-  private formatStoredMembershipDescription(
-    paymentPlan: string,
-    isRenewal: boolean,
-    installmentNumber: number,
-    installmentTotal: number,
-  ): string {
-    if (paymentPlan === "single") {
-      return isRenewal
-        ? "Renovación Membresía Legend BSK — Pago único anual"
-        : "Membresía Legend BSK — Pago único anual";
-    }
-    const prefix = isRenewal
-      ? "Renovación Membresía Legend BSK"
-      : "Membresía Legend BSK";
-    return `${prefix} — Cuota ${installmentNumber}/${installmentTotal}`;
-  }
-
-  /** Build the Bold public configuration block returned to the frontend widget. */
-  private buildBoldConfig(
-    reference: string,
-    amount: number,
-    description: string,
-  ): {
-    publicKey: string;
-    environment: string;
-    baseUrl: string;
-    referenceId: string;
-    description: string;
-    amount: number;
-    currency: string;
-    integritySignature: string;
-  } {
-    const boldPublicKey =
-      this.configService.get<string>("BOLD_PUBLIC_KEY", {
-        infer: true,
-      }) ?? "";
-    const boldEnvironment =
-      this.configService.get<string>("BOLD_ENVIRONMENT", {
-        infer: true,
-      }) ?? "sandbox";
-    const boldBaseUrl =
-      boldEnvironment === "production"
-        ? "https://payments.api.bold.co"
-        : "https://payments-api-test.bold.co";
-    return {
-      publicKey: boldPublicKey,
-      environment: boldEnvironment,
-      baseUrl: boldBaseUrl,
-      referenceId: reference,
-      description,
-      amount,
-      currency: "COP",
-      integritySignature: this.generateBoldIntegritySignature(
-        reference,
-        amount,
-        "COP",
-      ),
-    };
-  }
-
-  /** Build a unique reference string for a membership transaction. */
-  private buildMembershipReference(
-    paymentPlan: string,
-    isRenewal: boolean,
-    installmentNumber: number,
-    userId: string,
-  ): string {
-    const timestamp = Date.now();
-    const shortUserId = userId.slice(-8);
-    const planPrefix = paymentPlan === "single" ? "MEM" : "MEMI";
-    const renewSuffix = isRenewal ? "R" : "";
-    return `${planPrefix}${renewSuffix}-${shortUserId}-${installmentNumber}-${timestamp}`;
-  }
-
-  /** Validate renewal-only eligibility rules. Throws if the user cannot renew. */
-  private validateRenewalEligibility(
-    userRole: string,
-    isInGracePeriod: boolean,
-    membershipExpired: boolean,
-  ): void {
-    const memberRole = UserRole.MEMBER as string;
-    if (userRole !== memberRole) {
-      throw new BadRequestException(
-        "Solo los miembros activos pueden renovar anticipadamente",
-      );
-    }
-    if (membershipExpired) {
-      throw new BadRequestException(
-        isInGracePeriod
-          ? "Tu membresía expiró pero estás en periodo de gracia. Compra una nueva membresía, no una renovación."
-          : "Tu membresía ya expiró. Debe comprar una nueva membresía, no una renovación.",
-      );
-    }
-  }
-
-  /** Validate the eligibility of buying a brand-new membership. */
-  private validateNewMembershipEligibility(
-    userRole: string,
-    membershipExpired: boolean,
-  ): void {
-    const memberRole = UserRole.MEMBER as string;
-    if (userRole === memberRole && !membershipExpired) {
-      throw new BadRequestException(
-        "Ya tienes una membresía activa. Usa la opción de renovación anticipada.",
-      );
-    }
-  }
-
-  /** Compute the next installment number for an installment plan. */
-  private async computeNextInstallmentNumber(
-    userId: string,
-    isRenewal: boolean,
-  ): Promise<number> {
-    const lastTx = await this.transactionModel
-      .findOne({
-        userId,
-        paymentPlan: "installment",
-        isRenewal,
-        status: "APPROVED",
-      })
-      .sort({ installmentNumber: -1 });
-
-    if (!lastTx) return 1;
-    if (lastTx.installmentNumber >= INSTALLMENTS_TOTAL) {
-      throw new ConflictException(
-        "Ya completaste las 12 cuotas. Tu membresía debería estar activa.",
-      );
-    }
-    return lastTx.installmentNumber + 1;
-  }
-
-  /** Returns true when the credit has expired (no expiry date means not expired). */
-  private isCreditExpired(
-    credit: { expiresAt: Date | null },
-    now: Date,
-  ): boolean {
-    return credit.expiresAt ? new Date(credit.expiresAt) < now : false;
-  }
-
-  /** Apply credit toward the membership payment if requested. Mutates state. */
-  private async applyCreditIfRequested(
-    userId: string,
-    dto: CreateMembershipPaymentDto,
-    user: { partialPaymentCredit?: PartialPaymentCredit | null },
-    totalAmount: number,
-    ctx: MembershipPaymentContext,
-    now: Date,
-  ): Promise<{ creditUsedAmount: number; remainingAmount: number }> {
-    const { installmentNumber, installmentTotal, isRenewal } = ctx;
-    if (!dto.useCredit || !dto.creditAmount || dto.creditAmount <= 0) {
-      return { creditUsedAmount: 0, remainingAmount: totalAmount };
-    }
-    const credit = user.partialPaymentCredit;
-    if (credit?.type !== CreditType.MEMBERSHIP) {
-      throw new BadRequestException(
-        "No tienes crédito de membresía disponible",
-      );
-    }
-    if (this.isCreditExpired(credit, now)) {
-      throw new BadRequestException("Tu crédito ha expirado");
-    }
-    const availableCredit = credit.amount - credit.usedAmount;
-    if (availableCredit <= 0) {
-      throw new BadRequestException(
-        "Tu crédito ya ha sido utilizado por completo",
-      );
-    }
-
-    const creditUsedAmount = Math.min(
-      dto.creditAmount,
-      availableCredit,
-      totalAmount,
-    );
-    const remainingAmount = totalAmount - creditUsedAmount;
-
-    // A-3: Use atomic $inc with optimistic locking on expectedUsedAmount
-    const updated =
-      await this.usersService.incrementPartialPaymentCreditUsedAmount(
-        userId,
-        creditUsedAmount,
-        credit.usedAmount,
-      );
-    if (!updated) {
-      throw new ConflictException(
-        "Conflicto al aplicar crédito: tu saldo fue modificado. Intenta de nuevo.",
-      );
-    }
-
-    const timestamp = Date.now();
-    const shortUserId = userId.slice(-8);
-    // M-22: include a random suffix so two concurrent ledger writes for
-    // the same user don't collide on the (userId,createdAt) unique-ish
-    // composite, which previously caused an E11000 thrown AFTER the
-    // credit $inc succeeded — leaving the user's balance and the ledger
-    // out of sync.
-    const creditRef = `CRU-${shortUserId}-${timestamp}-${crypto.randomBytes(4).toString("hex")}`;
-    await this.creditTransactionModel.create({
-      userId,
-      reference: creditRef,
-      transactionType: CreditTransactionType.CREDIT_USED,
-      creditSource: CreditSource.MEMBERSHIP,
-      amount: creditUsedAmount,
-      description: `Crédito aplicado a ${isRenewal ? "renovación" : "nueva"} membresía — cuota ${installmentNumber}/${installmentTotal}`,
-      metadata: {
-        membershipPaymentPlan: dto.paymentPlan,
-        installmentNumber,
-        isRenewal,
-      },
-    });
-
-    this.logger.log(
-      `Credit applied to membership: user=${maskUserId(userId)} creditAmount=${maskAmount(creditUsedAmount)} remaining=${maskAmount(remainingAmount)}`,
-    );
-
-    return { creditUsedAmount, remainingAmount };
-  }
-
-  /** Build the pending-payment response object sent back to the frontend. */
-  private buildPendingPaymentResponse(
-    reference: string,
-    totalAmount: number,
-    remainingAmount: number,
-    creditUsedAmount: number,
-    ctx: MembershipPaymentContext,
-    description: string,
-  ) {
-    const { installmentNumber, installmentTotal, isRenewal } = ctx;
-    return {
-      reference,
-      amount: remainingAmount,
-      totalAmount,
-      creditUsed: creditUsedAmount,
-      remainingAmount,
-      status: "PENDING",
-      installmentNumber,
-      installmentTotal,
-      isRenewal,
-      paidWithCredit: creditUsedAmount > 0,
-      description,
-      boldConfig: this.buildBoldConfig(reference, remainingAmount, description),
-    };
-  }
-
-  /** Send the "payment rejected" notification for a failed/rejected transaction. */
-  private async sendRejectionNotification(
-    transaction: MembershipTransactionDocument,
-    mappedStatus: string,
-  ): Promise<void> {
-    const friendly =
-      mappedStatus === "REJECTED"
-        ? "Tu pago fue rechazado por la pasarela. Puedes intentarlo de nuevo."
-        : "Ocurrió un fallo procesando tu pago. Revisa tu método de pago e intenta nuevamente.";
-    await this.notificationsService.create({
-      userId: transaction.userId,
-      type: NotificationType.MEMBERSHIP_PAYMENT_REJECTED,
-      title: "Pago de membresía rechazado",
-      message: `${friendly} Referencia: ${transaction.reference}.`,
-      priority: NotificationPriority.HIGH,
-      metadata: {
-        paymentPlan: transaction.paymentPlan,
-        installmentNumber: transaction.installmentNumber,
-        installmentTotal: transaction.installmentTotal,
-        status: mappedStatus,
-      },
-      relatedReference: transaction.reference,
-      notifyCategory: "Membresia y pagos",
-    });
-  }
-
-  private generateBoldIntegritySignature(
-    orderId: string,
-    amount: number,
-    currency: string,
-  ): string {
-    const secretKey = this.configService.get<string>("BOLD_SECRET_KEY", {
-      infer: true,
-    });
-    if (!secretKey) {
-      throw new BadRequestException("BOLD_SECRET_KEY not configured");
-    }
-    const concatenated = `${orderId}${amount}${currency}${secretKey}`;
-    return crypto.createHash("sha256").update(concatenated).digest("hex");
-  }
-
-  private async assertNoPendingMembershipTransaction(
-    userId: string,
-    paymentPlan: string,
-    isRenewal: boolean,
-    installmentNumber: number,
-  ): Promise<void> {
-    if (paymentPlan === "installment") {
-      const pendingForSameKey = await this.transactionModel.findOne({
-        userId,
-        paymentPlan: "installment",
-        isRenewal,
-        installmentNumber,
-        status: "PENDING",
-      });
-      if (pendingForSameKey) {
-        throw new ConflictException(
-          `Ya tienes un pago pendiente (${pendingForSameKey.reference}). Continúa o cancélalo antes de iniciar uno nuevo.`,
-        );
-      }
-    } else if (paymentPlan === "single") {
-      const pendingSingle = await this.transactionModel.findOne({
-        userId,
-        paymentPlan: "single",
-        isRenewal,
-        status: "PENDING",
-      });
-      if (pendingSingle) {
-        throw new ConflictException(
-          `Ya tienes un pago pendiente de membresía (${pendingSingle.reference}). Continúa o cancélalo antes de iniciar uno nuevo.`,
-        );
-      }
-    }
-  }
-
   async createMembershipPayment(
     userId: string,
     dto: CreateMembershipPaymentDto,
   ) {
-    const user = await this.usersService.findById(userId);
-    if (!user) throw new NotFoundException("Usuario no encontrado");
-
-    const isRenewal = dto.isRenewal === true;
-    const now = new Date();
-    const membershipExpired =
-      user.membershipExpiryDate != null &&
-      new Date(user.membershipExpiryDate) < now;
-    const isInGracePeriod =
-      membershipExpired &&
-      user.membershipGracePeriodEnd != null &&
-      new Date(user.membershipGracePeriodEnd) > now;
-
-    if (isRenewal) {
-      this.validateRenewalEligibility(
-        user.role,
-        isInGracePeriod,
-        membershipExpired,
-      );
-    } else {
-      this.validateNewMembershipEligibility(user.role, membershipExpired);
-    }
-
-    const pricingConfig = await this.pricingConfigService.getConfig();
-    const renewalAmt =
-      pricingConfig.membership?.renewalAmount ?? MEMBERSHIP_RENEWAL_AMOUNT;
-    const newMemberAmt =
-      pricingConfig.membership?.newMemberAmount ?? MEMBERSHIP_NEW_MEMBER_AMOUNT;
-    const singleAmount = isRenewal ? renewalAmt : newMemberAmt;
-
-    const installmentAmt =
-      pricingConfig.membership?.installmentAmount ?? INSTALLMENT_AMOUNT;
-    const totalAmount =
-      dto.paymentPlan === "single" ? singleAmount : installmentAmt;
-
-    const installmentsTot =
-      pricingConfig.membership?.installmentsTotal ?? INSTALLMENTS_TOTAL;
-    const installmentTotal = dto.paymentPlan === "single" ? 1 : installmentsTot;
-    const installmentNumber =
-      dto.paymentPlan === "installment"
-        ? await this.computeNextInstallmentNumber(userId, isRenewal)
-        : 1;
-
-    await this.assertNoPendingMembershipTransaction(
+    return createMembershipPaymentHelper(
+      {
+        transactionModel: this.transactionModel,
+        creditTransactionModel: this.creditTransactionModel,
+        usersService: this.usersService,
+        pricingConfigService: this.pricingConfigService,
+        configService: this.configService,
+        logger: this.logger,
+        processApprovedPayment: (t) => this.processApprovedPayment(t),
+      },
       userId,
-      dto.paymentPlan,
-      isRenewal,
-      installmentNumber,
+      dto,
     );
-
-    const { creditUsedAmount, remainingAmount } =
-      await this.applyCreditIfRequested(
-        userId,
-        dto,
-        user,
-        totalAmount,
-        { installmentNumber, installmentTotal, isRenewal },
-        now,
-      );
-
-    if (remainingAmount === 0 && creditUsedAmount > 0) {
-      return this.handleFullyPaidWithCredit(
-        userId,
-        dto,
-        totalAmount,
-        { installmentNumber, installmentTotal, isRenewal },
-        creditUsedAmount,
-        now,
-      );
-    }
-
-    const reference = this.buildMembershipReference(
-      dto.paymentPlan,
-      isRenewal,
-      installmentNumber,
-      userId,
-    );
-    const transaction = new this.transactionModel({
-      userId,
-      reference,
-      paymentPlan: dto.paymentPlan,
-      amount: remainingAmount,
-      installmentNumber,
-      installmentTotal,
-      status: "PENDING",
-      isRenewal,
-      creditUsedAmount: creditUsedAmount,
-    });
-    await transaction.save();
-
-    const description = this.formatMembershipDescription(
-      isRenewal,
-      dto.paymentPlan,
-      installmentNumber,
-      installmentTotal,
-    );
-
-    this.logger.log(
-      `Membership payment intent: ref=${maskReference(reference)} user=${maskUserId(userId)} amount=${maskAmount(remainingAmount)} (total=${maskAmount(totalAmount)}, credit=${maskAmount(creditUsedAmount)}) plan=${dto.paymentPlan} installment=${installmentNumber}/${installmentTotal} renewal=${isRenewal}`,
-    );
-
-    return this.buildPendingPaymentResponse(
-      reference,
-      totalAmount,
-      remainingAmount,
-      creditUsedAmount,
-      { installmentNumber, installmentTotal, isRenewal },
-      description,
-    );
-  }
-
-  /** Process the case where the full payment is covered by credit (no Bold flow needed). */
-  private async handleFullyPaidWithCredit(
-    userId: string,
-    dto: CreateMembershipPaymentDto,
-    totalAmount: number,
-    ctx: MembershipPaymentContext,
-    creditUsedAmount: number,
-    now: Date,
-  ) {
-    const { installmentNumber, installmentTotal, isRenewal } = ctx;
-    const reference = this.buildMembershipReference(
-      dto.paymentPlan,
-      isRenewal,
-      installmentNumber,
-      userId,
-    );
-    const transaction = new this.transactionModel({
-      userId,
-      reference,
-      paymentPlan: dto.paymentPlan,
-      amount: totalAmount,
-      installmentNumber,
-      installmentTotal,
-      status: "APPROVED",
-      isRenewal,
-      paidAt: now,
-      paymentMethod: "credit",
-    });
-    await transaction.save();
-    await this.processApprovedPayment(transaction);
-    this.logger.log(
-      `Membership fully paid with credit: user=${maskUserId(userId)} ref=${maskReference(reference)}`,
-    );
-    return {
-      reference,
-      amount: totalAmount,
-      creditUsed: creditUsedAmount,
-      remainingAmount: 0,
-      status: "APPROVED",
-      installmentNumber,
-      installmentTotal,
-      isRenewal,
-      paidWithCredit: true,
-      description: this.formatMembershipDescription(
-        isRenewal,
-        dto.paymentPlan,
-        installmentNumber,
-        installmentTotal,
-        true,
-      ),
-    };
   }
 
   async handleWebhook(rawBody: Buffer, signature: string): Promise<void> {
-    this.verifyBoldWebhookSignature(rawBody, signature);
-
-    const event = JSON.parse(rawBody.toString("utf-8")) as Record<
-      string,
-      unknown
-    >;
-    const parsed = this.parseBoldWebhookEvent(event);
-    if (!parsed.referenceId) {
-      this.logger.warn("Membership webhook without reference");
-      return;
-    }
-
-    const transaction = await this.transactionModel.findOne({
-      reference: parsed.referenceId,
-    });
-    if (!transaction) {
-      this.logger.warn(
-        `Membership webhook for unknown reference: ${maskReference(parsed.referenceId ?? "")}`,
-      );
-      return;
-    }
-
-    if (this.isDuplicateWebhook(transaction, parsed.notificationId)) {
-      this.logger.log(
-        `Duplicate membership webhook ignored: ${parsed.notificationId ?? parsed.paymentId}, ${parsed.referenceId}`,
-      );
-      return;
-    }
-
-    this.recordWebhookEvent(transaction, event, parsed);
-
-    const statusFromEvent = this.mapBoldStatus(parsed.eventType);
-    // A-13: Validate webhook amount against transaction amount before approval
-    if (
-      statusFromEvent === "APPROVED" &&
-      this.isAmountMismatch(transaction, parsed, statusFromEvent)
-    ) {
-      this.logger.warn(
-        `Amount mismatch in membership webhook for ref ${maskReference(parsed.referenceId ?? "")}: expected ${transaction.amount}, received ${parsed.amount}. Skipping approval.`,
-      );
-      await transaction.save();
-      return;
-    }
-    let didChange = false;
-    if (statusFromEvent) {
-      didChange = this.applyWebhookStatusUpdate(
-        transaction,
-        statusFromEvent,
-        parsed,
-      );
-    }
-
-    await transaction.save();
-    this.logger.log(
-      `Membership webhook processed: ${parsed.eventType} for ${maskReference(parsed.referenceId ?? "")}`,
-    );
-
-    if (didChange && statusFromEvent === "APPROVED") {
-      await this.processApprovedPayment(transaction);
-    } else if (
-      didChange &&
-      (statusFromEvent === "REJECTED" || statusFromEvent === "FAILED")
-    ) {
-      await this.handleRejectedWebhook(transaction, statusFromEvent);
-    }
-  }
-
-  private async handleRejectedWebhook(
-    transaction: MembershipTransactionDocument,
-    statusFromEvent: string,
-  ): Promise<void> {
-    if (transaction.creditUsedAmount > 0 && !transaction.creditReverted) {
-      const reverted = await this.usersService.revertPartialPaymentCredit(
-        transaction.userId,
-        transaction.creditUsedAmount,
-      );
-      if (reverted) {
-        await this.transactionModel.updateOne(
-          { _id: transaction._id, creditReverted: false },
-          { $set: { creditReverted: true } },
-        );
-        this.logger.log(
-          `Credit reverted: user=${maskUserId(transaction.userId)} amount=${maskAmount(transaction.creditUsedAmount)} ref=${maskReference(transaction.reference)}`,
-        );
-      }
-    }
-    await this.sendRejectionNotification(transaction, statusFromEvent);
-  }
-
-  /**
-   * A-9/A-13: Detect a mismatch between the amount reported by Bold (in
-   * a webhook or voucher-sync response) and the amount stored on the
-   * transaction. Returns true (and logs a warning) when an APPROVED
-   * event reports a non-zero amount that differs from the transaction,
-   * so callers can skip approval and persist the recorded event.
-   */
-  private isAmountMismatch(
-    transaction: MembershipTransactionDocument,
-    parsed: ReturnType<MembershipService["parseBoldWebhookEvent"]>,
-    statusFromEvent: string | null,
-  ): boolean {
-    if (statusFromEvent !== "APPROVED") return false;
-    if (parsed.amount === undefined) return false;
-    if (transaction.amount <= 0) return false;
-    return parsed.amount !== transaction.amount;
-  }
-
-  /** Verify the Bold webhook HMAC signature (throwing on mismatch). */
-  private verifyBoldWebhookSignature(rawBody: Buffer, signature: string): void {
-    const secretKey = this.configService.get<string>("BOLD_SECRET_KEY", {
-      infer: true,
-    });
-    if (!secretKey) {
-      this.logger.error("BOLD_SECRET_KEY not configured — rejecting webhook");
-      throw new BadRequestException("Webhook secret key not configured");
-    }
-    const bodyBase64 = rawBody.toString("base64");
-    const expectedSignature = crypto
-      .createHmac("sha256", secretKey)
-      .update(bodyBase64)
-      .digest("hex");
-
-    const signatureBuffer = Buffer.from(signature);
-    const expectedBuffer = Buffer.from(expectedSignature);
-    if (
-      signatureBuffer.length !== expectedBuffer.length ||
-      !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)
-    ) {
-      this.logger.warn("Invalid membership webhook signature");
-      throw new BadRequestException("Invalid signature");
-    }
-  }
-
-  /** Parse the relevant fields from a Bold webhook event payload. */
-  private parseBoldWebhookEvent(event: Record<string, unknown>): {
-    notificationId: string | undefined;
-    eventType: string | undefined;
-    paymentId: string | undefined;
-    referenceId: string | undefined;
-    paymentMethod: string | undefined;
-    payerEmail: string | undefined;
-    amount: number | undefined;
-  } {
-    const notificationId = event["id"] as string | undefined;
-    const eventType = event["type"] as string | undefined;
-    const data = (event["data"] ?? {}) as Record<string, unknown>;
-    const metadata = (data["metadata"] ?? {}) as Record<string, unknown>;
-    return {
-      notificationId,
-      eventType,
-      paymentId: data["payment_id"] as string | undefined,
-      referenceId: metadata["reference"] as string | undefined,
-      paymentMethod: data["payment_method"] as string | undefined,
-      payerEmail: data["payer_email"] as string | undefined,
-      amount: this.parseBoldAmount(data["amount"]),
-    };
-  }
-
-  private parseBoldAmount(raw: unknown): number | undefined {
-    if (typeof raw === "number") return raw;
-    if (raw && typeof raw === "object") {
-      const obj = raw as Record<string, unknown>;
-      const total = obj["total"];
-      if (typeof total === "number") return total;
-      const amount = obj["amount"];
-      if (typeof amount === "number") return amount;
-    }
-    return undefined;
-  }
-
-  /** Returns true when the same Bold webhook has already been processed. */
-  private isDuplicateWebhook(
-    transaction: MembershipTransactionDocument,
-    notificationId: string | undefined,
-  ): boolean {
-    if (notificationId === undefined) return false;
-    return transaction.webhookEvents.some(
-      (e) =>
-        typeof e["notificationId"] === "string" &&
-        e["notificationId"] === notificationId,
-    );
-  }
-
-  /** Persist a webhook event slot onto the transaction. */
-  private recordWebhookEvent(
-    transaction: MembershipTransactionDocument,
-    event: Record<string, unknown>,
-    parsed: ReturnType<MembershipService["parseBoldWebhookEvent"]>,
-  ): void {
-    transaction.webhookEvents.push({
-      notificationId: parsed.notificationId ?? "UNKNOWN",
-      paymentId: parsed.paymentId ?? "UNKNOWN",
-      type: parsed.eventType ?? "UNKNOWN",
-      receivedAt: new Date(),
-      data: event,
-    });
-    if (parsed.paymentId && !transaction.boldPaymentId) {
-      transaction.boldPaymentId = parsed.paymentId;
-    }
-  }
-
-  private static readonly TERMINAL_STATUSES = new Set([
-    "APPROVED",
-    "REJECTED",
-    "FAILED",
-    "VOIDED",
-  ]);
-
-  /**
-   * Apply the mapped webhook status to the transaction and return whether
-   * the status was genuinely changed (i.e., the transaction was not
-   * already in a terminal state).
-   *
-   * C-2 Fix: previously this blocked only *different* terminal-status
-   * transitions; a second APPROVED event (which Bold emits twice —
-   * SALE_APPROVED and PAYMENT_APPROVED — with different notificationIds)
-   * slipped past the guard because the statuses were the same, and
-   * processApprovedPayment() ran twice — granting the membership or
-   * crediting an installment twice.
-   */
-  private applyWebhookStatusUpdate(
-    transaction: MembershipTransactionDocument,
-    status: string,
-    parsed: ReturnType<MembershipService["parseBoldWebhookEvent"]>,
-  ): boolean {
-    const wasTerminal = MembershipService.TERMINAL_STATUSES.has(
-      transaction.status,
-    );
-
-    if (wasTerminal) {
-      this.logger.warn(
-        `Ignoring ${status} for already-${transaction.status} membership transaction ${transaction.reference}`,
-      );
-      return false;
-    }
-
-    if (status === "APPROVED") {
-      transaction.status = "APPROVED";
-      transaction.paidAt = new Date();
-      if (parsed.paymentMethod)
-        transaction.paymentMethod = parsed.paymentMethod;
-      if (parsed.payerEmail) transaction.payerEmail = parsed.payerEmail;
-    } else {
-      transaction.status = status;
-    }
-    return true;
-  }
-
-  private mapBoldStatus(eventType: string | undefined): string | null {
-    switch (eventType) {
-      case "SALE_APPROVED":
-      case "PAYMENT_APPROVED":
-        return "APPROVED";
-      case "SALE_REJECTED":
-      case "PAYMENT_REJECTED":
-        return "REJECTED";
-      case "VOID_APPROVED":
-      case "PAYMENT_VOIDED":
-        return "VOIDED";
-      case "VOID_REJECTED":
-      case "PAYMENT_FAILED":
-        return "FAILED";
-      default:
-        return null;
-    }
-  }
-
-  private async processApprovedPayment(
-    transaction: MembershipTransactionDocument,
-  ) {
-    // C-2/M-23: idempotency guard — atomically claim the benefit grant.
-    // Complements the terminal-state gate in handleWebhook: even if some
-    // other code path re-invokes processApprovedPayment(), the effects
-    // (installment counter $inc, membership activation, etc.) fire at
-    // most once per membership-transaction document.
-    if (transaction.benefitGranted) {
-      this.logger.log(
-        `Benefit already granted for ${transaction.reference}, skipping`,
-      );
-      return;
-    }
-    const claimResult = await this.transactionModel.updateOne(
-      { _id: transaction._id, benefitGranted: false },
-      { $set: { benefitGranted: true } },
-    );
-    if (claimResult.matchedCount === 0 || claimResult.modifiedCount === 0) {
-      this.logger.log(
-        `Concurrent benefit-grant for ${transaction.reference}; skipping`,
-      );
-      return;
-    }
-    transaction.benefitGranted = true;
-
-    const user = await this.usersService.findById(transaction.userId);
-    if (!user) {
-      this.logger.warn(
-        `User not found for approved membership payment: ${transaction.userId}`,
-      );
-      return;
-    }
-
-    if (transaction.isRenewal) {
-      await this.processRenewalApproval(transaction, user);
-    } else if (transaction.paymentPlan === "single") {
-      await this.processSingleNewPaymentActivation(transaction, user);
-    } else {
-      await this.processInstallmentApproval(transaction, user);
-    }
-
-    await this.processAlegraInvoicing(transaction);
-  }
-
-  /**
-   * Build an AlegraBillingContext from a membership transaction and
-   * invoke the Alegra invoicing flow. A10: Best-effort — errors are
-   * caught inside AlegraService and never break the membership flow.
-   */
-  private async processAlegraInvoicing(
-    transaction: MembershipTransactionDocument,
-  ): Promise<void> {
-    try {
-      const description = this.formatStoredMembershipDescription(
-        transaction.paymentPlan,
-        transaction.isRenewal,
-        transaction.installmentNumber,
-        transaction.installmentTotal,
-      );
-
-      const context: AlegraBillingContext = {
-        userId: transaction.userId,
-        transactionReference: transaction.reference,
-        purpose: "membership",
-        amount: transaction.amount,
-        description,
-      };
-
-      await this.alegraService.processApprovedPayment(context);
-    } catch (err: unknown) {
-      this.logger.warn(
-        `Alegra invoicing skipped for membership ref=${transaction.reference}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  }
-
-  /** Process the renewal branch of an approved membership payment. */
-  private async processRenewalApproval(
-    transaction: MembershipTransactionDocument,
-    user: {
-      email: string;
-      membershipExpiryDate?: Date | null;
-    },
-  ): Promise<void> {
-    // A1: Atomic increment prevents race condition on installment counter
-    const newRenewalCount =
-      await this.usersService.incrementRenewalInstallmentsPaid(
-        transaction.userId,
-      );
-
-    const isComplete =
-      transaction.paymentPlan === "single" ||
-      newRenewalCount >= INSTALLMENTS_TOTAL;
-
-    if (!isComplete) {
-      await this.notificationsService.create({
-        userId: transaction.userId,
-        type: NotificationType.MEMBERSHIP_INSTALLMENT_PAID,
-        title: `Cuota de renovación ${newRenewalCount}/${INSTALLMENTS_TOTAL} pagada`,
-        message: `Hemos registrado tu pago. Te faltan ${INSTALLMENTS_TOTAL - newRenewalCount} cuotas para completar tu renovación.`,
-        priority: NotificationPriority.MEDIUM,
-        metadata: {
-          installmentNumber: newRenewalCount,
-          installmentTotal: INSTALLMENTS_TOTAL,
-          isRenewal: true,
-        },
-        notifyCategory: "Membresia y pagos",
-        relatedReference: transaction.reference,
-      });
-      return;
-    }
-
-    await this.activateRenewalMembership(transaction, user, newRenewalCount);
-  }
-
-  /** Calculate the renewal expiry date and activate membership + notification. */
-  private async activateRenewalMembership(
-    transaction: MembershipTransactionDocument,
-    user: { email: string; membershipExpiryDate?: Date | null },
-    newRenewalCount: number,
-  ): Promise<void> {
-    const now = new Date();
-    const currentExpiry = user.membershipExpiryDate
-      ? new Date(user.membershipExpiryDate)
-      : now;
-    const baseDate = currentExpiry > now ? currentExpiry : now;
-    const newExpiry = new Date(baseDate.getTime() + MEMBERSHIP_DURATION_MS);
-
-    await this.usersService.activateMembership(
-      transaction.userId,
-      baseDate,
-      newExpiry,
-      transaction.paymentPlan === "single" ? "single" : "installments",
-    );
-
-    this.logger.log(
-      `Membership renewed: user=${maskUserId(transaction.userId)} expiry=${newExpiry.toISOString()}`,
-    );
-
-    await this.notificationsService.create({
-      userId: transaction.userId,
-      type: NotificationType.MEMBERSHIP_ACTIVATED,
-      title: "Membresía renovada",
-      message: this.formatRenewalActivationMessage(
-        transaction.paymentPlan,
-        newExpiry,
-      ),
-      priority: NotificationPriority.HIGH,
-      metadata: {
-        paymentPlan: transaction.paymentPlan,
-        renewalInstallmentsPaid: newRenewalCount,
-        newExpiry: newExpiry.toISOString(),
+    return handleWebhookHelper(
+      {
+        configService: this.configService,
+        transactionModel: this.transactionModel,
+        usersService: this.usersService,
+        notificationsService: this.notificationsService,
+        logger: this.logger,
+        processApprovedPayment: (t) => this.processApprovedPayment(t),
       },
-      relatedReference: transaction.reference,
-      notifyCategory: "Membresia y pagos",
-    });
-  }
-
-  /** Format the activation message for a renewed membership (single vs 12-installments). */
-  private formatRenewalActivationMessage(
-    paymentPlan: string,
-    newExpiry: Date,
-  ): string {
-    return paymentPlan === "single"
-      ? `Tu renovación anual fue confirmada. Tu membresía Legend está activa hasta el ${newExpiry.toLocaleDateString("es-CO")}.`
-      : `Completaste las 12 cuotas de renovación. Tu membresía Legend está activa hasta el ${newExpiry.toLocaleDateString("es-CO")}.`;
-  }
-
-  /** Activate a brand-new single-payment membership and notify. */
-  private async processSingleNewPaymentActivation(
-    transaction: MembershipTransactionDocument,
-    _user: { email: string },
-  ): Promise<void> {
-    const now = new Date();
-    const expiry = new Date(now.getTime() + MEMBERSHIP_DURATION_MS);
-    await this.usersService.activateMembership(
-      transaction.userId,
-      now,
-      expiry,
-      "single",
-    );
-    this.logger.log(
-      `Membership activated (single payment): user=${maskUserId(transaction.userId)} expiry=${expiry.toISOString()}`,
-    );
-
-    await this.notificationsService.create({
-      userId: transaction.userId,
-      type: NotificationType.MEMBERSHIP_ACTIVATED,
-      title: "Membresía Legend activada",
-      message: `Tu pago único fue confirmado. Tu membresía Legend está activa hasta el ${expiry.toLocaleDateString("es-CO")}. ¡Bienvenido al ecosistema BSK!`,
-      priority: NotificationPriority.HIGH,
-      metadata: {
-        paymentPlan: "single",
-        amount: transaction.amount,
-        newExpiry: expiry.toISOString(),
-      },
-      relatedReference: transaction.reference,
-      notifyCategory: "Membresia y pagos",
-    });
-  }
-
-  /** Handle an approved installment for a brand-new membership. */
-  private async processInstallmentApproval(
-    transaction: MembershipTransactionDocument,
-    user: { email: string },
-  ): Promise<void> {
-    const approvedCount = await this.usersService.incrementInstallmentsPaid(
-      transaction.userId,
-    );
-
-    if (approvedCount >= INSTALLMENTS_TOTAL) {
-      await this.activateCompleteInstallmentsMembership(
-        transaction,
-        user,
-        approvedCount,
-      );
-    } else {
-      this.logger.log(
-        `Installment ${approvedCount}/${INSTALLMENTS_TOTAL} paid: user=${maskUserId(transaction.userId)}`,
-      );
-      await this.notificationsService.create({
-        userId: transaction.userId,
-        type: NotificationType.MEMBERSHIP_INSTALLMENT_PAID,
-        title: `Cuota ${approvedCount}/${INSTALLMENTS_TOTAL} pagada`,
-        message: `Hemos registrado tu pago de la cuota ${approvedCount} de ${INSTALLMENTS_TOTAL}. Te faltan ${INSTALLMENTS_TOTAL - approvedCount} cuotas para activar tu membresía Legend.`,
-        priority: NotificationPriority.MEDIUM,
-        metadata: {
-          installmentNumber: approvedCount,
-          installmentTotal: INSTALLMENTS_TOTAL,
-          amount: transaction.amount,
-        },
-        relatedReference: transaction.reference,
-        notifyCategory: "Membresia y pagos",
-      });
-    }
-  }
-
-  /** Activate the membership once the 12th installment has been paid. */
-  private async activateCompleteInstallmentsMembership(
-    transaction: MembershipTransactionDocument,
-    user: { email: string },
-    approvedCount: number,
-  ): Promise<void> {
-    const now = new Date();
-    const expiry = new Date(now.getTime() + MEMBERSHIP_DURATION_MS);
-    await this.usersService.activateMembership(
-      transaction.userId,
-      now,
-      expiry,
-      "installments",
-    );
-    this.logger.log(
-      `Membership activated (12 installments complete): user=${maskUserId(transaction.userId)} expiry=${expiry.toISOString()}`,
-    );
-
-    await this.notificationsService.create({
-      userId: transaction.userId,
-      type: NotificationType.MEMBERSHIP_ACTIVATED,
-      title: "Membresía Legend activada",
-      message: `Completaste las 12 cuotas. Tu membresía Legend está activa hasta el ${expiry.toLocaleDateString("es-CO")}. ¡Bienvenido al ecosistema BSK!`,
-      priority: NotificationPriority.HIGH,
-      metadata: {
-        paymentPlan: "installment",
-        installmentsPaid: approvedCount,
-        newExpiry: expiry.toISOString(),
-      },
-      relatedReference: transaction.reference,
-      notifyCategory: "Membresia y pagos",
-    });
-  }
-
-  /**
-   * Queries Bold's payment-voucher API for the real-time status of a
-   * transaction. This is the recommended fallback when the webhook is not
-   * received (Docs_Bold/pagos_en_linea/consulta_de_transacciones.md).
-   *
-   * Rate-limited via `lastBoldSyncAt` to at most one call every 10 seconds,
-   * preventing excessive API requests during frontend polling.
-   */
-  private async syncWithBold(
-    transaction: MembershipTransactionDocument,
-  ): Promise<void> {
-    if (this.isBoldSyncRateLimited(transaction)) {
-      return;
-    }
-
-    const identityKey =
-      this.configService.get<string>("BOLD_IDENTITY_KEY", {
-        infer: true,
-      }) ?? "";
-
-    if (!identityKey) {
-      this.logger.warn(
-        "Cannot sync with Bold: BOLD_IDENTITY_KEY is not configured",
-      );
-      return;
-    }
-
-    const boldEnv =
-      this.configService.get<string>("BOLD_ENVIRONMENT", {
-        infer: true,
-      }) ?? "sandbox";
-    const baseUrl =
-      boldEnv === "production"
-        ? "https://payments.api.bold.co"
-        : "https://payments-api-test.bold.co";
-    const url = `${baseUrl}/v2/payment-voucher/${encodeURIComponent(transaction.reference)}`;
-
-    transaction.lastBoldSyncAt = new Date();
-    await transaction.save();
-
-    try {
-      const res = await fetch(url, {
-        method: "GET",
-        headers: {
-          Authorization: `x-api-key ${identityKey}`,
-          Accept: "application/json",
-        },
-      });
-
-      if (!res.ok) {
-        this.logger.warn(
-          `Bold sync API returned ${res.status} for reference: ${transaction.reference}`,
-        );
-        return;
-      }
-
-      const body = (await res.json()) as Record<string, unknown>;
-      await this.applyBoldVoucherBody(transaction, body);
-    } catch (err: unknown) {
-      this.logger.warn(
-        `Bold sync failed for ${transaction.reference}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  }
-
-  /** Returns true when the last Bold sync was too recent (rate limit). */
-  private isBoldSyncRateLimited(
-    transaction: MembershipTransactionDocument,
-  ): boolean {
-    const now = new Date();
-    const minIntervalMs = 10_000;
-    return (
-      !!transaction.lastBoldSyncAt &&
-      now.getTime() - new Date(transaction.lastBoldSyncAt).getTime() <
-        minIntervalMs
+      rawBody,
+      signature,
     );
   }
 
-  /** Map a Bold voucher body to a transaction status update + notification. */
-  private async applyBoldVoucherBody(
-    transaction: MembershipTransactionDocument,
-    body: Record<string, unknown>,
-  ): Promise<void> {
-    const boldStatus = body["payment_status"] as string | undefined;
-
-    if (!boldStatus || boldStatus === "NO_TRANSACTION_FOUND") {
-      this.logger.log(
-        `Bold sync: no transaction found yet for reference: ${transaction.reference}`,
-      );
-      return;
-    }
-
-    const mappedStatus = this.mapBoldVoucherStatus(boldStatus);
-    if (!mappedStatus) {
-      return;
-    }
-
-    if (MembershipService.TERMINAL_STATUSES.has(transaction.status)) {
-      this.logger.warn(
-        `Bold sync: ignoring ${mappedStatus} for already-${transaction.status} reference ${transaction.reference}`,
-      );
-      return;
-    }
-
-    if (
-      mappedStatus === "APPROVED" &&
-      this.isVoucherAmountMismatch(transaction, body)
-    ) {
-      return;
-    }
-
-    this.logger.log(
-      `Bold sync: updating ${transaction.reference} from ${transaction.status} to ${mappedStatus}`,
-    );
-
-    transaction.status = mappedStatus;
-
-    if (mappedStatus === "APPROVED") {
-      this.applyApprovedVoucherFields(transaction, body);
-    }
-
-    await transaction.save();
-
-    if (mappedStatus === "APPROVED") {
-      await this.processApprovedPayment(transaction);
-    } else if (mappedStatus === "REJECTED" || mappedStatus === "FAILED") {
-      await this.handleRejectedWebhook(transaction, mappedStatus);
-    }
-  }
-
-  private isVoucherAmountMismatch(
-    transaction: MembershipTransactionDocument,
-    body: Record<string, unknown>,
-  ): boolean {
-    const voucherAmount = this.parseBoldAmount(body["amount"]);
-    if (voucherAmount === undefined) return false;
-    if (transaction.amount <= 0) return false;
-    if (voucherAmount === transaction.amount) return false;
-    this.logger.warn(
-      `Amount mismatch in Bold voucher sync for ref ${transaction.reference}: expected ${transaction.amount}, received ${voucherAmount}. Skipping approval.`,
-    );
-    return true;
-  }
-
-  private applyApprovedVoucherFields(
-    transaction: MembershipTransactionDocument,
-    body: Record<string, unknown>,
-  ): void {
-    transaction.paidAt = new Date();
-    const paymentMethod = body["payment_method"] as string | undefined;
-    const payerEmail = body["payer_email"] as string | undefined;
-    const boldPaymentId = body["transaction_id"] as string | undefined;
-    if (paymentMethod) transaction.paymentMethod = paymentMethod;
-    if (payerEmail) transaction.payerEmail = payerEmail;
-    if (boldPaymentId && !transaction.boldPaymentId) {
-      transaction.boldPaymentId = boldPaymentId;
-    }
-  }
-
-  private mapBoldVoucherStatus(boldStatus: string): string | null {
-    switch (boldStatus.toUpperCase()) {
-      case "APPROVED":
-        return "APPROVED";
-      case "REJECTED":
-        return "REJECTED";
-      case "FAILED":
-        return "FAILED";
-      case "VOIDED":
-        return "VOIDED";
-      case "PROCESSING":
-        return "PROCESSING";
-      case "PENDING":
-        return null;
-      default:
-        return null;
-    }
-  }
-
-  /**
-   * Recupera un intento de pago de membresía por su referencia y reconstruye
-   * el objeto boldConfig si el pago sigue pendiente. Esto permite que la
-   * página /pagos del frontend renderice el widget de Bold o muestre el
-   * estado final del pago incluso tras una recarga del navegador.
-   *
-   * Si el pago sigue PENDING, consulta la API de Bold (payment-voucher) como
-   * mecanismo de fallback cuando el webhook no fue recibido.
-   */
   async getMembershipPayment(userId: string, reference: string) {
-    const transaction = await this.transactionModel.findOne({
+    return getMembershipPaymentHelper(
+      {
+        configService: this.configService,
+        transactionModel: this.transactionModel,
+        usersService: this.usersService,
+        notificationsService: this.notificationsService,
+        logger: this.logger,
+        processApprovedPayment: (t) => this.processApprovedPayment(t),
+      },
       userId,
       reference,
-    });
-    if (!transaction) {
-      throw new NotFoundException("Transacción de membresía no encontrada");
-    }
-
-    if (transaction.status === "PENDING") {
-      await this.syncWithBold(transaction);
-    }
-
-    const result: {
-      reference: string;
-      type: "membership";
-      paymentPlan: string;
-      amount: number;
-      installmentNumber: number;
-      installmentTotal: number;
-      isRenewal: boolean;
-      status: string;
-      paidAt: Date | null;
-      paymentMethod: string | null;
-      description: string;
-      requiresPayment: boolean;
-      boldConfig?: {
-        publicKey: string;
-        environment: string;
-        baseUrl: string;
-        referenceId: string;
-        description: string;
-        amount: number;
-        currency: string;
-        integritySignature: string;
-      };
-    } = {
-      reference: transaction.reference,
-      type: "membership",
-      paymentPlan: transaction.paymentPlan,
-      amount: transaction.amount,
-      installmentNumber: transaction.installmentNumber,
-      installmentTotal: transaction.installmentTotal,
-      isRenewal: transaction.isRenewal,
-      status: transaction.status,
-      paidAt: transaction.paidAt,
-      paymentMethod: transaction.paymentMethod ?? null,
-      description: this.formatStoredMembershipDescription(
-        transaction.paymentPlan,
-        transaction.isRenewal,
-        transaction.installmentNumber,
-        transaction.installmentTotal,
-      ),
-      requiresPayment: transaction.status !== "APPROVED",
-    };
-
-    if (transaction.status === "PENDING") {
-      result.boldConfig = this.buildBoldConfig(
-        transaction.reference,
-        transaction.amount,
-        result.description,
-      );
-    }
-
-    return result;
+    );
   }
 
   async getMembershipStatus(userId: string) {
-    const user = await this.usersService.findById(userId);
-    if (!user) throw new NotFoundException("Usuario no encontrado");
-
-    const now = new Date();
-    const isExpired =
-      user.membershipExpiryDate != null &&
-      new Date(user.membershipExpiryDate) < now;
-
-    const isInGracePeriod =
-      isExpired &&
-      user.membershipGracePeriodEnd != null &&
-      new Date(user.membershipGracePeriodEnd) > now;
-
-    const transactions = await this.transactionModel
-      .find({ userId })
-      .sort({ createdAt: -1 })
-      .select("-webhookEvents -__v");
-
-    const alegraInvoices = await this.alegraService.getInvoicesForUser(userId);
-
-    return {
-      role: user.role,
-      membershipLevel: user.membershipLevel,
-      membershipStartDate: user.membershipStartDate,
-      membershipExpiryDate: user.membershipExpiryDate,
-      membershipGracePeriodEnd: user.membershipGracePeriodEnd,
-      isExpired,
-      isInGracePeriod,
-      membershipExpired: user.membershipExpired,
-      membershipPaymentPlan: user.membershipPaymentPlan,
-      installmentsPaid: user.installmentsPaid,
-      installmentsTotal: user.installmentsTotal,
-      renewalInstallmentsPaid: user.renewalInstallmentsPaid,
-      partialPaymentCredit: user.partialPaymentCredit,
-      transactions: transactions.map((t) => {
-        const key = `${t.reference}:membership`;
-        const inv = alegraInvoices.get(key);
-        return {
-          reference: t.reference,
-          amount: t.amount,
-          status: t.status,
-          installmentNumber: t.installmentNumber,
-          installmentTotal: t.installmentTotal,
-          paymentPlan: t.paymentPlan,
-          isRenewal: t.isRenewal,
-          paidAt: t.paidAt,
-          createdAt: t.createdAt,
-          invoice: inv
-            ? {
-                alegraInvoiceId: inv.alegraInvoiceId,
-                invoiceNumber: inv.alegraInvoiceNumber,
-                cufe: inv.cufe,
-                stampStatus: inv.stampStatus,
-                status: inv.status,
-                emailed: inv.emailed,
-                errorMessage: inv.errorMessage,
-              }
-            : null,
-        };
-      }),
-    };
+    return getMembershipStatusHelper(
+      {
+        transactionModel: this.transactionModel,
+        usersService: this.usersService,
+        alegraService: this.alegraService,
+      },
+      userId,
+    );
   }
 
-  /**
-   * Cancel a user's own pending membership transaction.
-   * Only PENDING transactions can be cancelled. Reverts any credit block.
-   */
   async cancelPendingMembershipTransaction(
     userId: string,
     reference: string,
   ): Promise<{ message: string }> {
-    const transaction = await this.transactionModel.findOne({
+    return cancelPendingMembershipTransactionHelper(
+      {
+        transactionModel: this.transactionModel,
+        usersService: this.usersService,
+        logger: this.logger,
+      },
       userId,
       reference,
-    });
-
-    if (!transaction) {
-      throw new NotFoundException("Transacción de membresía no encontrada");
-    }
-
-    if (transaction.status !== "PENDING") {
-      throw new BadRequestException(
-        "Solo se pueden cancelar transacciones pendientes",
-      );
-    }
-
-    transaction.status = "VOIDED";
-
-    if (transaction.creditUsedAmount > 0 && !transaction.creditReverted) {
-      const reverted = await this.usersService.revertPartialPaymentCredit(
-        transaction.userId,
-        transaction.creditUsedAmount,
-      );
-      if (reverted) {
-        transaction.creditReverted = true;
-      }
-    }
-
-    await transaction.save();
-    this.logger.log(
-      `Membership transaction cancelled by user: ref=${maskReference(reference)}`,
     );
-
-    return { message: "Transacción de membresía cancelada exitosamente" };
   }
 
-  /**
-   * Retry a failed Alegra invoice for a membership transaction.
-   */
   async retryMembershipInvoice(
     userId: string,
     reference: string,
   ): Promise<{ message: string }> {
-    const transaction = await this.transactionModel.findOne({
+    return retryMembershipInvoiceHelper(
+      {
+        transactionModel: this.transactionModel,
+        alegraService: this.alegraService,
+      },
       userId,
       reference,
-    });
-
-    if (!transaction) {
-      throw new NotFoundException("Transacción de membresía no encontrada");
-    }
-
-    if (transaction.status !== "APPROVED") {
-      throw new BadRequestException(
-        "Solo se pueden reintentar facturas de transacciones aprobadas",
-      );
-    }
-
-    const retried = await this.alegraService.retryFailedInvoice(
-      reference,
-      "membership",
     );
-
-    if (!retried) {
-      throw new BadRequestException(
-        "No hay una factura fallida para reintentar, o ya fue procesada exitosamente",
-      );
-    }
-
-    return { message: "Reintento de factura electrónica en proceso" };
   }
 
   async chooseCreditOption(userId: string, dto: CreditChoiceDto) {
-    const user = await this.usersService.findById(userId);
-    if (!user) throw new NotFoundException("Usuario no encontrado");
-
-    const credit = user.partialPaymentCredit;
-    if (credit?.type !== CreditType.PENDING) {
-      throw new BadRequestException(
-        "No tienes crédito pendiente para administrar",
-      );
-    }
-
-    const availableAmount = credit.amount - credit.usedAmount;
-    if (availableAmount <= 0) {
-      throw new BadRequestException(
-        "Tu crédito ya ha sido utilizado por completo",
-      );
-    }
-
-    const now = new Date();
-    const expiresAt = new Date(now);
-    expiresAt.setMonth(expiresAt.getMonth() + CREDIT_EXPIRY_MONTHS);
-
-    const timestamp = Date.now();
-    const shortUserId = userId.slice(-8);
-    let newType: CreditType;
-    let transactionType: CreditTransactionType;
-    let creditSource: CreditSource;
-    let description: string;
-
-    switch (dto.choice) {
-      case "membership":
-        newType = CreditType.MEMBERSHIP;
-        transactionType = CreditTransactionType.CREDIT_CONVERTED_FROM_RENEWAL;
-        creditSource = CreditSource.MEMBERSHIP;
-        description = `Crédito de renovación parcial convertido en crédito para futura membresía (${credit.installmentsPaid} cuotas)`;
-        break;
-      case "services":
-        newType = CreditType.SERVICES;
-        transactionType = CreditTransactionType.CREDIT_GRANTED;
-        creditSource = CreditSource.SERVICES;
-        description = `Crédito de renovación parcial convertido en crédito para servicios BSK (${credit.installmentsPaid} cuotas)`;
-        break;
-      case "refund":
-        newType = CreditType.REFUND_REQUESTED;
-        transactionType = CreditTransactionType.CREDIT_GRANTED;
-        creditSource = CreditSource.MEMBERSHIP;
-        description = `Solicitud de reembolso para crédito de renovación parcial (${credit.installmentsPaid} cuotas)`;
-        break;
-      default:
-        throw new BadRequestException("Opción de crédito inválida");
-    }
-
-    // M-20: Atomic transition — the credit must still be PENDING at the
-    // time of the write. Use the precondition-aware helper so two
-    // concurrent / double-tap chooseCreditOption calls cannot turn the
-    // same pending credit into two different target types + ledger entries.
-    const didUpdate = await this.usersService.updatePartialPaymentCreditIfType(
-      userId,
-      CreditType.PENDING,
+    return chooseCreditOptionHelper(
       {
-        ...credit,
-        type: newType,
-        convertedAt: now,
-        expiresAt: dto.choice !== "refund" ? expiresAt : null,
-        refundRequestedAt: dto.choice === "refund" ? now : null,
-        notes: description,
+        usersService: this.usersService,
+        creditTransactionModel: this.creditTransactionModel,
+        logger: this.logger,
       },
-    );
-    if (!didUpdate) {
-      this.logger.warn(
-        `chooseCreditOption race aborted: user=${maskUserId(userId)} (credit no longer PENDING)`,
-      );
-      throw new ConflictException(
-        "Tu crédito fue procesado concurrentemente. Refresca e intenta de nuevo.",
-      );
-    }
-
-    const reference = `CR-${creditSource.toUpperCase()}-${shortUserId}-${timestamp}-${crypto.randomBytes(4).toString("hex")}`;
-    await this.creditTransactionModel.create({
       userId,
-      reference,
-      transactionType,
-      creditSource,
-      amount: availableAmount,
-      description,
-      metadata: {
-        installmentsPaid: credit.installmentsPaid,
-        originalCreditAmount: credit.amount,
-      },
-    });
-
-    this.logger.log(
-      `Credit choice processed: user=${maskUserId(userId)} choice=${dto.choice} amount=${maskAmount(availableAmount)}`,
+      dto,
     );
-
-    return {
-      success: true,
-      choice: dto.choice,
-      credit: {
-        type: newType,
-        amount: availableAmount,
-        expiresAt: dto.choice !== "refund" ? expiresAt : null,
-        description,
-      },
-    };
   }
 
   async useCredit(userId: string, dto: UseCreditDto) {
-    const user = await this.usersService.findById(userId);
-    if (!user) throw new NotFoundException("Usuario no encontrado");
-
-    // M-18: idempotency — if the caller supplied an idempotencyKey,
-    // check the credit-transaction ledger for a prior CREDIT_USED
-    // entry tagged with the same key. Found → return the cached
-    // outcome instead of re-debiting. The lookup is on
-    // `metadata.idempotencyKey` which is set below when we create the
-    // ledger entry.
-    if (dto.idempotencyKey) {
-      const prior = await this.creditTransactionModel
-        .findOne({
-          userId,
-          transactionType: CreditTransactionType.CREDIT_USED,
-          "metadata.idempotencyKey": dto.idempotencyKey,
-        })
-        .lean();
-      if (prior) {
-        this.logger.log(
-          `Credit use idempotency hit: user=${maskUserId(userId)} ref=${prior.reference}`,
-        );
-        const fresh = await this.usersService.findById(userId);
-        const remainingCredit = fresh?.partialPaymentCredit
-          ? (fresh.partialPaymentCredit.amount ?? 0) -
-            (fresh.partialPaymentCredit.usedAmount ?? 0)
-          : 0;
-        return {
-          success: true,
-          amountUsed: prior.amount,
-          remainingCredit,
-          reference: prior.reference,
-        };
-      }
-    }
-
-    const credit = user.partialPaymentCredit;
-    if (!credit) {
-      throw new BadRequestException("No tienes crédito disponible");
-    }
-
-    const expectedType =
-      dto.creditSource === "membership"
-        ? CreditType.MEMBERSHIP
-        : CreditType.SERVICES;
-
-    if (credit.type !== expectedType) {
-      throw new BadRequestException(
-        `Tu crédito es de tipo ${credit.type}, no ${dto.creditSource}`,
-      );
-    }
-
-    if (this.isCreditExpired(credit, new Date())) {
-      throw new BadRequestException("Tu crédito ha expirado");
-    }
-
-    const availableAmount = credit.amount - credit.usedAmount;
-    if (availableAmount <= 0) {
-      throw new BadRequestException(
-        "Tu crédito ya ha sido utilizado por completo",
-      );
-    }
-
-    if (dto.amount > availableAmount) {
-      throw new BadRequestException(
-        `El monto solicitado (${dto.amount}) excede tu crédito disponible (${availableAmount})`,
-      );
-    }
-
-    // A-3/A-4: Use atomic $inc with optimistic locking on expectedUsedAmount
-    const updated =
-      await this.usersService.incrementPartialPaymentCreditUsedAmount(
-        userId,
-        dto.amount,
-        credit.usedAmount,
-      );
-    if (!updated) {
-      throw new ConflictException(
-        "Conflicto al usar crédito: tu saldo fue modificado. Intenta de nuevo.",
-      );
-    }
-
-    const timestamp = Date.now();
-    const shortUserId = userId.slice(-8);
-    // M-22: add random suffix (see CRU above).
-    const reference = `CRU-${shortUserId}-${timestamp}-${crypto.randomBytes(4).toString("hex")}`;
-    await this.creditTransactionModel.create({
-      userId,
-      reference,
-      transactionType: CreditTransactionType.CREDIT_USED,
-      creditSource: dto.creditSource,
-      amount: dto.amount,
-      description: dto.description ?? `Uso de crédito ${dto.creditSource}`,
-      metadata: {
-        idempotencyKey: dto.idempotencyKey ?? null,
+    return useCreditHelper(
+      {
+        usersService: this.usersService,
+        creditTransactionModel: this.creditTransactionModel,
+        logger: this.logger,
       },
-    });
-
-    this.logger.log(
-      `Credit used: user=${maskUserId(userId)} amount=${maskAmount(dto.amount)} source=${dto.creditSource} remaining=${maskAmount(availableAmount - dto.amount)}`,
+      userId,
+      dto,
     );
-
-    return {
-      success: true,
-      amountUsed: dto.amount,
-      remainingCredit: availableAmount - dto.amount,
-      reference,
-    };
   }
 
   async getCreditBalance(userId: string) {
-    const user = await this.usersService.findById(userId);
-    if (!user) throw new NotFoundException("Usuario no encontrado");
-
-    const credit = user.partialPaymentCredit;
-    if (!credit) {
-      return { hasCredit: false };
-    }
-
-    const availableAmount = credit.amount - credit.usedAmount;
-    const isExpired =
-      credit.expiresAt != null && new Date(credit.expiresAt) < new Date();
-
-    const transactions = await this.creditTransactionModel
-      .find({ userId })
-      .sort({ createdAt: -1 })
-      .select("-__v");
-
-    return {
-      hasCredit: true,
-      credit: {
-        type: credit.type,
-        totalAmount: credit.amount,
-        usedAmount: credit.usedAmount,
-        availableAmount: isExpired ? 0 : availableAmount,
-        installmentsPaid: credit.installmentsPaid,
-        createdAt: credit.createdAt,
-        convertedAt: credit.convertedAt,
-        expiresAt: credit.expiresAt,
-        isExpired,
-        refundRequestedAt: credit.refundRequestedAt,
-        notes: credit.notes,
+    return getCreditBalanceHelper(
+      {
+        usersService: this.usersService,
+        creditTransactionModel: this.creditTransactionModel,
       },
-      transactions: transactions.map((t) => ({
-        reference: t.reference,
-        transactionType: t.transactionType,
-        creditSource: t.creditSource,
-        amount: t.amount,
-        description: t.description,
-        createdAt: t.createdAt,
-      })),
-    };
+      userId,
+    );
   }
 
-  /**
-   * A-5: Sweeps abandoned PENDING membership transactions that have
-   * been sitting without an APPROVED webhook/sync event for more than
-   * `PENDING_TTL_MS` (48h). For each swept transaction:
-   *   - atomically transitions PENDING → VOIDED (winner-takes-all with
-   *     any concurrent webhook/sync),
-   *   - reverts any credit that was consumed against it (using the same
-   *     atomic floor and `creditReverted` flag as the REJECTED path).
-   *
-   * The endpoint is meant to be invoked by the Vercel Cron entry at
-   * `/api/membership/internal/cron/sweep-pending` every 12 hours.
-   */
   async sweepAbandonedPayments(now: Date = new Date()): Promise<{
     swept: number;
     creditReverted: number;
   }> {
-    const PENDING_TTL_MS = 48 * 60 * 60 * 1000;
-    const cutoff = new Date(now.getTime() - PENDING_TTL_MS);
-
-    const abandoned = await this.transactionModel
-      .find({
-        status: "PENDING",
-        createdAt: { $lt: cutoff },
-        benefitGranted: false,
-      })
-      .limit(500);
-
-    let swept = 0;
-    let creditReverted = 0;
-
-    for (const tx of abandoned) {
-      const updated = await this.transactionModel.findOneAndUpdate(
-        { _id: tx._id, status: "PENDING" },
-        { $set: { status: "VOIDED" } },
-        { new: true },
-      );
-      if (!updated) continue;
-
-      swept++;
-
-      if (tx.creditUsedAmount > 0 && !updated.creditReverted) {
-        const reverted = await this.usersService.revertPartialPaymentCredit(
-          tx.userId,
-          tx.creditUsedAmount,
-        );
-        if (reverted) {
-          await this.transactionModel.updateOne(
-            { _id: updated._id, creditReverted: false },
-            { $set: { creditReverted: true } },
-          );
-          creditReverted += tx.creditUsedAmount;
-          this.logger.log(
-            `Credit reverted by sweeper: user=${maskUserId(tx.userId)} amount=${maskAmount(tx.creditUsedAmount)} ref=${maskReference(tx.reference)}`,
-          );
-        }
-      }
-    }
-
-    this.logger.log(
-      `Pending sweeper: ${swept} VOIDED, ${maskAmount(creditReverted)} COP reverted`,
+    return sweepAbandonedPaymentsHelper(
+      {
+        transactionModel: this.transactionModel,
+        usersService: this.usersService,
+        logger: this.logger,
+      },
+      now,
     );
-    return { swept, creditReverted };
   }
 
   async requestRefund(userId: string) {
-    const user = await this.usersService.findById(userId);
-    if (!user) throw new NotFoundException("Usuario no encontrado");
-
-    const credit = user.partialPaymentCredit;
-    if (!credit) {
-      throw new BadRequestException("No tienes crédito disponible");
-    }
-
-    if (credit.type !== CreditType.REFUND_REQUESTED) {
-      throw new BadRequestException(
-        "Primero debes elegir la opción de reembolso desde el panel de créditos",
-      );
-    }
-
-    if (credit.usedAmount > 0) {
-      throw new BadRequestException(
-        "Ya has utilizado parte de tu crédito. No puedes solicitar reembolso",
-      );
-    }
-
-    // M-19: deduplicate — refuse if a pending-admin-approval ledger
-    // entry already exists for this user. Prevents double submissions.
-    const existing = await this.creditTransactionModel
-      .findOne({
-        userId,
-        transactionType: CreditTransactionType.CREDIT_REFUNDED,
-        "metadata.status": "pending-admin-approval",
-      })
-      .lean();
-    if (existing) {
-      throw new ConflictException(
-        `Ya tienes una solicitud de reembolso pendiente. Ref: ${existing.reference}`,
-      );
-    }
-
-    const timestamp = Date.now();
-    const shortUserId = userId.slice(-8);
-    // M-22: random suffix to avoid collisions on the credit transaction
-    // ledger when a user double-submits a refund request in the same ms.
-    const reference = `REF-${shortUserId}-${timestamp}-${crypto.randomBytes(4).toString("hex")}`;
-
-    await this.creditTransactionModel.create({
-      userId,
-      reference,
-      transactionType: CreditTransactionType.CREDIT_REFUNDED,
-      creditSource: CreditSource.MEMBERSHIP,
-      amount: credit.amount,
-      description: `Reembolso de crédito de renovación parcial (${credit.installmentsPaid} cuotas)`,
-      metadata: {
-        installmentsPaid: credit.installmentsPaid,
-        status: "pending-admin-approval",
+    return requestRefundHelper(
+      {
+        usersService: this.usersService,
+        creditTransactionModel: this.creditTransactionModel,
+        logger: this.logger,
       },
-    });
-
-    // M-19: Keep the credit type as REFUND_REQUESTED. The admin
-    // approveRefund flow transitions it to REFUNDED atomically; leaving
-    // it as REFUND_REQUESTED means the user-visible status stays
-    // "pending" and idempotency on follow-up requestRefund calls works
-    // via the dedup ledger query above.
-    await this.usersService.updatePartialPaymentCredit(userId, {
-      ...credit,
-      type: CreditType.REFUND_REQUESTED,
-      notes: `Reembolso solicitado - Pendiente aprobación admin. Ref: ${reference}`,
-    });
-
-    this.logger.log(
-      `Refund requested: user=${maskUserId(userId)} amount=${maskAmount(credit.amount)} ref=${maskReference(reference)}`,
+      userId,
     );
+  }
 
-    return {
-      success: true,
-      reference,
-      amount: credit.amount,
-      status: "pending-admin-approval",
-      message:
-        "Tu solicitud de reembolso ha sido registrada. Un administrador la revisará en los próximos días hábiles.",
-    };
+  private async processApprovedPayment(
+    transaction: MembershipTransactionDocument,
+  ): Promise<void> {
+    return processApprovedPaymentHelper(
+      {
+        transactionModel: this.transactionModel,
+        usersService: this.usersService,
+        notificationsService: this.notificationsService,
+        alegraService: this.alegraService,
+        logger: this.logger,
+      },
+      transaction,
+    );
   }
 }

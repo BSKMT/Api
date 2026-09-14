@@ -53,10 +53,12 @@ export class UpdateGestionStatusDto {
   @Transform(({ value }) => {
     if (typeof value !== "string") return value;
     const v = value.toUpperCase().trim();
-    if (v === "RESUELTO" || v === "RESOLVED") return ArphaRequestStatus.COMPLETED;
+    if (v === "RESUELTO" || v === "RESOLVED")
+      return ArphaRequestStatus.COMPLETED;
     if (v === "CANCELADO") return ArphaRequestStatus.CANCELLED;
     if (v === "EN_SITIO" || v === "ENSITIO") return ArphaRequestStatus.EN_SITIO;
-    if (v === "EN_CAMINO" || v === "ENCAMINO") return ArphaRequestStatus.EN_CAMINO;
+    if (v === "EN_CAMINO" || v === "ENCAMINO")
+      return ArphaRequestStatus.EN_CAMINO;
     return v as ArphaRequestStatus;
   })
   @IsEnum(ArphaRequestStatus)
@@ -221,9 +223,7 @@ export class GestionArphaService {
     }
 
     if (dto.status === ArphaRequestStatus.EN_SITIO) {
-      if (!request.arrivedAt) {
-        request.arrivedAt = new Date();
-      }
+      request.arrivedAt ??= new Date();
     } else if (dto.status === ArphaRequestStatus.COMPLETED) {
       request.resolvedAt = new Date();
       request.activeRequestKey = null; // Release slot
