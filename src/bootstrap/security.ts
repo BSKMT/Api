@@ -80,7 +80,13 @@ export function setupSecurityMiddleware(
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-CSRF-Token",
+      "X-Device-Platform",
+      "X-App-Version",
+    ],
     maxAge: 86400,
   });
 
@@ -100,6 +106,12 @@ export function setupSecurityMiddleware(
     ) {
       return next();
     }
+
+    // Android Native App requests: verified by X-Device-Platform
+    if (req.headers["x-device-platform"] === "android") {
+      return next();
+    }
+
     const origin = req.headers.origin;
     const referer = req.headers.referer;
     if (origin) {
