@@ -90,7 +90,7 @@ export class SettingsController {
     );
   }
 
-  @Post("delete-account")
+  @Post(["delete-account", "request-deletion"])
   @Throttle({ medium: { ttl: 60000, limit: 3 } })
   @HttpCode(HttpStatus.OK)
   async requestDeletion(@Req() req: Request, @Body() dto: DeleteAccountDto) {
@@ -102,7 +102,7 @@ export class SettingsController {
     );
   }
 
-  @Delete("delete-account")
+  @Delete(["delete-account", "cancel-deletion"])
   async cancelDeletion(@Req() req: Request) {
     const user = (req as Request & { user: { userId: string } }).user;
     return this.settingsService.cancelDeletionRequest(user.userId);
