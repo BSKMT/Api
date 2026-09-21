@@ -190,7 +190,7 @@ async function initAuth(): Promise<AuthInstance> {
     },
 
     session: {
-      expiresIn: 7 * 24 * 60 * 60,
+      expiresIn: 60 * 24 * 60 * 60,
       updateAge: 24 * 60 * 60,
       cookieCache: { enabled: true, maxAge: 5 * 60 },
     },
