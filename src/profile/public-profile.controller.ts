@@ -14,6 +14,7 @@ import { Throttle } from "@nestjs/throttler";
 import type { Request } from "express";
 import { UsersService } from "../users/users.service";
 import { SessionGuard } from "../auth/session.guard";
+import { Public } from "../common/decorators";
 import { SendFriendRequestDto } from "./public-profile.dto";
 import {
   getUserIdFromSession,
@@ -46,6 +47,7 @@ export class PublicProfileController {
     return null;
   }
 
+  @Public()
   @Get("public/:identifier")
   @Throttle({ default: { ttl: 10000, limit: 20 } })
   async getPublicProfile(

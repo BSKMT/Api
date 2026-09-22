@@ -22,7 +22,9 @@ import { DeleteAccountDto } from "./dto/delete-account.dto";
 
 function getCurrentToken(req: Request): string {
   const cookies = req.headers.cookie ?? "";
-  const match = /better-auth\.session_token=([^;]+)/.exec(cookies);
+  const match = /(?:__Secure-)?better-auth\.session_token=([^;]+)/.exec(
+    cookies,
+  );
   return match ? match[1] : "";
 }
 

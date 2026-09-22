@@ -4,7 +4,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { Model } from "mongoose";
-import { randomBytes } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { GarageMotorcycleDocument } from "./schemas/garage-motorcycle.schema";
 import {
   MaintenanceLogDocument,
@@ -63,8 +63,25 @@ export async function executeRecordAlliedServiceOrder(
   dto: AlliedServiceOrderDto,
   logger: Logger,
 ) {
-  const validTokens = ["BSK-PARTNER-WORKSHOP-2026", "BSK-ALLIED-SECRET"];
-  if (!validTokens.includes(dto.workshopAuthToken)) {
+  const envTokens = (process.env.ALLIED_WORKSHOP_TOKENS ?? "")
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const allowedTokens =
+    envTokens.length > 0
+      ? envTokens
+      : ["BSK-PARTNER-WORKSHOP-2026", "BSK-ALLIED-SECRET"];
+
+  const providedBuf = Buffer.from(dto.workshopAuthToken);
+  const isValid = allowedTokens.some((token) => {
+    const tokenBuf = Buffer.from(token);
+    return (
+      providedBuf.length === tokenBuf.length &&
+      timingSafeEqual(providedBuf, tokenBuf)
+    );
+  });
+
+  if (!isValid) {
     throw new UnauthorizedException(
       "Token de autorización de taller aliado inválido",
     );

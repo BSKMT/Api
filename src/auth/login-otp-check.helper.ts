@@ -10,7 +10,10 @@ import {
   BirdVerifyService,
   type BirdCheckResult,
 } from "../bird-verify/bird-verify.service";
-import { decryptSessionCookies } from "./login-otp-crypto.helper";
+import {
+  decryptSessionCookies,
+  extractCookiesFromHeaders,
+} from "./login-otp-crypto.helper";
 import { maskEmail } from "../common/utils/log-redact.util";
 
 export async function dispatchBirdVerification(
@@ -129,17 +132,17 @@ export async function processBirdCheckResult(
   birdResult: BirdCheckResult,
   sessionEncKey: Buffer,
   logger: Logger,
-): Promise<{ cookies: string[] }> {
+): Promise<{ cookies: string[]; setCookieHeaders: string[] }> {
   if (birdResult.success) {
     otpRecord.status = "verified";
     await otpRecord.save();
 
-    const cookies = decryptSessionCookies(
+    const rawCookies = decryptSessionCookies(
       otpRecord.sessionCookies,
       sessionEncKey,
       logger,
     );
-    if (cookies.length === 0) {
+    if (rawCookies.length === 0) {
       logger.error(
         `Failed to decrypt session cookies for verified OTP: ${requestId}`,
       );
@@ -147,7 +150,13 @@ export async function processBirdCheckResult(
         "El código de verificación ha expirado. Solicita uno nuevo.",
       );
     }
-    return { cookies };
+    const isProd = process.env.NODE_ENV === "production";
+    const setCookieHeaders = rawCookies.map((sc) => {
+      if (sc.includes(";")) return sc;
+      return `${sc}; Path=/; SameSite=Lax; HttpOnly${isProd ? "; Secure" : ""}`;
+    });
+    const cookies = extractCookiesFromHeaders(rawCookies);
+    return { cookies, setCookieHeaders };
   }
 
   otpRecord.attempts += 1;

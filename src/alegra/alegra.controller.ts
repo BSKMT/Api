@@ -2,13 +2,18 @@ import {
   Controller,
   Post,
   Body,
+  Query,
   HttpCode,
   HttpStatus,
   Logger,
+  UnauthorizedException,
 } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { timingSafeEqual } from "node:crypto";
 import { AlegraService } from "./alegra.service";
 import { Public } from "../common/decorators";
 import type { AlegraWebhookPayload } from "./alegra.interfaces";
+import type { EnvironmentConfig } from "../config/config.interface";
 
 /**
  * AlegraController — Expone el endpoint de webhook para recibir
@@ -24,16 +29,17 @@ import type { AlegraWebhookPayload } from "./alegra.interfaces";
  *  - A10: Los errores se manejan graceful — siempre se responde 200
  *    para que Alegra no reintente innecesariamente.
  *
- * Nota: Alegra no firma sus webhooks (sin HMAC). La URL del webhook
- * debe mantenerse privada y configurarse en el dashboard de Alegra.
- * Como defensa adicional, se puede agregar un token secreto en la
- * URL (query param) que se valida en el servicio.
+ * Nota: Si ALEGRA_WEBHOOK_SECRET está configurado en variables de entorno,
+ * se exige el parámetro ?token=<secret> para autenticar la procedencia.
  */
 @Controller("alegra")
 export class AlegraController {
   private readonly logger = new Logger(AlegraController.name);
 
-  constructor(private readonly alegraService: AlegraService) {}
+  constructor(
+    private readonly alegraService: AlegraService,
+    private readonly configService: ConfigService<EnvironmentConfig>,
+  ) {}
 
   /**
    * POST /api/alegra/webhook — Recibe notificaciones de eventos de Alegra.
@@ -45,7 +51,26 @@ export class AlegraController {
   @Public()
   @Post("webhook")
   @HttpCode(HttpStatus.OK)
-  async handleWebhook(@Body() body: unknown) {
+  async handleWebhook(@Body() body: unknown, @Query("token") token?: string) {
+    const configuredSecret = this.configService.get<string>(
+      "ALEGRA_WEBHOOK_SECRET",
+      { infer: true },
+    );
+    if (configuredSecret) {
+      const provided = token ?? "";
+      const secretBuf = Buffer.from(configuredSecret);
+      const providedBuf = Buffer.from(provided);
+      if (
+        providedBuf.length !== secretBuf.length ||
+        !timingSafeEqual(providedBuf, secretBuf)
+      ) {
+        this.logger.warn(
+          "Alegra webhook rejected: invalid or missing secret token",
+        );
+        throw new UnauthorizedException("Invalid webhook secret token");
+      }
+    }
+
     if (!body || typeof body !== "object" || Object.keys(body).length === 0) {
       this.logger.log("Alegra webhook connectivity check received");
       return { received: true };

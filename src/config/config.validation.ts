@@ -133,4 +133,6 @@ export const configValidationSchema = Joi.object({
     is: true,
     then: Joi.required(),
   }),
+  ALEGRA_WEBHOOK_SECRET: Joi.string().allow("").default(""),
+  ALLIED_WORKSHOP_TOKENS: Joi.string().allow("").default(""),
 });

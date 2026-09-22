@@ -129,4 +129,10 @@ export interface EnvironmentConfig {
   ALEGRA_BANK_ACCOUNT_ID: string;
   ALEGRA_SELLER_ID: string;
   ALEGRA_ITEM_ID: string;
+  ALEGRA_WEBHOOK_SECRET?: string;
+
+  /**
+   * Comma-separated list of authorized secret tokens for allied workshop service orders.
+   */
+  ALLIED_WORKSHOP_TOKENS?: string;
 }

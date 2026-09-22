@@ -169,7 +169,11 @@ export class LoginOtpService {
     userEmail: string;
   }> {
     const setCookieHeaders = authResponse.headers.getSetCookie();
-    const sessionCookies = extractCookiesFromHeaders(setCookieHeaders);
+    // Preserve full Set-Cookie header directives (HttpOnly, Secure, SameSite, Path)
+    const sessionCookies =
+      setCookieHeaders.length > 0
+        ? setCookieHeaders
+        : extractCookiesFromHeaders(setCookieHeaders);
 
     const body = (await authResponse.json().catch(() => ({}))) as {
       user?: { id?: string; email?: string };
@@ -208,7 +212,7 @@ export class LoginOtpService {
   async verifyOtp(
     requestId: string,
     code: string,
-  ): Promise<{ cookies: string[] }> {
+  ): Promise<{ cookies: string[]; setCookieHeaders: string[] }> {
     const otpRecord = await this.otpModel.findOne({
       requestId,
       status: "pending",

@@ -1,5 +1,6 @@
 import { BadRequestException, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { timingSafeEqual } from "node:crypto";
 import type { EnvironmentConfig } from "../config/config.interface";
 
 export function clampPaginationLimit(
@@ -28,7 +29,12 @@ export function assertCronSecret(
       ? authorization.slice("Bearer ".length)
       : undefined) ??
     "";
-  if (provided.length !== expected.length || provided !== expected) {
+  const expectedBuf = Buffer.from(expected);
+  const providedBuf = Buffer.from(provided);
+  if (
+    providedBuf.length !== expectedBuf.length ||
+    !timingSafeEqual(providedBuf, expectedBuf)
+  ) {
     logger.warn("Unauthorized cron invocation — secret mismatch (or missing).");
     throw new BadRequestException("Invalid or missing cron secret");
   }
