@@ -102,18 +102,15 @@ export function setupSecurityMiddleware(
       req.path.startsWith("/api/internal/cron/") ||
       req.path === "/api/membership/internal/cron/sweep-pending" ||
       req.path === "/api/events/internal/cron/sweep-stale-registrations" ||
-      req.path === "/api/internal/webhooks/bird/realtime"
+      req.path === "/api/internal/webhooks/bird/realtime" ||
+      req.path === "/api/garage/allied/service-order"
     ) {
-      return next();
-    }
-
-    // Android Native App requests: verified by X-Device-Platform
-    if (req.headers["x-device-platform"] === "android") {
       return next();
     }
 
     const origin = req.headers.origin;
     const referer = req.headers.referer;
+
     if (origin) {
       if (!allowedOrigins.has(origin)) {
         return res.status(403).json({ message: "Origin not allowed" });
@@ -128,10 +125,24 @@ export function setupSecurityMiddleware(
             .status(403)
             .json({ message: "Referer origin not allowed" });
         }
+        return next();
       } catch {
-        // Invalid referer, allow (defense-in-depth, not primary)
+        return res.status(403).json({ message: "Invalid referer header" });
       }
     }
+
+    // Android / Native App requests without browser Origin/Referer headers
+    const userAgent = (req.headers["user-agent"] as string) ?? "";
+    if (
+      req.headers["x-device-platform"] === "android" &&
+      (userAgent.includes("BSK") ||
+        userAgent.includes("Expo") ||
+        userAgent.includes("okhttp") ||
+        userAgent.includes("CFNetwork"))
+    ) {
+      return next();
+    }
+
     return res
       .status(403)
       .json({ message: "Origin or Referer header required" });

@@ -13,6 +13,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { timingSafeEqual } from "node:crypto";
 import type { Request } from "express";
 import { SessionGuard } from "../auth/session.guard";
 import { MembershipService } from "./membership.service";
@@ -196,7 +197,12 @@ export class MembershipController {
         ? authorization.slice("Bearer ".length)
         : undefined) ??
       "";
-    if (provided.length !== expected.length || provided !== expected) {
+    const expectedBuf = Buffer.from(expected);
+    const providedBuf = Buffer.from(provided);
+    if (
+      providedBuf.length !== expectedBuf.length ||
+      !timingSafeEqual(providedBuf, expectedBuf)
+    ) {
       this.logger.warn(
         "Unauthorized cron invocation — secret mismatch (or missing).",
       );

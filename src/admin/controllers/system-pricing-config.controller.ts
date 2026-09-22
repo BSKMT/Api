@@ -14,7 +14,7 @@ import { Throttle } from "@nestjs/throttler";
 import type { Request, Response } from "express";
 import { SessionGuard } from "../../auth/session.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
-import { Roles, Role } from "../../common/decorators";
+import { Roles, Role, Public } from "../../common/decorators";
 import { SystemPricingConfigService } from "../services/system-pricing-config.service";
 import { UpdateSystemPricingConfigDto } from "../dto/system-pricing-config.dto";
 
@@ -32,6 +32,7 @@ export class PublicPricingConfigController {
     private readonly pricingConfigService: SystemPricingConfigService,
   ) {}
 
+  @Public()
   @Get("pricing")
   @Throttle({ default: { ttl: 60000, limit: 120 } })
   async getPublicPricing(

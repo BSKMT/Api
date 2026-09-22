@@ -33,11 +33,19 @@ import {
   executeFindStaffBySubroles,
 } from "./users-query.helper";
 
+import { KvCacheService } from "../kv/kv-cache.service";
+
 @Injectable()
 export class UsersService {
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+    private readonly kvCache: KvCacheService,
   ) {}
+
+  async invalidateUserCache(betterAuthId?: string | null): Promise<void> {
+    if (!betterAuthId) return;
+    await this.kvCache.delete(`user:ba:${betterAuthId}`, true).catch(() => {});
+  }
 
   async findByEmail(email: string): Promise<UserDocument | null> {
     return this.userModel.findOne({ email: email.toLowerCase() }).lean();
@@ -219,7 +227,9 @@ export class UsersService {
       throw new NotFoundException("Usuario no encontrado");
     }
     user.subrol = subrol ?? null;
-    return user.save();
+    const saved = await user.save();
+    await this.invalidateUserCache(user.betterAuthId);
+    return saved;
   }
 
   async listUsers(filters: {

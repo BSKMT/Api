@@ -196,8 +196,12 @@ async function initAuth(): Promise<AuthInstance> {
     },
 
     advanced: {
-      useSecureCookies: false,
-      defaultCookieAttributes: { sameSite: "lax" },
+      useSecureCookies: process.env.NODE_ENV === "production",
+      defaultCookieAttributes: {
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        httpOnly: true,
+      },
     },
 
     trustedOrigins:

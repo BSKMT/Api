@@ -23,6 +23,7 @@ import {
   handlePasswordChange,
 } from "./settings-auth.helpers";
 import { buildUserDataExport } from "./settings-export.helpers";
+import { KvCacheService } from "../kv/kv-cache.service";
 
 @Injectable()
 export class SettingsService {
@@ -30,6 +31,7 @@ export class SettingsService {
 
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+    private readonly kvCache: KvCacheService,
   ) {}
 
   async getSettings(userId: string) {
@@ -181,6 +183,11 @@ export class SettingsService {
     user.accountDeletionRequested = true;
     user.accountDeletionRequestedAt = new Date();
     await user.save();
+    if (user.betterAuthId) {
+      await this.kvCache
+        .delete(`user:ba:${user.betterAuthId}`, true)
+        .catch(() => {});
+    }
 
     await discardOrphanSessionFromAuthResponse(authResponse, user, this.logger);
 
@@ -212,6 +219,11 @@ export class SettingsService {
     user.accountDeletionRequested = false;
     user.accountDeletionRequestedAt = null;
     await user.save();
+    if (user.betterAuthId) {
+      await this.kvCache
+        .delete(`user:ba:${user.betterAuthId}`, true)
+        .catch(() => {});
+    }
     return { success: true, message: "Solicitud cancelada" };
   }
 

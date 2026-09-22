@@ -118,6 +118,29 @@ export class BirdRealtimeController {
     const role = req.user?.role ?? "user";
     const displayName = req.user?.email ?? "";
 
+    // Channel-level authorization enforcement
+    if (channelName.startsWith("private-user-")) {
+      const channelOwner = channelName.slice("private-user-".length);
+      const isOwner =
+        channelOwner === betterAuthId ||
+        channelOwner === (req.user as { userId?: string })?.userId;
+      if (!isOwner && role !== "admin") {
+        throw new ForbiddenException(
+          "No tienes autorización para unirte a este canal privado de usuario",
+        );
+      }
+    }
+
+    if (
+      (channelName.startsWith("private-admin") ||
+        channelName.startsWith("presence-admin")) &&
+      role !== "admin"
+    ) {
+      throw new ForbiddenException(
+        "Acceso denegado a canales de administración",
+      );
+    }
+
     return signChannelAuth(
       key,
       secret,

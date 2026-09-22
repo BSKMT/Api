@@ -47,11 +47,21 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         );
       }
 
-      return response.status(status).json({
+      const payload: Record<string, unknown> = {
         statusCode: status,
         message,
         timestamp: new Date().toISOString(),
-      });
+      };
+      if (
+        exceptionResponse &&
+        typeof exceptionResponse === "object" &&
+        "error" in exceptionResponse &&
+        typeof (exceptionResponse as Record<string, unknown>).error === "string"
+      ) {
+        payload.error = (exceptionResponse as Record<string, unknown>).error;
+      }
+
+      return response.status(status).json(payload);
     }
 
     this.logger.error(

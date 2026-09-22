@@ -5,9 +5,10 @@ import {
   HttpCode,
   HttpStatus,
   Req,
+  Res,
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
-import type { Request } from "express";
+import type { Request, Response } from "express";
 import { LoginOtpService } from "./login-otp.service";
 import { LoginOtpInitiateDto, LoginOtpVerifyDto } from "./dto/login-otp.dto";
 import { Public } from "../common/decorators";
@@ -36,12 +37,7 @@ export class LoginOtpController {
     @Body() dto: LoginOtpInitiateDto,
     @Req() req: Request,
   ): Promise<{ requestId: string }> {
-    const clientIp =
-      (req.headers["x-forwarded-for"] as string | undefined)
-        ?.split(",")[0]
-        ?.trim() ??
-      req.ip ??
-      "";
+    const clientIp = req.ip ?? "";
     const userAgent = req.headers["user-agent"] ?? "";
     return this.loginOtpService.initiateLogin(
       dto.email,
@@ -56,7 +52,19 @@ export class LoginOtpController {
   @Post("verify")
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 60000, limit: 10 } })
-  async verify(@Body() dto: LoginOtpVerifyDto): Promise<{ cookies: string[] }> {
-    return this.loginOtpService.verifyOtp(dto.requestId, dto.code);
+  async verify(
+    @Body() dto: LoginOtpVerifyDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{ cookies: string[] }> {
+    const result = await this.loginOtpService.verifyOtp(
+      dto.requestId,
+      dto.code,
+    );
+    if (result.setCookieHeaders && Array.isArray(result.setCookieHeaders)) {
+      for (const cookie of result.setCookieHeaders) {
+        res.append("Set-Cookie", cookie);
+      }
+    }
+    return { cookies: result.cookies };
   }
 }
