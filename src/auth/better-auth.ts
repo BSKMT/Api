@@ -211,6 +211,9 @@ async function initAuth(): Promise<AuthInstance> {
         sameSite: "lax",
         secure: process.env.NODE_ENV === "production",
         httpOnly: true,
+        ...(process.env.NODE_ENV === "production"
+          ? { domain: ".bskmt.com" }
+          : {}),
       },
     },
 

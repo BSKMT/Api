@@ -31,50 +31,98 @@ export function createBetterAuthHooks(mongoDb: Db, authLogger: Logger) {
         },
         after: async (user: BetterAuthUser): Promise<void> => {
           try {
-            const primerNombre = user.primerNombre ?? "";
+            let primerNombre = user.primerNombre ?? "";
             const segundoNombre = user.segundoNombre ?? "";
-            const primerApellido = user.primerApellido ?? "";
+            let primerApellido = user.primerApellido ?? "";
             const segundoApellido = user.segundoApellido ?? "";
             const country = user.country ?? "";
             const birthDate = user.birthDate ?? "";
 
-            const tieneDatosPersonales = primerNombre || primerApellido;
+            // If user signed up via Google, parse name into primerNombre / primerApellido
+            if (!primerNombre && user.name) {
+              const parts = user.name.trim().split(/\s+/);
+              if (parts.length > 0) {
+                primerNombre = parts[0];
+                if (parts.length > 1) {
+                  primerApellido = parts.slice(1).join(" ");
+                }
+              }
+            }
 
-            await mongoDb.collection("users").insertOne({
-              email: user.email.toLowerCase(),
-              betterAuthId: user.id,
-              role: "user",
-              profileCompleted: false,
-              emailVerified: user.emailVerified ?? false,
-              legalConsentAccepted: false,
-              isActive: true,
-              phone: null,
-              phoneVerified: false,
-              phoneVerifiedAt: null,
-              pendingPhone: null,
-              pendingEmail: null,
-              completedSections: tieneDatosPersonales
-                ? ["datos-personales"]
-                : [],
-              profile: tieneDatosPersonales
-                ? {
-                    "datos-personales": {
-                      primerNombre,
-                      segundoNombre,
-                      primerApellido,
-                      segundoApellido,
-                      nacionalidad: country,
-                      fechaNacimiento: birthDate,
-                    },
-                  }
-                : {},
-              installmentsPaid: 0,
-              installmentsTotal: 12,
-              renewalInstallmentsPaid: 0,
-              membershipExpired: false,
-              createdAt: new Date(),
-              updatedAt: new Date(),
+            const tieneDatosPersonales = Boolean(
+              primerNombre || primerApellido,
+            );
+
+            const existingUser = await mongoDb.collection("users").findOne({
+              $or: [
+                { email: user.email.toLowerCase() },
+                { betterAuthId: user.id },
+              ],
             });
+
+            if (existingUser) {
+              await mongoDb.collection("users").updateOne(
+                { _id: existingUser._id },
+                {
+                  $set: {
+                    betterAuthId: user.id,
+                    emailVerified:
+                      user.emailVerified ?? existingUser.emailVerified ?? false,
+                    updatedAt: new Date(),
+                    ...(tieneDatosPersonales &&
+                    (!existingUser.profile ||
+                      !existingUser.profile["datos-personales"])
+                      ? {
+                          "profile.datos-personales": {
+                            primerNombre,
+                            segundoNombre,
+                            primerApellido,
+                            segundoApellido,
+                            nacionalidad: country,
+                            fechaNacimiento: birthDate,
+                          },
+                        }
+                      : {}),
+                  },
+                },
+              );
+            } else {
+              await mongoDb.collection("users").insertOne({
+                email: user.email.toLowerCase(),
+                betterAuthId: user.id,
+                role: "user",
+                profileCompleted: false,
+                emailVerified: user.emailVerified ?? false,
+                legalConsentAccepted: false,
+                isActive: true,
+                phone: null,
+                phoneVerified: false,
+                phoneVerifiedAt: null,
+                pendingPhone: null,
+                pendingEmail: null,
+                completedSections: tieneDatosPersonales
+                  ? ["datos-personales"]
+                  : [],
+                profile: tieneDatosPersonales
+                  ? {
+                      "datos-personales": {
+                        primerNombre,
+                        segundoNombre,
+                        primerApellido,
+                        segundoApellido,
+                        nacionalidad: country,
+                        fechaNacimiento: birthDate,
+                      },
+                    }
+                  : {},
+                installmentsPaid: 0,
+                installmentsTotal: 12,
+                renewalInstallmentsPaid: 0,
+                membershipExpired: false,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              });
+            }
           } catch (err) {
             authLogger.error(
               `[databaseHooks] Failed to insert Mongoose user for betterAuthId=${user.id} email=${maskEmail(user.email)}: ${err instanceof Error ? err.message : String(err)}`,
