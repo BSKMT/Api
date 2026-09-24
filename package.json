@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@better-auth/mongo-adapter": "^1.7.2",
+    "@better-auth/passkey": "^1.7.5",
     "@messagebird/sdk": "^0.27.0",
     "@nestjs/common": "^11.2.3",
     "@nestjs/config": "^4.0.4",

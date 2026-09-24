@@ -22,19 +22,28 @@ export type {
 } from "./better-auth.types";
 export type Session = BetterAuthSessionData;
 
-let depsPromise: Promise<BetterAuthDeps> | null = null;
+interface BetterAuthExtendedDeps extends BetterAuthDeps {
+  passkeyPlugin: (options?: Record<string, unknown>) => unknown;
+}
 
-async function loadBetterAuthDeps(): Promise<BetterAuthDeps> {
-  depsPromise ??= (async (): Promise<BetterAuthDeps> => {
-    const [coreRaw, mongoRaw] = await Promise.all([
+let depsPromise: Promise<BetterAuthExtendedDeps> | null = null;
+
+async function loadBetterAuthDeps(): Promise<BetterAuthExtendedDeps> {
+  depsPromise ??= (async (): Promise<BetterAuthExtendedDeps> => {
+    const [coreRaw, mongoRaw, passkeyRaw] = await Promise.all([
       import("better-auth"),
       import("better-auth/adapters/mongodb"),
+      import("@better-auth/passkey"),
     ]);
     const core = coreRaw as unknown as BetterAuthCoreModule;
     const mongoMod = mongoRaw as unknown as BetterAuthMongoModule;
+    const passkeyMod = passkeyRaw as unknown as {
+      passkey: (options?: Record<string, unknown>) => unknown;
+    };
     return {
       betterAuth: core.betterAuth,
       mongodbAdapter: mongoMod.mongodbAdapter,
+      passkeyPlugin: passkeyMod.passkey,
     };
   })();
   return depsPromise;
@@ -73,7 +82,8 @@ export function setAuthDependencies(
 }
 
 async function initAuth(): Promise<AuthInstance> {
-  const { betterAuth, mongodbAdapter } = await loadBetterAuthDeps();
+  const { betterAuth, mongodbAdapter, passkeyPlugin } =
+    await loadBetterAuthDeps();
 
   try {
     const migrationResult = await mongoDb.collection("account").updateMany(
@@ -221,6 +231,36 @@ async function initAuth(): Promise<AuthInstance> {
 
     disabledPaths: ["/sign-in/email"],
     databaseHooks: createBetterAuthHooks(mongoDb, authLogger),
+
+    plugins: [
+      passkeyPlugin({
+        rpID:
+          process.env.PASSKEY_RP_ID ??
+          (process.env.NODE_ENV === "production" ? "bskmt.com" : "localhost"),
+        rpName: "BSK Motorcycle Team",
+        origin:
+          process.env.NODE_ENV === "production"
+            ? ["https://bskmt.com", "https://dash.bskmt.com"]
+            : [
+                "https://bskmt.com",
+                "https://dash.bskmt.com",
+                "http://localhost:3000",
+                "http://localhost:4321",
+                "http://localhost:4322",
+              ],
+      }),
+    ],
+
+    ...(process.env.GOOGLE_CLIENT_ID
+      ? {
+          socialProviders: {
+            google: {
+              clientId: process.env.GOOGLE_CLIENT_ID,
+              clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+            },
+          },
+        }
+      : {}),
   });
 }
 
