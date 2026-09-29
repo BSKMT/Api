@@ -135,4 +135,11 @@ export const configValidationSchema = Joi.object({
   }),
   ALEGRA_WEBHOOK_SECRET: Joi.string().allow("").default(""),
   ALLIED_WORKSHOP_TOKENS: Joi.string().allow("").default(""),
+
+  // Cloudinary — Media Platform (Images, Videos, Transformations & Storage)
+  CLOUDINARY_CLOUD_NAME: Joi.string().allow("").default(""),
+  CLOUDINARY_API_KEY: Joi.string().allow("").default(""),
+  CLOUDINARY_API_SECRET: Joi.string().allow("").default(""),
+  CLOUDINARY_URL: Joi.string().allow("").default(""),
+  CLOUDINARY_UPLOAD_PRESET: Joi.string().allow("").default(""),
 });
