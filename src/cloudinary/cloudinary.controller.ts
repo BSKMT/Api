@@ -13,13 +13,10 @@ import {
   HttpCode,
   HttpStatus,
   Req,
-  UseGuards,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { CloudinaryService } from "./cloudinary.service";
 import { Public } from "../common/decorators/public.decorator";
-import { Roles, Role } from "../common/decorators";
-import { RolesGuard } from "../common/guards/roles.guard";
 import {
   ALLOWED_CLOUDINARY_FOLDERS,
   ALLOWED_MIME_TYPES,
@@ -60,10 +57,15 @@ const STAFF_ROLES: readonly string[] = [
   "community_manager",
 ];
 
-function isStaffUser(role?: string): boolean {
-  if (!role) return false;
-  const normalized = role.toLowerCase().trim();
-  return STAFF_ROLES.includes(normalized);
+function isStaffUser(role?: string, subrol?: string | null): boolean {
+  if (role) {
+    const normalized = role.toLowerCase().trim();
+    if (STAFF_ROLES.includes(normalized) || normalized === "admin") return true;
+  }
+  if (subrol) {
+    return true; // Any collaborative staff member
+  }
+  return false;
 }
 
 @Controller("cloudinary")
@@ -122,7 +124,7 @@ export class CloudinaryController {
 
     if (
       RESTRICTED_CATALOG_FOLDERS.includes(folder) &&
-      !isStaffUser(req.user?.role)
+      !isStaffUser(req.user?.role, req.user?.subrol)
     ) {
       throw new ForbiddenException(
         `No tienes permisos para subir archivos a la carpeta '${folder}'. Las subidas de usuarios estándar se restringen a 'avatars' y 'garage'.`,
@@ -167,7 +169,7 @@ export class CloudinaryController {
 
     if (
       RESTRICTED_CATALOG_FOLDERS.includes(folder) &&
-      !isStaffUser(req.user?.role)
+      !isStaffUser(req.user?.role, req.user?.subrol)
     ) {
       throw new ForbiddenException(
         `No tienes permisos para subir archivos a la carpeta '${folder}'. Las subidas de usuarios estándar se restringen a 'avatars' y 'garage'.`,
@@ -196,10 +198,8 @@ export class CloudinaryController {
    */
   @Post("signature")
   @HttpCode(HttpStatus.OK)
-  @UseGuards(RolesGuard)
-  @Roles(Role.ADMIN, Role.EVENT_MANAGER)
   generateSignature(@Body() body: GenerateSignatureDto, @Req() req: any) {
-    if (!isStaffUser(req.user?.role)) {
+    if (!isStaffUser(req.user?.role, req.user?.subrol)) {
       throw new ForbiddenException(
         "Solo administradores y gestores pueden generar firmas de subida delegadas.",
       );
@@ -266,15 +266,13 @@ export class CloudinaryController {
    */
   @Delete(["*publicId", ""])
   @HttpCode(HttpStatus.OK)
-  @UseGuards(RolesGuard)
-  @Roles(Role.ADMIN, Role.EVENT_MANAGER)
   async deleteAsset(
     @Param("publicId") publicIdParam: string | string[] | undefined,
     @Query("publicId") publicIdQuery: string | undefined,
     @Body("publicId") publicIdBody: string | undefined,
     @Req() req: any,
   ) {
-    if (!isStaffUser(req.user?.role)) {
+    if (!isStaffUser(req.user?.role, req.user?.subrol)) {
       throw new ForbiddenException(
         "No tienes permisos suficientes para eliminar archivos de Cloudinary. Operación restringida a Administradores.",
       );
