@@ -143,9 +143,15 @@ export class CloudinaryController {
       tags.push(`user_${req.user.userId}`);
     }
 
+    const metadata: Record<string, string> = {
+      bsk_module: folder,
+      ...(req.user?.userId ? { bsk_user_id: String(req.user.userId) } : {}),
+    };
+
     const result = await this.cloudinaryService.uploadFile(file, {
       folder,
       tags,
+      metadata,
     });
 
     return {
@@ -181,9 +187,15 @@ export class CloudinaryController {
       tags.push(`user_${req.user.userId}`);
     }
 
+    const metadata: Record<string, string> = {
+      bsk_module: folder,
+      ...(req.user?.userId ? { bsk_user_id: String(req.user.userId) } : {}),
+    };
+
     const result = await this.cloudinaryService.uploadBase64(body.image, {
       folder,
       tags,
+      metadata,
     });
 
     return {
