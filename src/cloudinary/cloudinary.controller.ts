@@ -17,7 +17,9 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { CloudinaryService } from "./cloudinary.service";
 import { Public } from "../common/decorators/public.decorator";
 import {
+  ALLOWED_CLOUDINARY_FOLDERS,
   ALLOWED_MIME_TYPES,
+  CloudinaryFolder,
   MAX_FILE_SIZE_BYTES,
 } from "./cloudinary.constants";
 import {
@@ -25,6 +27,17 @@ import {
   UploadBase64Dto,
   GenerateSignatureDto,
 } from "./dto/upload.dto";
+
+function sanitizeFolder(folder?: string): CloudinaryFolder {
+  if (!folder) return "general";
+  const cleaned = folder
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "");
+  return (ALLOWED_CLOUDINARY_FOLDERS as readonly string[]).includes(cleaned)
+    ? (cleaned as CloudinaryFolder)
+    : "general";
+}
 
 @Controller("cloudinary")
 export class CloudinaryController {
@@ -76,12 +89,7 @@ export class CloudinaryController {
       );
     }
 
-    // Sanitize folder
-    const rawFolder = (body.folder || "general")
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9_-]/g, "");
-    const folder = rawFolder || "general";
+    const folder = sanitizeFolder(body.folder);
 
     const tags = body.tags
       ? body.tags
@@ -116,11 +124,7 @@ export class CloudinaryController {
       throw new BadRequestException('Campo "image" en base64 requerido.');
     }
 
-    const rawFolder = (body.folder || "general")
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9_-]/g, "");
-    const folder = rawFolder || "general";
+    const folder = sanitizeFolder(body.folder);
 
     const tags = Array.isArray(body.tags) ? [...body.tags] : ["bskmt"];
     if (req.user?.userId) {
