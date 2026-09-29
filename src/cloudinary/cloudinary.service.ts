@@ -32,6 +32,8 @@ export interface UploadOptions {
   publicId?: string;
   transformation?: TransformationOptions | TransformationOptions[];
   resourceType?: "image" | "video" | "raw" | "auto";
+  metadata?: Record<string, string>;
+  context?: Record<string, string>;
 }
 
 @Injectable()
@@ -71,6 +73,18 @@ export class CloudinaryService {
       ? `bskmt/${options.folder}`
       : "bskmt/general";
 
+    const metadataEntries: string[] = [];
+    if (options.folder) {
+      metadataEntries.push(`bsk_module=${options.folder}`);
+    }
+    if (options.metadata) {
+      for (const [k, v] of Object.entries(options.metadata)) {
+        if (v) metadataEntries.push(`${k}=${v}`);
+      }
+    }
+    const metadataString =
+      metadataEntries.length > 0 ? metadataEntries.join("|") : undefined;
+
     return new Promise((resolve, reject) => {
       const uploadStream = this.cloudinary.uploader.upload_stream(
         {
@@ -82,6 +96,8 @@ export class CloudinaryService {
           transformation: options.transformation || [
             { quality: "auto", fetch_format: "auto" },
           ],
+          ...(metadataString ? { metadata: metadataString } : {}),
+          ...(options.context ? { context: options.context } : {}),
         },
         (error?: UploadApiErrorResponse, result?: UploadApiResponse) => {
           if (error || !result) {
@@ -148,6 +164,18 @@ export class CloudinaryService {
       ? `bskmt/${options.folder}`
       : "bskmt/general";
 
+    const metadataEntries: string[] = [];
+    if (options.folder) {
+      metadataEntries.push(`bsk_module=${options.folder}`);
+    }
+    if (options.metadata) {
+      for (const [k, v] of Object.entries(options.metadata)) {
+        if (v) metadataEntries.push(`${k}=${v}`);
+      }
+    }
+    const metadataString =
+      metadataEntries.length > 0 ? metadataEntries.join("|") : undefined;
+
     try {
       const result = await this.cloudinary.uploader.upload(base64Data, {
         folder: folderName,
@@ -158,6 +186,8 @@ export class CloudinaryService {
         transformation: options.transformation || [
           { quality: "auto", fetch_format: "auto" },
         ],
+        ...(metadataString ? { metadata: metadataString } : {}),
+        ...(options.context ? { context: options.context } : {}),
       });
 
       return {
