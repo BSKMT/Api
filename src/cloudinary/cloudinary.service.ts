@@ -13,11 +13,7 @@ import {
   TransformationOptions,
 } from "cloudinary";
 import { Readable } from "node:stream";
-import {
-  CLOUDINARY,
-  ALLOWED_CLOUDINARY_FOLDERS,
-  CloudinaryFolder,
-} from "./cloudinary.constants";
+import { CLOUDINARY, CloudinaryFolder } from "./cloudinary.constants";
 
 export interface CloudinaryUploadResult {
   publicId: string;
@@ -31,7 +27,7 @@ export interface CloudinaryUploadResult {
 }
 
 export interface UploadOptions {
-  folder?: CloudinaryFolder | string;
+  folder?: CloudinaryFolder;
   tags?: string[];
   publicId?: string;
   transformation?: TransformationOptions | TransformationOptions[];
