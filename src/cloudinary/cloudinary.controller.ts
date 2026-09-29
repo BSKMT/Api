@@ -264,18 +264,33 @@ export class CloudinaryController {
    * Deletes an uploaded asset by its public_id.
    * Strictly restricted to administrators and managers.
    */
-  @Delete(":publicId(*)")
+  @Delete(["*publicId", ""])
   @HttpCode(HttpStatus.OK)
   @UseGuards(RolesGuard)
   @Roles(Role.ADMIN, Role.EVENT_MANAGER)
-  async deleteAsset(@Param("publicId") publicId: string, @Req() req: any) {
+  async deleteAsset(
+    @Param("publicId") publicIdParam: string | string[] | undefined,
+    @Query("publicId") publicIdQuery: string | undefined,
+    @Body("publicId") publicIdBody: string | undefined,
+    @Req() req: any,
+  ) {
     if (!isStaffUser(req.user?.role)) {
       throw new ForbiddenException(
         "No tienes permisos suficientes para eliminar archivos de Cloudinary. Operación restringida a Administradores.",
       );
     }
 
-    const res = await this.cloudinaryService.deleteFile(publicId);
+    const resolvedPublicId = Array.isArray(publicIdParam)
+      ? publicIdParam.join("/")
+      : publicIdParam || publicIdQuery || publicIdBody;
+
+    if (!resolvedPublicId) {
+      throw new BadRequestException(
+        "El publicId del archivo a eliminar es requerido.",
+      );
+    }
+
+    const res = await this.cloudinaryService.deleteFile(resolvedPublicId);
     return {
       success: true,
       ...res,
