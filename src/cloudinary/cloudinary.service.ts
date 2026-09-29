@@ -78,6 +78,7 @@ export class CloudinaryService {
           public_id: options.publicId,
           tags: options.tags || ["bskmt"],
           resource_type: options.resourceType || "auto",
+          sanitize: true,
           transformation: options.transformation || [
             { quality: "auto", fetch_format: "auto" },
           ],
@@ -153,6 +154,7 @@ export class CloudinaryService {
         public_id: options.publicId,
         tags: options.tags || ["bskmt"],
         resource_type: options.resourceType || "auto",
+        sanitize: true,
         transformation: options.transformation || [
           { quality: "auto", fetch_format: "auto" },
         ],

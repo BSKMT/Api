@@ -9,13 +9,17 @@ import {
   UploadedFile,
   UseInterceptors,
   BadRequestException,
+  ForbiddenException,
   HttpCode,
   HttpStatus,
   Req,
+  UseGuards,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { CloudinaryService } from "./cloudinary.service";
 import { Public } from "../common/decorators/public.decorator";
+import { Roles, Role } from "../common/decorators";
+import { RolesGuard } from "../common/guards/roles.guard";
 import {
   ALLOWED_CLOUDINARY_FOLDERS,
   ALLOWED_MIME_TYPES,
@@ -28,6 +32,14 @@ import {
   GenerateSignatureDto,
 } from "./dto/upload.dto";
 
+const RESTRICTED_CATALOG_FOLDERS: readonly CloudinaryFolder[] = [
+  "products",
+  "events",
+  "courses",
+  "documents",
+  "arpha",
+];
+
 function sanitizeFolder(folder?: string): CloudinaryFolder {
   if (!folder) return "general";
   const cleaned = folder
@@ -39,26 +51,43 @@ function sanitizeFolder(folder?: string): CloudinaryFolder {
     : "general";
 }
 
+const STAFF_ROLES: readonly string[] = [
+  "admin",
+  "event-manager",
+  "moderator",
+  "road-captain",
+  "gestor",
+  "community_manager",
+];
+
+function isStaffUser(role?: string): boolean {
+  if (!role) return false;
+  const normalized = role.toLowerCase().trim();
+  return STAFF_ROLES.includes(normalized);
+}
+
 @Controller("cloudinary")
 export class CloudinaryController {
   constructor(private readonly cloudinaryService: CloudinaryService) {}
 
   /**
    * Public configuration endpoint.
-   * Clients (Astro, Next.js, Android) can get the cloudName & uploadPreset without leaking secrets.
+   * Returns cloudName for client use without exposing internal upload presets.
    */
   @Public()
   @Get("config")
   getConfig() {
     return {
       status: "ok",
-      config: this.cloudinaryService.getPublicConfig(),
+      config: {
+        cloudName: this.cloudinaryService.getPublicConfig().cloudName,
+      },
     };
   }
 
   /**
    * Upload an image file via multipart/form-data.
-   * Available to authenticated users (admin, gestor, and regular users for avatars/garage).
+   * Authenticated endpoint. Restricted catalog folders require staff role.
    */
   @Post("upload")
   @HttpCode(HttpStatus.OK)
@@ -91,6 +120,15 @@ export class CloudinaryController {
 
     const folder = sanitizeFolder(body.folder);
 
+    if (
+      RESTRICTED_CATALOG_FOLDERS.includes(folder) &&
+      !isStaffUser(req.user?.role)
+    ) {
+      throw new ForbiddenException(
+        `No tienes permisos para subir archivos a la carpeta '${folder}'. Las subidas de usuarios estándar se restringen a 'avatars' y 'garage'.`,
+      );
+    }
+
     const tags = body.tags
       ? body.tags
           .split(",")
@@ -116,6 +154,7 @@ export class CloudinaryController {
 
   /**
    * Upload an image encoded in base64 format.
+   * Authenticated endpoint. Restricted catalog folders require staff role.
    */
   @Post("upload-base64")
   @HttpCode(HttpStatus.OK)
@@ -125,6 +164,15 @@ export class CloudinaryController {
     }
 
     const folder = sanitizeFolder(body.folder);
+
+    if (
+      RESTRICTED_CATALOG_FOLDERS.includes(folder) &&
+      !isStaffUser(req.user?.role)
+    ) {
+      throw new ForbiddenException(
+        `No tienes permisos para subir archivos a la carpeta '${folder}'. Las subidas de usuarios estándar se restringen a 'avatars' y 'garage'.`,
+      );
+    }
 
     const tags = Array.isArray(body.tags) ? [...body.tags] : ["bskmt"];
     if (req.user?.userId) {
@@ -144,13 +192,37 @@ export class CloudinaryController {
 
   /**
    * Generates a signed upload signature for direct client-side uploads.
+   * Strictly restricted to administrators and managers with parameter allowlisting.
    */
   @Post("signature")
   @HttpCode(HttpStatus.OK)
-  generateSignature(@Body() body: GenerateSignatureDto) {
-    const signatureData = this.cloudinaryService.generateUploadSignature(
-      body.paramsToSign || {},
-    );
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN, Role.EVENT_MANAGER)
+  generateSignature(@Body() body: GenerateSignatureDto, @Req() req: any) {
+    if (!isStaffUser(req.user?.role)) {
+      throw new ForbiddenException(
+        "Solo administradores y gestores pueden generar firmas de subida delegadas.",
+      );
+    }
+
+    const params = { ...(body.paramsToSign || {}) };
+
+    if (params.overwrite === true || params.overwrite === "true") {
+      throw new BadRequestException(
+        "El parámetro 'overwrite' no está permitido en firmas delegadas.",
+      );
+    }
+    if (params.notification_url) {
+      throw new BadRequestException(
+        "El parámetro 'notification_url' no está permitido en firmas delegadas.",
+      );
+    }
+    if (params.folder) {
+      params.folder = sanitizeFolder(String(params.folder));
+    }
+
+    const signatureData =
+      this.cloudinaryService.generateUploadSignature(params);
     return {
       success: true,
       ...signatureData,
@@ -190,19 +262,17 @@ export class CloudinaryController {
 
   /**
    * Deletes an uploaded asset by its public_id.
+   * Strictly restricted to administrators and managers.
    */
   @Delete(":publicId(*)")
   @HttpCode(HttpStatus.OK)
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN, Role.EVENT_MANAGER)
   async deleteAsset(@Param("publicId") publicId: string, @Req() req: any) {
-    // Basic authorization check: verify user role if needed
-    const userRole = req.user?.role;
-    if (
-      userRole !== "ADMIN" &&
-      userRole !== "GESTOR" &&
-      userRole !== "COMMUNITY_MANAGER"
-    ) {
-      // Regular users can only delete if the public_id belongs to their folder or tag
-      // For safety, allow admins/gestors full deletion
+    if (!isStaffUser(req.user?.role)) {
+      throw new ForbiddenException(
+        "No tienes permisos suficientes para eliminar archivos de Cloudinary. Operación restringida a Administradores.",
+      );
     }
 
     const res = await this.cloudinaryService.deleteFile(publicId);
