@@ -48,12 +48,14 @@ export class BirdWhatsappService {
    * un WhatsApp Business Account en Bird.
    */
   private readonly sender: string;
+  private readonly defaultTemplateSlug: string;
 
   /** Patron E.164: + seguido de 6-15 digitos. */
   private static readonly E164_PATTERN = /^\+[1-9]\d{5,14}$/;
 
   constructor(private readonly birdService: BirdService) {
     this.sender = process.env.BIRD_WHATSAPP_SENDER ?? "";
+    this.defaultTemplateSlug = process.env.BIRD_WHATSAPP_TEMPLATE_SLUG ?? "";
   }
 
   /** Valida que un numero este en formato E.164. */
@@ -68,38 +70,32 @@ export class BirdWhatsappService {
 
   /**
    * Envia un mensaje WhatsApp transaccional de notificacion del
-   * sistema como texto libre (free-form text).
+   * sistema como plantilla aprobada (proactiva) o texto libre
+   * (dentro de ventana de 24h).
    *
    * Requisitos:
    *  - Bird debe estar configurado (`BIRD_API_KEY` valida).
-   *  - El remitente (`BIRD_WHATSAPP_SENDER`) debe ser E.164 valido.
    *  - El destinatario (`to`) debe ser E.164 valido.
-   *  - Debe existir una ventana de servicio al cliente abierta (24h).
-   *    Si no, Bird acepta (202) pero falla asincronamente; el fallo
-   *    se detecta leyendo el mensaje posteriormente, no en el envio.
+   *  - Si se envia como plantilla (`templateSlug` o env `BIRD_WHATSAPP_TEMPLATE_SLUG`):
+   *    Puede entregarse en cualquier momento (incluso fuera de 24h).
+   *  - Si se envia como texto libre:
+   *    Requiere `BIRD_WHATSAPP_SENDER` configurado y ventana de 24h abierta.
    *
-   * @param data.to      Numero E.164 del destinatario (ej: +573001234567).
-   * @param data.title    Titulo corto de la notificacion.
-   * @param data.message  Cuerpo del mensaje.
-   * @returns `true` si Bird acepto el mensaje (202), `false` si fallo
-   *          la validacion, Bird no esta configurado, o el sender no
-   *          es E.164 valido.
+   * @param data.to            Numero E.164 del destinatario (ej: +573001234567).
+   * @param data.title          Titulo corto de la notificacion.
+   * @param data.message        Cuerpo del mensaje.
+   * @param data.templateSlug   Slug opcional de plantilla de WhatsApp aprobada.
+   * @param data.language       Idioma de la plantilla (default "es").
+   * @returns `true` si Bird acepto el mensaje (202), `false` si fallo.
    */
   async sendNotificationWhatsapp(data: {
     to: string;
     title: string;
     message: string;
+    templateSlug?: string;
+    language?: string;
   }): Promise<boolean> {
     if (!this.birdService.isConfigured()) return false;
-
-    if (!this.isSenderConfigured()) {
-      this.logger.warn(
-        "BIRD_WHATSAPP_SENDER no configurado o formato E.164 invalido " +
-          "(debe ser +<country><number>, ej: +13124495648). " +
-          "WhatsApp omitido.",
-      );
-      return false;
-    }
 
     if (!this.isValidE164(data.to)) {
       this.logger.warn(
@@ -108,13 +104,58 @@ export class BirdWhatsappService {
       return false;
     }
 
-    const body = notificationWhatsappTemplate({
-      title: data.title,
-      message: data.message,
-    });
+    const templateSlug = data.templateSlug || this.defaultTemplateSlug;
 
     try {
       const client = await this.birdService.getClient();
+
+      if (templateSlug) {
+        // Envio con plantilla aprobada (entrega garantizada fuera de ventana de 24h)
+        const sendParams: Record<string, unknown> = {
+          to: data.to,
+          template: {
+            slug: templateSlug,
+            language: data.language ?? "es",
+            components: [
+              {
+                type: "body",
+                parameters: [
+                  { type: "text", text: data.title },
+                  { type: "text", text: data.message },
+                ],
+              },
+            ],
+          },
+          tags: [{ name: "channel", value: "notification" }],
+        };
+        // Para plantillas administradas por Bird (bird_*), no enviar 'from'.
+        // Para plantillas propias del workspace, enviar 'from' si esta configurado.
+        if (this.isSenderConfigured() && !templateSlug.startsWith("bird_")) {
+          sendParams["from"] = this.sender;
+        }
+
+        await client.whatsapp.send(sendParams as never);
+        this.logger.log(
+          `WhatsApp (plantilla "${templateSlug}") enviado a ${maskPhone(data.to)}`,
+        );
+        return true;
+      }
+
+      // Envio como texto libre (requiere remitente y ventana de 24h abierta)
+      if (!this.isSenderConfigured()) {
+        this.logger.warn(
+          "BIRD_WHATSAPP_SENDER no configurado o formato E.164 invalido " +
+            "(debe ser +<country><number>, ej: +13124495648). " +
+            "WhatsApp omitido.",
+        );
+        return false;
+      }
+
+      const body = notificationWhatsappTemplate({
+        title: data.title,
+        message: data.message,
+      });
+
       await client.whatsapp.send({
         to: data.to,
         from: this.sender,
@@ -129,9 +170,20 @@ export class BirdWhatsappService {
       );
       return true;
     } catch (err: unknown) {
-      this.logger.error(
-        `Error enviando WhatsApp a ${maskPhone(data.to)}: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (
+        errMsg.includes("WhatsAppServiceWindowClosed") ||
+        errMsg.includes("422")
+      ) {
+        this.logger.warn(
+          `WhatsApp a ${maskPhone(data.to)} no entregado: ventana de 24 horas del usuario cerrada. ` +
+            "Para notificaciones proactivas fuera de la ventana de 24h, configure una plantilla aprobada (BIRD_WHATSAPP_TEMPLATE_SLUG).",
+        );
+      } else {
+        this.logger.error(
+          `Error enviando WhatsApp a ${maskPhone(data.to)}: ${errMsg}`,
+        );
+      }
       return false;
     }
   }

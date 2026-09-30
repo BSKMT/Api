@@ -44,6 +44,7 @@ export class BirdService {
     appId: string;
     key: string;
     secret: string;
+    region: string;
   } | null = null;
 
   private readonly webhookSecret: string | undefined;
@@ -79,8 +80,14 @@ export class BirdService {
     const rtAppId = process.env.BIRD_REALTIME_APP_ID ?? "";
     const rtKey = process.env.BIRD_REALTIME_KEY ?? "";
     const rtSecret = process.env.BIRD_REALTIME_SECRET ?? "";
+    const rtRegion = process.env.BIRD_REALTIME_REGION ?? "us1";
     if (rtAppId && rtKey && rtSecret) {
-      this.realtimeConfig = { appId: rtAppId, key: rtKey, secret: rtSecret };
+      this.realtimeConfig = {
+        appId: rtAppId,
+        key: rtKey,
+        secret: rtSecret,
+        region: rtRegion,
+      };
       this.logger.log(
         `Bird Realtime configurado (appId: ${rtAppId.slice(0, 8)}...) — publish y member events activos.`,
       );
@@ -120,6 +127,12 @@ export class BirdService {
 
   getRealtimeSecret(): string | null {
     return this.realtimeConfig?.secret ?? null;
+  }
+
+  getRealtimeRegion(): string {
+    return (
+      this.realtimeConfig?.region ?? process.env.BIRD_REALTIME_REGION ?? "us1"
+    );
   }
 
   getWebhookSecret(): string | undefined {

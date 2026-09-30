@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   Post,
   Req,
   Body,
@@ -31,6 +32,16 @@ export class BirdRealtimeController {
     private readonly realtimeService: BirdRealtimeService,
     private readonly birdService: BirdService,
   ) {}
+
+  @Public()
+  @Get("bird/config")
+  @HttpCode(HttpStatus.OK)
+  getConfig(): { key: string | null; region: string } {
+    return {
+      key: this.realtimeService.getKey(),
+      region: this.realtimeService.getRegion(),
+    };
+  }
 
   @Post("bird/auth/member")
   @HttpCode(HttpStatus.OK)
