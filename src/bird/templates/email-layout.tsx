@@ -10,6 +10,8 @@ import {
   Preview,
   Hr,
   Link,
+  Row,
+  Column,
 } from "@react-email/components";
 
 export interface EmailLayoutProps {
@@ -60,18 +62,86 @@ export const EmailLayout: React.FC<EmailLayoutProps> = ({
           {/* Main Content Area */}
           <Section style={contentStyle}>{children}</Section>
 
-          {/* Footer Area */}
+          {/* Footer Area with Official Corporate Information */}
           <Section style={footerStyle}>
             <Hr style={hrStyle} />
-            <Text style={footerTextStyle}>
-              &copy; {new Date().getFullYear()} BSK Motorcycle Team.
-              Bogot&aacute;, Colombia.
+
+            {/* Quick Links Navigation */}
+            <Section style={navSectionStyle}>
+              <Row>
+                <Column style={navColStyle}>
+                  <Link href="https://bskmt.com" style={footerNavLinkStyle}>
+                    Portal Web
+                  </Link>
+                </Column>
+                <Column style={navColStyle}>
+                  <Link
+                    href="https://dash.bskmt.com"
+                    style={footerNavLinkStyle}
+                  >
+                    Panel de Miembro
+                  </Link>
+                </Column>
+                <Column style={navColStyle}>
+                  <Link
+                    href="https://bskmt.com/terminos-y-condiciones"
+                    style={footerNavLinkStyle}
+                  >
+                    Términos
+                  </Link>
+                </Column>
+                <Column style={navColStyle}>
+                  <Link
+                    href="https://bskmt.com/politica-de-privacidad"
+                    style={footerNavLinkStyle}
+                  >
+                    Privacidad
+                  </Link>
+                </Column>
+                <Column style={navColStyle}>
+                  <Link
+                    href="https://bskmt.com/contacto"
+                    style={footerNavLinkStyle}
+                  >
+                    Contacto
+                  </Link>
+                </Column>
+              </Row>
+            </Section>
+
+            {/* Social Channels */}
+            <Text style={socialTextStyle}>
+              Síguenos en{" "}
+              <Link
+                href="https://www.instagram.com/bsk_motorcycle_team"
+                style={socialLinkStyle}
+              >
+                Instagram (@bsk_motorcycle_team)
+              </Link>{" "}
+              &bull;{" "}
+              <Link
+                href="https://www.tiktok.com/@bsk_motorcycle_team"
+                style={socialLinkStyle}
+              >
+                TikTok
+              </Link>
             </Text>
+
+            {/* Official Legal Identification */}
+            <Text style={corporateInfoStyle}>
+              <strong>Organización Motera S.A.S.</strong> &bull; NIT
+              901.444.877-6<br />
+              Domicilio Principal: Bogotá D.C., Colombia &bull; Cámara de Comercio de
+              Bogotá
+            </Text>
+
             <Text style={footerDisclaimerStyle}>
-              Este es un correo electr&oacute;nico transaccional
-              autom&aacute;tico enviado desde{" "}
-              <Link href="https://bskmt.com" style={footerLinkStyle}>
-                bskmt.com
+              Este es un correo transaccional automático enviado a tu dirección
+              registrada en la plataforma de BSK Motorcycle Team. Para
+              ejercer tus derechos de protección de datos personales (Ley 1581 de
+              2012), escribe a{" "}
+              <Link href="mailto:datos@bskmt.com" style={footerLinkStyle}>
+                datos@bskmt.com
               </Link>
               . Por favor no respondas directamente a este mensaje.
             </Text>
@@ -136,27 +206,57 @@ const contentStyle: React.CSSProperties = {
 };
 
 const footerStyle: React.CSSProperties = {
-  backgroundColor: "#ffffff",
-  padding: "0 32px 28px 32px",
+  backgroundColor: "#f8fafc",
+  padding: "24px 32px 28px 32px",
   textAlign: "center",
+  borderTop: "1px solid #f1f5f9",
 };
 
 const hrStyle: React.CSSProperties = {
   borderColor: "#e2e8f0",
-  margin: "0 0 20px 0",
+  margin: "0 0 18px 0",
 };
 
-const footerTextStyle: React.CSSProperties = {
-  color: "#64748b",
-  fontSize: "12px",
+const navSectionStyle: React.CSSProperties = {
+  margin: "0 0 14px 0",
+  textAlign: "center",
+};
+
+const navColStyle: React.CSSProperties = {
+  textAlign: "center",
+  padding: "0 6px",
+};
+
+const footerNavLinkStyle: React.CSSProperties = {
+  color: "#475569",
+  fontSize: "11px",
   fontWeight: 600,
-  margin: "0 0 6px 0",
+  textDecoration: "none",
+};
+
+const socialTextStyle: React.CSSProperties = {
+  color: "#64748b",
+  fontSize: "11px",
+  margin: "0 0 14px 0",
+};
+
+const socialLinkStyle: React.CSSProperties = {
+  color: "#dc2626",
+  textDecoration: "none",
+  fontWeight: 600,
+};
+
+const corporateInfoStyle: React.CSSProperties = {
+  color: "#64748b",
+  fontSize: "11px",
+  lineHeight: "17px",
+  margin: "0 0 10px 0",
 };
 
 const footerDisclaimerStyle: React.CSSProperties = {
   color: "#94a3b8",
-  fontSize: "11px",
-  lineHeight: "16px",
+  fontSize: "10px",
+  lineHeight: "15px",
   margin: 0,
 };
 
