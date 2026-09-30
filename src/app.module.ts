@@ -7,7 +7,7 @@ import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { AuthModule } from "./auth/auth.module";
 import { SessionGuard } from "./auth/session.guard";
 import { B2bModule } from "./b2b/b2b.module";
-import { configValidationSchema } from "./config/config.validation";
+import { validateConfig } from "./config/config.validation";
 import { ContactModule } from "./contact/contact.module";
 import { EventsModule } from "./events/events.module";
 import { KvModule } from "./kv/kv.module";
@@ -32,8 +32,7 @@ import { CloudinaryModule } from "./cloudinary/cloudinary.module";
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      validationSchema: configValidationSchema,
-      validationOptions: { abortEarly: true },
+      validate: validateConfig,
     }),
     MongooseModule.forRootAsync({
       useFactory: () => ({
