@@ -39,10 +39,11 @@ const RESTRICTED_CATALOG_FOLDERS: readonly CloudinaryFolder[] = [
 
 function sanitizeFolder(folder?: string): CloudinaryFolder {
   if (!folder) return "general";
-  const cleaned = folder
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, "");
+  let cleaned = folder.trim().toLowerCase();
+  if (cleaned.startsWith("bskmt/")) {
+    cleaned = cleaned.slice(6);
+  }
+  cleaned = cleaned.replace(/[^a-z0-9_-]/g, "");
   return (ALLOWED_CLOUDINARY_FOLDERS as readonly string[]).includes(cleaned)
     ? (cleaned as CloudinaryFolder)
     : "general";
@@ -206,17 +207,11 @@ export class CloudinaryController {
 
   /**
    * Generates a signed upload signature for direct client-side uploads.
-   * Strictly restricted to administrators and managers with parameter allowlisting.
+   * Authenticated endpoint. Restricted catalog folders require staff role.
    */
   @Post("signature")
   @HttpCode(HttpStatus.OK)
   generateSignature(@Body() body: GenerateSignatureDto, @Req() req: any) {
-    if (!isStaffUser(req.user?.role, req.user?.subrol)) {
-      throw new ForbiddenException(
-        "Solo administradores y gestores pueden generar firmas de subida delegadas.",
-      );
-    }
-
     const params = { ...(body.paramsToSign || {}) };
 
     if (params.overwrite === true || params.overwrite === "true") {
@@ -229,15 +224,29 @@ export class CloudinaryController {
         "El parámetro 'notification_url' no está permitido en firmas delegadas.",
       );
     }
-    if (params.folder) {
-      params.folder = sanitizeFolder(String(params.folder));
+
+    const folderCategory = sanitizeFolder(
+      params.folder ? String(params.folder) : undefined,
+    );
+
+    if (
+      RESTRICTED_CATALOG_FOLDERS.includes(folderCategory) &&
+      !isStaffUser(req.user?.role, req.user?.subrol)
+    ) {
+      throw new ForbiddenException(
+        `No tienes permisos para subir archivos a la carpeta '${folderCategory}'. Las subidas de usuarios estándar se restringen a 'avatars' y 'garage'.`,
+      );
     }
+
+    // Standardize folder under bskmt/ root namespace
+    params.folder = `bskmt/${folderCategory}`;
 
     const signatureData =
       this.cloudinaryService.generateUploadSignature(params);
     return {
       success: true,
       ...signatureData,
+      folder: params.folder,
     };
   }
 
