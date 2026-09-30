@@ -6,27 +6,38 @@ import {
   notificationTemplate,
   passwordResetTemplate,
 } from "./email.templates";
+import {
+  renderContactInternal,
+  renderEmailVerification,
+  renderNotification,
+  renderPasswordReset,
+} from "./templates";
+import { maskEmail } from "../common/utils/log-redact.util";
 
 /**
  * BirdEmailService — Fachada de alto nivel para el envio de correos
- * transaccionales a traves de Bird Email API.
+ * transaccionales a traves de Bird Email API con plantillas modernas
+ * desarrolladas con React Email.
  *
- * Reemplaza completamente al anterior `EmailService` (Zoho Mail) con la
- * misma interfaz publica, de modo que los consumidores (Better Auth,
- * NotificationsService, ContactService) no necesitan cambios.
+ * Mantiene la misma interfaz publica, de modo que los consumidores
+ * (Better Auth, NotificationsService, ContactService) no necesitan cambios.
  *
  * Bird Email API: `POST /v1/email/messages` via `bird.email.send()`.
  * El SDK inyecta `Idempotency-Key` automaticamente (safe retries).
  *
- * Seguridad (OWASP A04, A05, A07):
+ * Diseno y Visuales:
+ *  - Plantillas modernas construidas con `@react-email/components`.
+ *  - Doble formato: HTML responsivo y texto plano (multipart MIME) para
+ *    maxima entregabilidad y compatibilidad con clientes de correo.
+ *
+ * Seguridad (OWASP A04, A05, A07, A10):
  *  - `category: "transactional"` en todos los envios para que Bird no
  *    aplique suppression de marketing.
  *  - El `from` debe estar en un dominio verificado en el workspace de
- *    Bird; si no, Bird rechaza con 422.
- *  - Las plantillas HTML escapan metacaracteres (escapeHtml) para
- *    prevenir XSS (A05:2025 — Injection).
- *  - Si Bird no esta configurado, los metodos operan en modo degradado
- *    (no-op + warn) sin lanzar errores, para no romper flujos criticos.
+ *    Bird (bskmt.com con DKIM/SPF/DMARC en Cloudflare).
+ *  - Si el renderizado de React Email falla por alguna razon inesperada,
+ *    degrada de forma transparente a la plantilla HTML base (OWASP A10).
+ *  - Logs enmascaran PII (maskEmail) para cumplimiento de privacidad.
  */
 @Injectable()
 export class BirdEmailService {
@@ -82,8 +93,7 @@ export class BirdEmailService {
 
   /**
    * Envia el correo interno al equipo BSK cuando se envia el formulario
-   * de contacto publico de la landing page. A7: no auto-respuesta al
-   * remitente (elimina relay de spam/phishing).
+   * de contacto publico de la landing page.
    */
   async sendContactMessages(data: {
     name: string;
@@ -99,17 +109,38 @@ export class BirdEmailService {
 
     try {
       const client = await this.birdService.getClient();
-      await client.email.send({
-        from: this.getFrom(),
-        to: [this.teamEmail],
-        subject: `[Contacto web] ${data.subject}`,
-        html: contactInternalTemplate({
+      let html: string;
+      let text: string | undefined;
+
+      try {
+        const rendered = await renderContactInternal({
+          name: data.name,
+          email: data.email,
+          subject: data.subject,
+          message: data.message,
+          source: data.source,
+        });
+        html = rendered.html;
+        text = rendered.text;
+      } catch (renderErr) {
+        this.logger.warn(
+          `Error en React Email (contacto): ${renderErr instanceof Error ? renderErr.message : String(renderErr)}. Usando plantilla de respaldo.`,
+        );
+        html = contactInternalTemplate({
           name: data.name,
           email: data.email,
           subject: data.subject,
           message: data.message,
           source: data.source ?? "Formulario de contacto web",
-        }),
+        });
+      }
+
+      await client.email.send({
+        from: this.getFrom(),
+        to: [this.teamEmail],
+        subject: `[Contacto web] ${data.subject}`,
+        html,
+        ...(text ? { text } : {}),
         category: "transactional",
       });
       return { delivered: true };
@@ -137,14 +168,32 @@ export class BirdEmailService {
 
     try {
       const client = await this.birdService.getClient();
+      let html: string;
+      let text: string | undefined;
+
+      try {
+        const rendered = await renderNotification({
+          title: data.title,
+          message: data.message,
+        });
+        html = rendered.html;
+        text = rendered.text;
+      } catch (renderErr) {
+        this.logger.warn(
+          `Error en React Email (notificacion): ${renderErr instanceof Error ? renderErr.message : String(renderErr)}. Usando plantilla de respaldo.`,
+        );
+        html = notificationTemplate({
+          title: data.title,
+          message: data.message,
+        });
+      }
+
       await client.email.send({
         from: this.getFrom(),
         to: [data.to],
         subject: data.title,
-        html: notificationTemplate({
-          title: data.title,
-          message: data.message,
-        }),
+        html,
+        ...(text ? { text } : {}),
         category: "transactional",
       });
       return true;
@@ -158,7 +207,7 @@ export class BirdEmailService {
 
   /**
    * Envia el correo de verificacion de correo electronico usando el
-   * enlace generado por Better Auth.
+   * enlace generado por Better Auth con diseno React Email.
    */
   async sendVerificationEmail(data: {
     to: string;
@@ -174,18 +223,36 @@ export class BirdEmailService {
 
     try {
       const client = await this.birdService.getClient();
+      let html: string;
+      let text: string | undefined;
+
+      try {
+        const rendered = await renderEmailVerification({
+          name: data.name,
+          verificationUrl: data.verificationUrl,
+        });
+        html = rendered.html;
+        text = rendered.text;
+      } catch (renderErr) {
+        this.logger.warn(
+          `Error en React Email (verificacion): ${renderErr instanceof Error ? renderErr.message : String(renderErr)}. Usando plantilla de respaldo.`,
+        );
+        html = emailVerificationTemplate({
+          name: data.name,
+          verificationUrl: data.verificationUrl,
+        });
+      }
+
       await client.email.send({
         from: this.getFrom(),
         to: [data.to],
         subject: "Verifica tu correo — BSK Motorcycle Team",
-        html: emailVerificationTemplate({
-          name: data.name,
-          verificationUrl: data.verificationUrl,
-        }),
+        html,
+        ...(text ? { text } : {}),
         category: "transactional",
       });
       this.logger.log(
-        `Correo de verificacion enviado a ${data.to.replace(/./g, (c, i) => (i < 2 ? c : "*"))} via Bird`,
+        `Correo de verificacion (React Email) enviado a ${maskEmail(data.to)} via Bird`,
       );
       return true;
     } catch (err: unknown) {
@@ -198,7 +265,7 @@ export class BirdEmailService {
 
   /**
    * Envia el correo de restablecimiento de contrasena usando el enlace
-   * generado por Better Auth.
+   * generado por Better Auth con diseno React Email.
    */
   async sendPasswordResetEmail(data: {
     to: string;
@@ -214,16 +281,37 @@ export class BirdEmailService {
 
     try {
       const client = await this.birdService.getClient();
+      let html: string;
+      let text: string | undefined;
+
+      try {
+        const rendered = await renderPasswordReset({
+          name: data.name,
+          resetUrl: data.resetUrl,
+        });
+        html = rendered.html;
+        text = rendered.text;
+      } catch (renderErr) {
+        this.logger.warn(
+          `Error en React Email (reset pass): ${renderErr instanceof Error ? renderErr.message : String(renderErr)}. Usando plantilla de respaldo.`,
+        );
+        html = passwordResetTemplate({
+          name: data.name,
+          resetUrl: data.resetUrl,
+        });
+      }
+
       await client.email.send({
         from: this.getFrom(),
         to: [data.to],
         subject: "Restablece tu contrasena — BSK Motorcycle Team",
-        html: passwordResetTemplate({
-          name: data.name,
-          resetUrl: data.resetUrl,
-        }),
+        html,
+        ...(text ? { text } : {}),
         category: "transactional",
       });
+      this.logger.log(
+        `Correo de reset (React Email) enviado a ${maskEmail(data.to)} via Bird`,
+      );
       return true;
     } catch (err: unknown) {
       this.logger.error(
