@@ -20,11 +20,17 @@ export const NotificationEmail: React.FC<NotificationEmailProps> = ({
       previewText={`${title} — Notificación oficial de BSK Motorcycle Team`}
     >
       <Section style={sectionStyle}>
-        <div style={badgeStyle}>NOTIFICACIÓN DEL SISTEMA</div>
-        <Heading style={headingStyle}>{title}</Heading>
+        <div style={badgeStyle} className="bsk-badge-notify">
+          NOTIFICACIÓN DEL SISTEMA
+        </div>
+        <Heading style={headingStyle} className="bsk-heading">
+          {title}
+        </Heading>
 
-        <Section style={messageCardStyle}>
-          <Text style={messageTextStyle}>{message}</Text>
+        <Section style={messageCardStyle} className="bsk-box">
+          <Text style={messageTextStyle} className="bsk-paragraph">
+            {message}
+          </Text>
         </Section>
 
         {ctaUrl && (
@@ -35,7 +41,7 @@ export const NotificationEmail: React.FC<NotificationEmailProps> = ({
           </Section>
         )}
 
-        <Text style={infoTextStyle}>
+        <Text style={infoTextStyle} className="bsk-muted">
           Puedes administrar tus preferencias de alertas en cualquier momento
           desde los ajustes de tu cuenta en el panel de control.
         </Text>

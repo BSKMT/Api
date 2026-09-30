@@ -14,9 +14,13 @@ export const EmailVerificationEmail: React.FC<EmailVerificationEmailProps> = ({
   return (
     <EmailLayout previewText="Confirma tu correo electrónico para activar tu cuenta en BSK Motorcycle Team">
       <Section style={sectionStyle}>
-        <div style={badgeStyle}>VERIFICACIÓN DE CUENTA</div>
-        <Heading style={headingStyle}>¡Hola {name || "Rider"}!</Heading>
-        <Text style={paragraphStyle}>
+        <div style={badgeStyle} className="bsk-badge-verify">
+          VERIFICACIÓN DE CUENTA
+        </div>
+        <Heading style={headingStyle} className="bsk-heading">
+          ¡Hola {name || "Rider"}!
+        </Heading>
+        <Text style={paragraphStyle} className="bsk-paragraph">
           Te damos la bienvenida a <strong>BSK Motorcycle Team</strong>. Para
           comenzar a disfrutar de todos los beneficios de la comunidad,
           gestionar tus rodadas y activar tu perfil oficial, confirma tu
@@ -29,8 +33,8 @@ export const EmailVerificationEmail: React.FC<EmailVerificationEmailProps> = ({
           </Button>
         </Section>
 
-        <Section style={fallbackBoxStyle}>
-          <Text style={fallbackTextStyle}>
+        <Section style={fallbackBoxStyle} className="bsk-box">
+          <Text style={fallbackTextStyle} className="bsk-box-text">
             Si el botón no funciona, copia y pega este enlace seguro en tu
             navegador:
           </Text>
@@ -39,8 +43,8 @@ export const EmailVerificationEmail: React.FC<EmailVerificationEmailProps> = ({
           </Link>
         </Section>
 
-        <Section style={securityBoxStyle}>
-          <Text style={securityTextStyle}>
+        <Section style={securityBoxStyle} className="bsk-box">
+          <Text style={securityTextStyle} className="bsk-box-text">
             <strong>Seguridad:</strong> Si tú no solicitaste crear una cuenta en
             BSK Motorcycle Team, puedes ignorar este mensaje de forma segura.
             Nadie podrá acceder a tu cuenta sin verificar este enlace.
