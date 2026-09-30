@@ -20,38 +20,60 @@ export const ContactInternalEmail: React.FC<ContactInternalEmailProps> = ({
   return (
     <EmailLayout previewText={`[Contacto Web] ${subject} — de ${name}`}>
       <Section style={sectionStyle}>
-        <div style={badgeStyle}>NUEVO MENSAJE DE CONTACTO</div>
-        <Heading style={headingStyle}>Formulario de Contacto Web</Heading>
+        <div style={badgeStyle} className="bsk-badge-contact">
+          NUEVO MENSAJE DE CONTACTO
+        </div>
+        <Heading style={headingStyle} className="bsk-heading">
+          Formulario de Contacto Web
+        </Heading>
 
-        <Section style={metaTableStyle}>
+        <Section style={metaTableStyle} className="bsk-meta-table">
           <Row style={metaRowStyle}>
-            <Column style={metaLabelColStyle}>Remitente:</Column>
-            <Column style={metaValueColStyle}>
+            <Column style={metaLabelColStyle} className="bsk-meta-label">
+              Remitente:
+            </Column>
+            <Column style={metaValueColStyle} className="bsk-meta-value">
               <strong>{name}</strong>
             </Column>
           </Row>
           <Row style={metaRowStyle}>
-            <Column style={metaLabelColStyle}>Correo:</Column>
-            <Column style={metaValueColStyle}>{email}</Column>
+            <Column style={metaLabelColStyle} className="bsk-meta-label">
+              Correo:
+            </Column>
+            <Column style={metaValueColStyle} className="bsk-meta-value">
+              {email}
+            </Column>
           </Row>
           <Row style={metaRowStyle}>
-            <Column style={metaLabelColStyle}>Asunto:</Column>
-            <Column style={metaValueColStyle}>{subject}</Column>
+            <Column style={metaLabelColStyle} className="bsk-meta-label">
+              Asunto:
+            </Column>
+            <Column style={metaValueColStyle} className="bsk-meta-value">
+              {subject}
+            </Column>
           </Row>
           {source && (
             <Row style={metaRowStyle}>
-              <Column style={metaLabelColStyle}>Origen:</Column>
-              <Column style={metaValueColStyle}>{source}</Column>
+              <Column style={metaLabelColStyle} className="bsk-meta-label">
+                Origen:
+              </Column>
+              <Column style={metaValueColStyle} className="bsk-meta-value">
+                {source}
+              </Column>
             </Row>
           )}
         </Section>
 
-        <Text style={messageHeaderStyle}>Mensaje del usuario:</Text>
-        <Section style={messageCardStyle}>
-          <Text style={messageTextStyle}>{message}</Text>
+        <Text style={messageHeaderStyle} className="bsk-heading">
+          Mensaje del usuario:
+        </Text>
+        <Section style={messageCardStyle} className="bsk-box">
+          <Text style={messageTextStyle} className="bsk-paragraph">
+            {message}
+          </Text>
         </Section>
 
-        <Text style={tipStyle}>
+        <Text style={tipStyle} className="bsk-muted">
           💡{" "}
           <em>
             Puedes responder directamente a este usuario escribiendo a{" "}

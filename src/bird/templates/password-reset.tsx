@@ -14,9 +14,13 @@ export const PasswordResetEmail: React.FC<PasswordResetEmailProps> = ({
   return (
     <EmailLayout previewText="Restablecimiento de contraseña para tu cuenta de BSK Motorcycle Team">
       <Section style={sectionStyle}>
-        <div style={badgeStyle}>SEGURIDAD DE LA CUENTA</div>
-        <Heading style={headingStyle}>Hola {name || "Rider"}</Heading>
-        <Text style={paragraphStyle}>
+        <div style={badgeStyle} className="bsk-badge-security">
+          SEGURIDAD DE LA CUENTA
+        </div>
+        <Heading style={headingStyle} className="bsk-heading">
+          Hola {name || "Rider"}
+        </Heading>
+        <Text style={paragraphStyle} className="bsk-paragraph">
           Hemos recibido una solicitud para restablecer la contraseña de acceso
           a tu cuenta en <strong>BSK Motorcycle Team</strong>. Si fuiste tú,
           puedes crear tu nueva clave haciendo clic en el siguiente botón:
@@ -28,8 +32,8 @@ export const PasswordResetEmail: React.FC<PasswordResetEmailProps> = ({
           </Button>
         </Section>
 
-        <Section style={fallbackBoxStyle}>
-          <Text style={fallbackTextStyle}>
+        <Section style={fallbackBoxStyle} className="bsk-box">
+          <Text style={fallbackTextStyle} className="bsk-box-text">
             Si el botón no responde, copia y abre este enlace directamente en tu
             navegador:
           </Text>
@@ -38,8 +42,8 @@ export const PasswordResetEmail: React.FC<PasswordResetEmailProps> = ({
           </Link>
         </Section>
 
-        <Section style={warningBoxStyle}>
-          <Text style={warningTextStyle}>
+        <Section style={warningBoxStyle} className="bsk-warning-box">
+          <Text style={warningTextStyle} className="bsk-warning-text">
             ⏳ <strong>Atención:</strong> Por motivos de seguridad, este enlace
             expirará automáticamente en <strong>1 hora</strong>. Si no
             solicitaste este cambio de contraseña, ignora este correo de
