@@ -50,9 +50,10 @@ const SHELL = (title: string, body: string): string => `<!DOCTYPE html>
           </tr>
           <tr>
             <td style="padding:0 32px 24px;">
-              <p style="margin:0;font-size:12px;line-height:1.5;color:#64748b;text-align:center;border-top:1px solid #e2e8f0;padding-top:16px;">
-                BSK Motorcycle Team — Bogota, Colombia.<br />
-                Este mensaje se envio automaticamente. Por favor no respondas a este correo.
+              <p style="margin:0;font-size:11px;line-height:1.6;color:#64748b;text-align:center;border-top:1px solid #e2e8f0;padding-top:16px;">
+                <strong>Organizaci&oacute;n Motera S.A.S.</strong> &bull; NIT 901.444.877-6<br />
+                Domicilio Principal: Bogot&aacute; D.C., Colombia &bull; C&aacute;mara de Comercio de Bogot&aacute;<br />
+                Mensaje transaccional autom&aacute;tico. Protecci&oacute;n de datos (Ley 1581 de 2012): datos@bskmt.com
               </p>
             </td>
           </tr>
