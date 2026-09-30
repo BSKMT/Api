@@ -3,6 +3,7 @@ import { Model } from "mongoose";
 import { UserDocument } from "../users/schemas/user.schema";
 import { getMongoDb } from "../auth/better-auth";
 import type { LeanUser } from "./settings.constants";
+import { ObjectId } from "mongodb";
 
 export async function buildUserDataExport(
   userModel: Model<UserDocument>,
@@ -15,9 +16,13 @@ export async function buildUserDataExport(
   let authData: Record<string, unknown> | null = null;
   try {
     const db = getMongoDb();
+    const idFilters: Record<string, unknown>[] = [{ id: user.betterAuthId }];
+    if (user.betterAuthId && ObjectId.isValid(user.betterAuthId)) {
+      idFilters.push({ _id: new ObjectId(user.betterAuthId) });
+    }
     const betterAuthUser = await db
       .collection("user")
-      .findOne({ id: user.betterAuthId });
+      .findOne({ $or: idFilters });
     if (betterAuthUser) {
       authData = {
         id: betterAuthUser.id,

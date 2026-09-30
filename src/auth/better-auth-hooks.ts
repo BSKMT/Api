@@ -1,5 +1,5 @@
 import { Logger } from "@nestjs/common";
-import { Db } from "mongodb";
+import { Db, ObjectId } from "mongodb";
 import type { BetterAuthUser } from "./better-auth.types";
 import { maskEmail } from "../common/utils/log-redact.util";
 
@@ -128,13 +128,22 @@ export function createBetterAuthHooks(mongoDb: Db, authLogger: Logger) {
               `[databaseHooks] Failed to insert Mongoose user for betterAuthId=${user.id} email=${maskEmail(user.email)}: ${err instanceof Error ? err.message : String(err)}`,
             );
             try {
+              const userFilters: (string | ObjectId)[] = [user.id];
+              if (user.id && ObjectId.isValid(user.id)) {
+                userFilters.push(new ObjectId(user.id));
+              }
+              const idFilters: Record<string, unknown>[] = [{ id: user.id }];
+              if (user.id && ObjectId.isValid(user.id)) {
+                idFilters.push({ _id: new ObjectId(user.id) });
+              }
+
               await mongoDb.collection("account").deleteMany({
-                userId: user.id,
+                userId: { $in: userFilters },
               });
               await mongoDb.collection("session").deleteMany({
-                userId: user.id,
+                userId: { $in: userFilters },
               });
-              await mongoDb.collection("user").deleteOne({ id: user.id });
+              await mongoDb.collection("user").deleteOne({ $or: idFilters });
             } catch (cleanupErr) {
               authLogger.error(
                 `[databaseHooks] Failed to cleanup orphan Better Auth user ${user.id}: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`,

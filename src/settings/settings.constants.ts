@@ -58,9 +58,10 @@ export const DEFAULT_SETTINGS = {
 };
 
 export interface SessionRow {
-  id: string;
+  _id?: { toString(): string } | string;
+  id?: string;
   token: string;
-  userId: string;
+  userId: { toString(): string } | string;
   expiresAt: Date;
   ipAddress: string | null;
   userAgent: string | null;
