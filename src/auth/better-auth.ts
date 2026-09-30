@@ -106,6 +106,22 @@ async function initAuth(): Promise<AuthInstance> {
     );
   }
 
+  try {
+    await mongoDb
+      .collection("session")
+      .createIndex(
+        { expiresAt: 1 },
+        { expireAfterSeconds: 0, background: true },
+      );
+    await mongoDb
+      .collection("session")
+      .createIndex({ userId: 1 }, { background: true });
+  } catch (indexErr) {
+    authLogger.warn(
+      `Failed to ensure indexes on session collection: ${indexErr instanceof Error ? indexErr.message : String(indexErr)}`,
+    );
+  }
+
   const getLandingPage = () =>
     injectedLandingPageUrl ??
     process.env.LANDING_PAGE_URL ??

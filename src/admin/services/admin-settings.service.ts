@@ -13,6 +13,7 @@ import {
   NotificationPriority,
 } from "../../notifications/schemas/notification.schema";
 import { getMongoDb } from "../../auth/better-auth";
+import { ObjectId } from "mongodb";
 @Injectable()
 export class AdminSettingsService {
   private readonly logger = new Logger(AdminSettingsService.name);
@@ -79,8 +80,23 @@ export class AdminSettingsService {
     const db = getMongoDb();
 
     try {
-      await db.collection("user").deleteOne({ id: user.betterAuthId });
-      await db.collection("session").deleteMany({ userId: user.betterAuthId });
+      const userFilters: (string | ObjectId)[] = [user.betterAuthId];
+      if (user.betterAuthId && ObjectId.isValid(user.betterAuthId)) {
+        userFilters.push(new ObjectId(user.betterAuthId));
+      }
+
+      const idFilters: Record<string, unknown>[] = [{ id: user.betterAuthId }];
+      if (user.betterAuthId && ObjectId.isValid(user.betterAuthId)) {
+        idFilters.push({ _id: new ObjectId(user.betterAuthId) });
+      }
+
+      await db.collection("user").deleteOne({ $or: idFilters });
+      await db
+        .collection("session")
+        .deleteMany({ userId: { $in: userFilters } });
+      await db
+        .collection("account")
+        .deleteMany({ userId: { $in: userFilters } });
     } catch (err) {
       this.logger.error(`Failed to delete better-auth data: ${err}`);
       throw new BadRequestException(

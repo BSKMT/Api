@@ -143,6 +143,8 @@ export class SessionGuard {
           role: string;
           subrol?: string | null;
           betterAuthId: string;
+          sessionToken?: string;
+          sessionId?: string;
         };
       }
     ).user = {
@@ -151,6 +153,8 @@ export class SessionGuard {
       role: mongooseUser.role,
       subrol: mongooseUser.subrol ?? null,
       betterAuthId: session.user.id,
+      sessionToken: session.session?.token,
+      sessionId: session.session?.id,
     };
 
     return true;

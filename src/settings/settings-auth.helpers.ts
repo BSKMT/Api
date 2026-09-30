@@ -3,6 +3,8 @@ import type { Request } from "express";
 import { getAuth, getMongoDb } from "../auth/better-auth";
 import type { UserDocument } from "../users/schemas/user.schema";
 
+import { ObjectId } from "mongodb";
+
 export function extractSessionTokenFromCookie(cookieHeader: string): string {
   const cookies = cookieHeader.split(";").map((c) => c.trim());
   for (const cookie of cookies) {
@@ -14,7 +16,8 @@ export function extractSessionTokenFromCookie(cookieHeader: string): string {
       name === "better-auth.session_token" ||
       name === "__Secure-better-auth.session_token"
     ) {
-      return value;
+      const decoded = decodeURIComponent(value);
+      return decoded.split(".")[0];
     }
   }
   return "";
@@ -38,10 +41,15 @@ export async function discardOrphanSessionFromAuthResponse(
         name === "better-auth.session_token" ||
         name === "__Secure-better-auth.session_token"
       ) {
+        const rawToken = decodeURIComponent(value).split(".")[0];
+        const userFilters: (string | ObjectId)[] = [user.betterAuthId];
+        if (ObjectId.isValid(user.betterAuthId)) {
+          userFilters.push(new ObjectId(user.betterAuthId));
+        }
         const db = getMongoDb();
         await db
           .collection("session")
-          .deleteOne({ userId: user.betterAuthId, token: value });
+          .deleteOne({ userId: { $in: userFilters }, token: rawToken });
         logger?.log(
           `Discarded orphan session after re-auth for user ${user.betterAuthId}`,
         );

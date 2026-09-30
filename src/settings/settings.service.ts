@@ -25,6 +25,8 @@ import {
 import { buildUserDataExport } from "./settings-export.helpers";
 import { KvCacheService } from "../kv/kv-cache.service";
 
+import { ObjectId } from "mongodb";
+
 @Injectable()
 export class SettingsService {
   private readonly logger = new Logger(SettingsService.name);
@@ -86,45 +88,95 @@ export class SettingsService {
     }
   }
 
+  private buildUserFilter(betterAuthId: string, userId?: string) {
+    const ids: (string | ObjectId)[] = [];
+    if (betterAuthId) {
+      ids.push(betterAuthId);
+      if (ObjectId.isValid(betterAuthId)) {
+        ids.push(new ObjectId(betterAuthId));
+      }
+    }
+    if (userId && userId !== betterAuthId) {
+      ids.push(userId);
+      if (ObjectId.isValid(userId)) {
+        ids.push(new ObjectId(userId));
+      }
+    }
+    return { userId: { $in: ids } };
+  }
+
   async getSessions(
     userId: string,
     betterAuthId: string,
     currentToken: string,
   ) {
     const db = getMongoDb();
+    const query = this.buildUserFilter(betterAuthId, userId);
     const sessions = (await db
       .collection("session")
-      .find({ userId: betterAuthId })
+      .find(query)
       .sort({ createdAt: -1 })
-      .toArray()) as unknown as SessionRow[];
+      .toArray()) as unknown as (SessionRow & { _id?: ObjectId })[];
 
     this.logger.log(
       `getSessions: userId=${userId} betterAuthId=${betterAuthId.substring(0, 10)}... found=${sessions.length} sessions`,
     );
 
+    const cleanCurrentToken = currentToken ? currentToken.split(".")[0] : "";
+
     return sessions.map((s) => {
       const ua = parseUserAgent(s.userAgent);
+      const sid = s._id ? s._id.toString() : String(s.id ?? "");
+      const isCurrentSession = Boolean(
+        cleanCurrentToken && s.token && s.token === cleanCurrentToken,
+      );
+      const isActiveSession = s.expiresAt
+        ? new Date(s.expiresAt).getTime() > Date.now()
+        : true;
+
+      const rawUid = s.userId ?? betterAuthId;
+      const uid = typeof rawUid === "string" ? rawUid : rawUid.toString();
+
       return {
-        id: s.id,
+        id: sid,
+        userId: uid,
         browser: ua.browser,
         os: ua.os,
         device: ua.device,
+        userAgent: s.userAgent ?? `${ua.device} - ${ua.browser}`,
         ipAddress: s.ipAddress ?? "—",
-        isCurrent: s.token === currentToken,
+        isCurrent: isCurrentSession,
+        isActive: isActiveSession,
         createdAt: s.createdAt,
         expiresAt: s.expiresAt,
-        lastActive: s.updatedAt,
+        lastActive: s.updatedAt ?? s.createdAt,
       };
     });
   }
 
   async revokeSession(sessionId: string, betterAuthId: string) {
+    if (!sessionId || typeof sessionId !== "string") {
+      throw new BadRequestException("ID de sesión inválido");
+    }
+
     const db = getMongoDb();
-    const result = await db
-      .collection("session")
-      .deleteOne({ id: sessionId, userId: betterAuthId });
+    const idFilters: Record<string, unknown>[] = [{ id: sessionId }];
+    if (ObjectId.isValid(sessionId)) {
+      idFilters.push({ _id: new ObjectId(sessionId) });
+    } else {
+      idFilters.push({ _id: sessionId });
+    }
+
+    const userQuery = this.buildUserFilter(betterAuthId);
+
+    // Strict boundary enforcement: must match target session AND belong to this user
+    const result = await db.collection("session").deleteOne({
+      $or: idFilters,
+      ...userQuery,
+    });
+
     if (result.deletedCount === 0) {
-      throw new BadRequestException("Sesion no encontrada");
+      throw new BadRequestException("Sesión no encontrada");
     }
     this.logger.log(`Session revoked: id=${sessionId.substring(0, 10)}...`);
     return { success: true };
@@ -132,11 +184,19 @@ export class SettingsService {
 
   async revokeAllOtherSessions(betterAuthId: string, currentToken: string) {
     const db = getMongoDb();
-    const result = await db
-      .collection("session")
-      .deleteMany({ userId: betterAuthId, token: { $ne: currentToken } });
+    const userQuery = this.buildUserFilter(betterAuthId);
+    const cleanCurrentToken = currentToken ? currentToken.split(".")[0] : "";
+
+    const filter: Record<string, unknown> = {
+      ...userQuery,
+    };
+    if (cleanCurrentToken) {
+      filter["token"] = { $ne: cleanCurrentToken };
+    }
+
+    const result = await db.collection("session").deleteMany(filter);
     this.logger.log(
-      `Revoked ${result.deletedCount} other sessions for user ${betterAuthId}`,
+      `Revoked ${result.deletedCount} other sessions for user ${betterAuthId.substring(0, 10)}...`,
     );
     return { revoked: result.deletedCount };
   }

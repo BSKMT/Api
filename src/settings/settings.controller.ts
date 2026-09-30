@@ -25,7 +25,9 @@ function getCurrentToken(req: Request): string {
   const match = /(?:__Secure-)?better-auth\.session_token=([^;]+)/.exec(
     cookies,
   );
-  return match ? match[1] : "";
+  if (!match) return "";
+  const raw = decodeURIComponent(match[1].trim());
+  return raw.split(".")[0];
 }
 
 @Controller("settings")
@@ -52,10 +54,16 @@ export class SettingsController {
   async getSessions(@Req() req: Request) {
     const user = (
       req as Request & {
-        user: { userId: string; email: string; betterAuthId: string };
+        user: {
+          userId: string;
+          email: string;
+          betterAuthId: string;
+          sessionToken?: string;
+          sessionId?: string;
+        };
       }
     ).user;
-    const token = getCurrentToken(req);
+    const token = user.sessionToken || getCurrentToken(req);
     return this.settingsService.getSessions(
       user.userId,
       user.betterAuthId,
@@ -73,8 +81,12 @@ export class SettingsController {
   @Delete("sessions")
   @HttpCode(HttpStatus.OK)
   async revokeAllOtherSessions(@Req() req: Request) {
-    const user = (req as Request & { user: { betterAuthId: string } }).user;
-    const token = getCurrentToken(req);
+    const user = (
+      req as Request & {
+        user: { betterAuthId: string; sessionToken?: string };
+      }
+    ).user;
+    const token = user.sessionToken || getCurrentToken(req);
     return this.settingsService.revokeAllOtherSessions(
       user.betterAuthId,
       token,

@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { getMongoDb } from "../auth/better-auth";
 import { maskPhone, sanitizeForLog } from "../common/utils/log-redact.util";
+import { ObjectId } from "mongodb";
 
 export class ChannelThrottleStore {
   private readonly store = new Map<string, number[]>();
@@ -68,8 +69,12 @@ export async function updateBetterAuthEmail(
 ): Promise<void> {
   try {
     const db = getMongoDb();
+    const idFilters: Record<string, unknown>[] = [{ id: betterAuthId }];
+    if (betterAuthId && ObjectId.isValid(betterAuthId)) {
+      idFilters.push({ _id: new ObjectId(betterAuthId) });
+    }
     await db.collection("user").updateOne(
-      { id: betterAuthId },
+      { $or: idFilters },
       {
         $set: {
           email: normalizedEmail,
