@@ -98,7 +98,9 @@ export class AdminSettingsService {
         .collection("account")
         .deleteMany({ userId: { $in: userFilters } });
     } catch (err) {
-      this.logger.error(`Failed to delete better-auth data: ${err}`);
+      this.logger.error(
+        `Failed to delete better-auth data: ${err instanceof Error ? err.message : String(err)}`,
+      );
       throw new BadRequestException(
         "No se pudo eliminar completamente la cuenta de autenticación. Intenta de nuevo.",
       );

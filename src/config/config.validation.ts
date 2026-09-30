@@ -143,3 +143,16 @@ export const configValidationSchema = Joi.object({
   CLOUDINARY_URL: Joi.string().allow("").default(""),
   CLOUDINARY_UPLOAD_PRESET: Joi.string().allow("").default(""),
 });
+
+export function validateConfig(
+  config: Record<string, unknown>,
+): Record<string, unknown> {
+  const { error, value } = configValidationSchema.validate(config, {
+    abortEarly: true,
+    allowUnknown: true,
+  });
+  if (error) {
+    throw new Error(`Config validation error: ${error.message}`);
+  }
+  return value as Record<string, unknown>;
+}
