@@ -65,6 +65,11 @@ export class BirdRealtimeService {
     return this.birdService.getRealtimeSecret();
   }
 
+  /** Returns the Realtime region (`us1` or `eu1`). */
+  getRegion(): string {
+    return this.birdService.getRealtimeRegion();
+  }
+
   /**
    * Lazily resolves the BirdClient and returns the realtime namespace.
    * Throws if Bird is not configured (caller should guard with
