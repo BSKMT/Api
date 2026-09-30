@@ -130,16 +130,17 @@ export const EmailLayout: React.FC<EmailLayoutProps> = ({
             {/* Official Legal Identification */}
             <Text style={corporateInfoStyle}>
               <strong>Organización Motera S.A.S.</strong> &bull; NIT
-              901.444.877-6<br />
-              Domicilio Principal: Bogotá D.C., Colombia &bull; Cámara de Comercio de
-              Bogotá
+              901.444.877-6
+              <br />
+              Domicilio Principal: Bogotá D.C., Colombia &bull; Cámara de
+              Comercio de Bogotá
             </Text>
 
             <Text style={footerDisclaimerStyle}>
               Este es un correo transaccional automático enviado a tu dirección
-              registrada en la plataforma de BSK Motorcycle Team. Para
-              ejercer tus derechos de protección de datos personales (Ley 1581 de
-              2012), escribe a{" "}
+              registrada en la plataforma de BSK Motorcycle Team. Para ejercer
+              tus derechos de protección de datos personales (Ley 1581 de 2012),
+              escribe a{" "}
               <Link href="mailto:datos@bskmt.com" style={footerLinkStyle}>
                 datos@bskmt.com
               </Link>

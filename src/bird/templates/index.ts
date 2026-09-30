@@ -61,7 +61,7 @@ function htmlToPlainText(html: string): string {
 /**
  * Renderiza de forma segura un elemento de React Email a HTML completo con Doctype y texto plano.
  */
-export async function renderReactEmail(
+export function renderReactEmail(
   element: React.ReactElement,
 ): Promise<RenderedEmailResult> {
   const markup = renderToStaticMarkup(element);
@@ -69,13 +69,13 @@ export async function renderReactEmail(
     ? markup
     : `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">\n${markup}`;
   const text = htmlToPlainText(markup);
-  return { html, text };
+  return Promise.resolve({ html, text });
 }
 
 /**
  * Renderiza el correo de verificación de cuenta de Better Auth con React Email.
  */
-export async function renderEmailVerification(
+export function renderEmailVerification(
   props: EmailVerificationEmailProps,
 ): Promise<RenderedEmailResult> {
   return renderReactEmail(React.createElement(EmailVerificationEmail, props));
@@ -84,7 +84,7 @@ export async function renderEmailVerification(
 /**
  * Renderiza el correo de restablecimiento de contraseña de Better Auth con React Email.
  */
-export async function renderPasswordReset(
+export function renderPasswordReset(
   props: PasswordResetEmailProps,
 ): Promise<RenderedEmailResult> {
   return renderReactEmail(React.createElement(PasswordResetEmail, props));
@@ -93,7 +93,7 @@ export async function renderPasswordReset(
 /**
  * Renderiza una notificación transaccional del sistema con React Email.
  */
-export async function renderNotification(
+export function renderNotification(
   props: NotificationEmailProps,
 ): Promise<RenderedEmailResult> {
   return renderReactEmail(React.createElement(NotificationEmail, props));
@@ -102,7 +102,7 @@ export async function renderNotification(
 /**
  * Renderiza el correo interno para el equipo BSK con los datos del formulario de contacto.
  */
-export async function renderContactInternal(
+export function renderContactInternal(
   props: ContactInternalEmailProps,
 ): Promise<RenderedEmailResult> {
   return renderReactEmail(React.createElement(ContactInternalEmail, props));
