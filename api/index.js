@@ -1,4 +1,9 @@
+let appHandlerPromise;
+
 export default async function handler(req, res) {
-  const { default: appHandler } = await import("../dist/main.js");
+  if (!appHandlerPromise) {
+    appHandlerPromise = import("../dist/main.js").then((m) => m.default);
+  }
+  const appHandler = await appHandlerPromise;
   return appHandler(req, res);
 }
