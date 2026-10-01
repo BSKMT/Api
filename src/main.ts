@@ -12,7 +12,13 @@ import { BirdEmailService } from "./bird/bird-email.service";
 import { createBetterAuthMiddleware } from "./bootstrap/auth-handler";
 import { setupSecurityMiddleware } from "./bootstrap/security";
 
-async function bootstrap() {
+let expressApp: express.Express;
+
+export async function bootstrap(): Promise<express.Express> {
+  if (expressApp) {
+    return expressApp;
+  }
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     cors: false,
     bodyParser: false,
@@ -70,9 +76,23 @@ async function bootstrap() {
     exclude: ["/"],
   });
 
-  const port = Number(configService.get<number>("PORT", 3000) ?? 3000);
-  await app.listen(port);
+  await app.init();
+  expressApp = app.getHttpAdapter().getInstance();
 
-  new Logger("Bootstrap").log(`BSKMT API running on port ${port}`);
+  if (process.env.VERCEL !== "1") {
+    const port = Number(configService.get<number>("PORT", 3000) ?? 3000);
+    await app.listen(port);
+    new Logger("Bootstrap").log(`BSKMT API running on port ${port}`);
+  }
+
+  return expressApp;
 }
-void bootstrap();
+
+export default async function handler(req: Request, res: Response) {
+  const server = await bootstrap();
+  server(req, res);
+}
+
+if (process.env.VERCEL !== "1") {
+  void bootstrap();
+}
