@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  OnModuleInit,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
@@ -32,7 +33,7 @@ import {
 } from "./shop-wishlist.helpers";
 
 @Injectable()
-export class ShopService {
+export class ShopService implements OnModuleInit {
   private readonly logger = new Logger(ShopService.name);
 
   constructor(
@@ -45,6 +46,31 @@ export class ShopService {
     private readonly kvCache: KvCacheService,
   ) {}
 
+  async onModuleInit(): Promise<void> {
+    try {
+      // MongoDB official migration: rename legacy fields that conflicted with Mongoose Document reserved keys
+      const [colResult, newResult] = await Promise.all([
+        this.productModel.updateMany(
+          { collection: { $exists: true } },
+          { $rename: { collection: "collectionName" } },
+        ),
+        this.productModel.updateMany(
+          { isNew: { $exists: true } },
+          { $rename: { isNew: "isNewProduct" } },
+        ),
+      ]);
+      if (colResult.modifiedCount > 0 || newResult.modifiedCount > 0) {
+        this.logger.log(
+          `[Mongoose Schema Migration] Migrated legacy product keys via MongoDB $rename (collections: ${colResult.modifiedCount}, isNew: ${newResult.modifiedCount})`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `[Mongoose Schema Migration] Non-fatal legacy product keys check: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   async getProducts(
     limit = 20,
     featuredOnly = false,
@@ -56,7 +82,9 @@ export class ShopService {
 
     const filter: Record<string, unknown> = { status: ProductStatus.PUBLISHED };
     if (featuredOnly) filter.featured = true;
-    if (collection) filter.collection = collection;
+    if (collection) {
+      filter.$or = [{ collectionName: collection }, { collection: collection }];
+    }
 
     const result = await this.productModel
       .find(filter)
@@ -74,7 +102,10 @@ export class ShopService {
     if (cached) return cached;
 
     const result = await this.productModel
-      .find({ status: ProductStatus.PUBLISHED, isNew: true })
+      .find({
+        status: ProductStatus.PUBLISHED,
+        $or: [{ isNewProduct: true }, { isNew: true }],
+      })
       .sort({ createdAt: -1 })
       .limit(limit)
       .lean();

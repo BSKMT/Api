@@ -13,6 +13,7 @@ export const VALID_ORDER_TRANSITIONS: Record<string, Set<string>> = {
 export interface AdminListProductsFilters {
   status?: string;
   collection?: string;
+  collectionName?: string;
   limit?: number;
   page?: number;
 }

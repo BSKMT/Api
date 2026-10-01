@@ -94,5 +94,5 @@ export default async function handler(req: Request, res: Response) {
 }
 
 if (process.env.VERCEL !== "1") {
-  void bootstrap();
+  await bootstrap();
 }
