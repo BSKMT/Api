@@ -148,4 +148,3 @@ export const SystemPricingConfigSchema =
   SchemaFactory.createForClass(SystemPricingConfig);
 
 SystemPricingConfigSchema.index({ isCurrentSeason: 1 });
-SystemPricingConfigSchema.index({ seasonYear: 1 }, { unique: true });
