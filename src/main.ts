@@ -73,11 +73,30 @@ export async function bootstrap(): Promise<express.Express> {
   app.useGlobalFilters(new GlobalExceptionFilter());
 
   app.setGlobalPrefix("api", {
-    exclude: ["/"],
+    exclude: ["/", "/.well-known/assetlinks.json"],
   });
 
   await app.init();
   expressApp = app.getHttpAdapter().getInstance();
+
+  expressApp.get("/.well-known/assetlinks.json", (_req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    res.json([
+      {
+        relation: [
+          "delegate_permission/common.handle_all_urls",
+          "delegate_permission/common.get_login_creds",
+        ],
+        target: {
+          namespace: "android_app",
+          package_name: "com.bskmt.app",
+          sha256_cert_fingerprints: [
+            "5D:88:48:70:09:20:85:33:3F:28:1A:1A:0E:F2:27:47:E1:AA:73:D2:EA:B5:60:4C:2F:5D:7D:0C:B0:51:05:4B",
+          ],
+        },
+      },
+    ]);
+  });
 
   if (process.env.VERCEL !== "1") {
     const port = Number(configService.get<number>("PORT", 3000) ?? 3000);
