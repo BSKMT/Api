@@ -9,7 +9,7 @@ export enum ProductStatus {
   DISCONTINUED = "discontinued",
 }
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, suppressReservedKeysWarning: true })
 export class Product {
   @Prop({ required: true, unique: true, index: true })
   slug!: string;
