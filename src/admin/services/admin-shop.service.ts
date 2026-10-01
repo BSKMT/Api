@@ -45,9 +45,13 @@ export class AdminShopService {
     // M2: Sanitize filter to prevent NoSQL operator injection
     const filter: Record<string, unknown> = {};
     const status = ensureString(filters.status);
-    const collection = ensureString(filters.collection);
+    const collection = ensureString(
+      filters.collectionName ?? filters.collection,
+    );
     if (status) filter.status = status;
-    if (collection) filter.collection = collection;
+    if (collection) {
+      filter.$or = [{ collectionName: collection }, { collection: collection }];
+    }
 
     const { limit, page, skip } = clampPagination(filters.limit, filters.page);
 
@@ -84,14 +88,18 @@ export class AdminShopService {
       throw new ConflictException("Ya existe un producto con ese slug");
     }
 
+    const collectionName = dto.collectionName ?? dto.collection ?? "General";
+    const isNewProduct = dto.isNewProduct ?? dto.isNew ?? false;
+
     const created = (
       await this.productModel.insertMany([
         {
           ...dto,
+          collectionName,
+          isNewProduct,
           status: dto.status ?? ProductStatus.DRAFT,
           stock: dto.stock ?? 0,
           memberDiscountPercent: dto.memberDiscountPercent ?? 20,
-          isNew: dto.isNew ?? false,
           featured: dto.featured ?? true,
         },
       ])
@@ -106,7 +114,16 @@ export class AdminShopService {
     slug: string,
     dto: UpdateProductDto,
   ): Promise<ProductDocument> {
-    const updateFields = { ...dto };
+    const updateFields: Record<string, unknown> = { ...dto };
+    if (dto.collectionName !== undefined || dto.collection !== undefined) {
+      updateFields.collectionName = dto.collectionName ?? dto.collection;
+      delete updateFields.collection;
+    }
+    if (dto.isNewProduct !== undefined || dto.isNew !== undefined) {
+      updateFields.isNewProduct = dto.isNewProduct ?? dto.isNew;
+      delete updateFields.isNew;
+    }
+
     const updated = await this.productModel.findOneAndUpdate(
       { slug },
       { $set: updateFields },
@@ -227,12 +244,14 @@ export class AdminShopService {
       dto.status === OrderStatus.CANCELLED &&
       previousStatus !== OrderStatus.CANCELLED
     ) {
-      for (const item of order.items) {
-        await this.productModel.updateOne(
-          { slug: item.productSlug },
-          { $inc: { stock: item.quantity } },
-        );
-      }
+      await Promise.all(
+        order.items.map((item) =>
+          this.productModel.updateOne(
+            { slug: item.productSlug },
+            { $inc: { stock: item.quantity } },
+          ),
+        ),
+      );
     }
 
     const saved = await order.save();

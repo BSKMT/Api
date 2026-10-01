@@ -22,6 +22,10 @@ export class UpdateProductDto {
 
   @IsString()
   @IsOptional()
+  collectionName?: string;
+
+  @IsString()
+  @IsOptional()
   collection?: string;
 
   @IsString()
@@ -49,6 +53,10 @@ export class UpdateProductDto {
   @IsInt()
   @IsOptional()
   stock?: number;
+
+  @IsBoolean()
+  @IsOptional()
+  isNewProduct?: boolean;
 
   @IsBoolean()
   @IsOptional()

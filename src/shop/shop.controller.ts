@@ -38,9 +38,10 @@ export class ShopController {
     @Query("limit") limit?: string,
     @Query("featured") featured?: string,
     @Query("collection") collection?: unknown,
+    @Query("collectionName") collectionName?: unknown,
   ) {
     // M2: Sanitize collection param — public endpoint, prevent NoSQL injection
-    const safeCollection = ensureString(collection);
+    const safeCollection = ensureString(collectionName ?? collection);
     return this.shopService.getProducts(
       limit ? Number.parseInt(limit, 10) : 20,
       featured === "true",

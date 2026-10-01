@@ -36,12 +36,13 @@ export class AdminShopController {
   async listProducts(
     @Query("status") status?: string,
     @Query("collection") collection?: string,
+    @Query("collectionName") collectionName?: string,
     @Query("limit") limit?: string,
     @Query("page") page?: string,
   ) {
     return this.adminShopService.listProducts({
       status,
-      collection,
+      collection: collectionName ?? collection,
       limit: limit ? Number.parseInt(limit, 10) : 50,
       page: page ? Number.parseInt(page, 10) : 1,
     });

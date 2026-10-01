@@ -24,7 +24,12 @@ export class CreateProductDto {
   name!: string;
 
   @IsString()
-  collection!: string;
+  @IsOptional()
+  collectionName?: string;
+
+  @IsString()
+  @IsOptional()
+  collection?: string;
 
   @IsString()
   @IsOptional()
@@ -49,6 +54,10 @@ export class CreateProductDto {
   @IsInt()
   @IsOptional()
   stock?: number;
+
+  @IsBoolean()
+  @IsOptional()
+  isNewProduct?: boolean;
 
   @IsBoolean()
   @IsOptional()

@@ -9,7 +9,7 @@ export enum ProductStatus {
   DISCONTINUED = "discontinued",
 }
 
-@Schema({ timestamps: true, suppressReservedKeysWarning: true })
+@Schema({ timestamps: true })
 export class Product {
   @Prop({ required: true, unique: true, index: true })
   slug!: string;
@@ -18,7 +18,7 @@ export class Product {
   name!: string;
 
   @Prop({ required: true })
-  collection!: string;
+  collectionName!: string;
 
   @Prop({ type: String, default: null })
   description!: string | null;
@@ -36,7 +36,7 @@ export class Product {
   stock!: number;
 
   @Prop({ default: false })
-  isNew!: boolean;
+  isNewProduct!: boolean;
 
   @Prop({ default: true })
   featured!: boolean;
@@ -52,3 +52,4 @@ export class Product {
 export const ProductSchema = SchemaFactory.createForClass(Product);
 
 ProductSchema.index({ status: 1, featured: -1 });
+ProductSchema.index({ collectionName: 1, status: 1 });
