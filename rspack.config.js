@@ -1,6 +1,6 @@
 import nodeExternals from "webpack-node-externals";
 
-export default function (options) {
+export default function configureRspack(options) {
   return {
     ...options,
     externals: [

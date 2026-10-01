@@ -19,7 +19,9 @@ export default [
       },
       sourceType: 'commonjs',
       parserOptions: {
-        projectService: true,
+        projectService: {
+          allowDefaultProject: ['api/*.js', 'rspack.config.js'],
+        },
         tsconfigRootDir: import.meta.dirname,
       },
     },
