@@ -4,12 +4,11 @@ import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended'
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
-export default [
+export default tseslint.config(
   {
     ignores: ['eslint.config.mjs', '.agents/**', 'dist/**'],
   },
   eslint.configs.recommended,
-  ...tseslint.configs.recommendedTypeChecked,
   eslintPluginPrettierRecommended,
   {
     languageOptions: {
@@ -17,16 +16,20 @@ export default [
         ...globals.node,
         ...globals.jest,
       },
-      sourceType: 'commonjs',
-      parserOptions: {
-        projectService: {
-          allowDefaultProject: ['api/*.js', 'rspack.config.js'],
-        },
-        tsconfigRootDir: import.meta.dirname,
-      },
+      sourceType: 'module',
     },
   },
   {
+    files: ['**/*.ts', '**/*.tsx'],
+    extends: [
+      ...tseslint.configs.recommendedTypeChecked,
+    ],
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unsafe-call': 'off',
@@ -39,7 +42,15 @@ export default [
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
       '@typescript-eslint/no-floating-promises': 'warn',
-      "prettier/prettier": ["error", { endOfLine: "auto" }],
     },
   },
-];
+  {
+    files: ['**/*.js', '**/*.mjs', '**/*.cjs'],
+    extends: [tseslint.configs.disableTypeChecked],
+  },
+  {
+    rules: {
+      'prettier/prettier': ['error', { endOfLine: 'auto' }],
+    },
+  },
+);
