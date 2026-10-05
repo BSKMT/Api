@@ -109,6 +109,8 @@ export class AdminEventsService {
     delete update.slug;
     if (dto.date) update.date = new Date(dto.date);
     if (dto.endDate) update.endDate = new Date(dto.endDate);
+    else if (dto.endDate === null || (dto.endDate as unknown) === "")
+      update.endDate = null;
     else if (dto.endDate === undefined) delete update.endDate;
 
     const updated = await this.eventModel.findOneAndUpdate(
