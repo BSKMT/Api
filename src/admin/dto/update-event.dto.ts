@@ -155,4 +155,7 @@ export class UpdateEventDto {
 
   @IsOptional()
   routeData?: Record<string, unknown>;
+
+  @IsOptional()
+  metadata?: Record<string, unknown>;
 }

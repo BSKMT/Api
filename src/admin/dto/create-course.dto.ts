@@ -103,4 +103,7 @@ export class CreateCourseDto {
   @IsString({ each: true })
   @IsOptional()
   featuresIncluded?: string[];
+
+  @IsOptional()
+  metadata?: Record<string, unknown>;
 }

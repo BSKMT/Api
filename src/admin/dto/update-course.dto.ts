@@ -102,4 +102,7 @@ export class UpdateCourseDto {
   @IsString({ each: true })
   @IsOptional()
   featuresIncluded?: string[];
+
+  @IsOptional()
+  metadata?: Record<string, unknown>;
 }
