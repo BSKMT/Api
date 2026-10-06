@@ -84,13 +84,15 @@ export async function bootstrap(): Promise<express.Express> {
   app.useGlobalFilters(new GlobalExceptionFilter());
 
   app.use((req: Request, res: Response, next: () => void) => {
-    const cleanPath = (req.path || req.url || "").split("?")[0];
+    const rawPath = (req.originalUrl || req.path || req.url || "").split(
+      "?",
+    )[0];
     if (
       req.method === "GET" &&
-      (cleanPath === "/" ||
-        cleanPath === "" ||
-        cleanPath === "/api" ||
-        cleanPath === "/api/")
+      (rawPath === "/" ||
+        rawPath === "" ||
+        rawPath === "/api" ||
+        rawPath === "/api/")
     ) {
       res.setHeader("Content-Type", "application/json");
       res.status(200).json({
@@ -104,7 +106,7 @@ export async function bootstrap(): Promise<express.Express> {
   });
 
   app.setGlobalPrefix("api", {
-    exclude: ["/", "/.well-known/assetlinks.json"],
+    exclude: ["/", "api", "/api", "/.well-known/assetlinks.json"],
   });
 
   await app.init();
