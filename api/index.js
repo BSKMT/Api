@@ -35,7 +35,10 @@ url.parse = function patchedUrlParse(...args) {
 let appHandlerPromise;
 
 export default async function handler(req, res) {
-  const rawPath = (req.url || "").split("?")[0].toLowerCase().replace(/\/+$/, "");
+  const rawPath = (req.url || "")
+    .split("?")[0]
+    .toLowerCase()
+    .replace(/\/+$/, "");
   const matchedPath = String(req.headers["x-matched-path"] || "").toLowerCase();
 
   const isRoot =
