@@ -4,6 +4,14 @@ import { Document } from "mongoose";
 export type EventDocument = Event & Document;
 
 export enum EventCategory {
+  RUTAS_RODADAS = "rutas-rodadas",
+  BENEFICOS_SOCIALES = "beneficos-sociales",
+  CAPACITACION_SEGURIDAD = "capacitacion-seguridad",
+  DEPORTIVOS_COMPETENCIA = "deportivos-competencia",
+  ENCUENTROS_CONCENTRACIONES = "encuentros-concentraciones",
+  EXHIBICIONES_FERIAS = "exhibiciones-ferias",
+  TEMATICAS_CONMEMORATIVAS = "tematicas-conmemorativas",
+  // Compatibilidad hacia atrás
   RODADA = "rodada",
   RALLY = "rally",
   TALLER = "taller",
@@ -65,9 +73,12 @@ export class Event {
   @Prop({
     required: true,
     enum: Object.values(EventCategory),
-    default: EventCategory.RODADA,
+    default: EventCategory.RUTAS_RODADAS,
   })
   category!: string;
+
+  @Prop({ type: String, default: null })
+  subcategory!: string | null;
 
   @Prop({ type: String, default: null })
   tag!: string | null;
