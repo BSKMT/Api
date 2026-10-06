@@ -8,11 +8,11 @@
   },
   "rewrites": [
     {
-      "source": "/",
+      "source": "/api/(.*)",
       "destination": "/api/index.js"
     },
     {
-      "source": "/(.*)",
+      "source": "/.well-known/(.*)",
       "destination": "/api/index.js"
     }
   ],
