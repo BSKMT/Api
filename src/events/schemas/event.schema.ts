@@ -20,6 +20,19 @@ export enum EventStatus {
   COMPLETED = "completed",
 }
 
+export interface ItineraryActivity {
+  time: string;
+  title: string;
+  description: string;
+}
+
+export interface ItineraryDay {
+  dayNumber: number;
+  date: string;
+  title?: string;
+  activities: ItineraryActivity[];
+}
+
 @Schema({ timestamps: true })
 export class Event {
   @Prop({ required: true, unique: true, index: true })
@@ -141,6 +154,9 @@ export class Event {
 
   @Prop({ type: Object, default: null })
   routeData!: Record<string, unknown> | null;
+
+  @Prop({ type: Array, default: [] })
+  itinerary!: ItineraryDay[];
 }
 
 export const EventSchema = SchemaFactory.createForClass(Event);
