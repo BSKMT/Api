@@ -35,15 +35,20 @@ url.parse = function patchedUrlParse(...args) {
 let appHandlerPromise;
 
 export default async function handler(req, res) {
-  const rawPath = (req.url || "").split("?")[0].replace(/\/+$/, "");
-  if (
-    req.method === "GET" &&
-    (rawPath === "" ||
-      rawPath === "/" ||
-      rawPath === "/api" ||
-      rawPath === "/api/index.js" ||
-      rawPath === "/index.js")
-  ) {
+  const rawPath = (req.url || "").split("?")[0].toLowerCase().replace(/\/+$/, "");
+  const matchedPath = String(req.headers["x-matched-path"] || "").toLowerCase();
+
+  const isRoot =
+    rawPath === "" ||
+    rawPath === "/" ||
+    rawPath === "/api" ||
+    rawPath === "/api/index.js" ||
+    rawPath === "/index.js" ||
+    matchedPath === "/" ||
+    matchedPath === "" ||
+    matchedPath === "/api";
+
+  if (req.method === "GET" && isRoot) {
     res.setHeader("Content-Type", "application/json");
     res.statusCode = 200;
     return res.end(
