@@ -1,15 +1,46 @@
-// Suppress Node.js DEP0169 deprecation warning triggered by Express internal url.parse()
+import url from "node:url";
+
+// 1. Remove Node's native warning listener that writes DEP0169 directly to stderr
+process.removeAllListeners("warning");
 process.on("warning", (warning) => {
   if (
     warning.name === "DeprecationWarning" &&
-    (warning as { code?: string }).code === "DEP0169"
+    ((warning as { code?: string }).code === "DEP0169" ||
+      warning.message.includes("url.parse()"))
   ) {
     return;
   }
   process.stderr.write(`${warning.name}: ${warning.message}\n`);
 });
 
-import { Logger, ValidationPipe } from "@nestjs/common";
+// 2. Monkey-patch url.parse to suppress process.emitWarning during internal parse calls
+
+const originalUrlParse = url.parse.bind(url);
+// @ts-expect-error monkey-patching deprecated url.parse for Express internal calls
+url.parse = function patchedUrlParse(
+  this: unknown,
+  ...args: [string, boolean?, boolean?]
+) {
+  const origEmitWarning = process.emitWarning.bind(process);
+  process.emitWarning = (warning: unknown, ...rest: unknown[]) => {
+    if (
+      (typeof warning === "string" && warning.includes("url.parse()")) ||
+      rest[1] === "DEP0169"
+    ) {
+      return;
+    }
+    // @ts-expect-error calling original emitWarning
+    return origEmitWarning.call(process, warning, ...rest);
+  };
+  try {
+    // @ts-expect-error invoking originalUrlParse with varied overload arguments
+    return originalUrlParse.apply(this, args);
+  } finally {
+    process.emitWarning = origEmitWarning;
+  }
+};
+
+import { Logger, RequestMethod, ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
 import { NestExpressApplication } from "@nestjs/platform-express";
@@ -106,7 +137,13 @@ export async function bootstrap(): Promise<express.Express> {
   });
 
   app.setGlobalPrefix("api", {
-    exclude: ["/", "api", "/api", "/.well-known/assetlinks.json"],
+    exclude: [
+      { path: "", method: RequestMethod.GET },
+      { path: "/", method: RequestMethod.GET },
+      { path: "api", method: RequestMethod.GET },
+      { path: "health", method: RequestMethod.GET },
+      { path: ".well-known/assetlinks.json", method: RequestMethod.GET },
+    ],
   });
 
   await app.init();
