@@ -14,6 +14,16 @@ export class AppController {
   }
 
   @Public()
+  @Get("api")
+  getApiRoot() {
+    return {
+      status: "ok",
+      name: "BSKMT API",
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  @Public()
   @Get(".well-known/assetlinks.json")
   getAssetLinks() {
     return [
