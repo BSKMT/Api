@@ -6,10 +6,21 @@
       "includeFiles": "dist/**"
     }
   },
-  "routes": [
+  "redirects": [
     {
-      "src": "/(.*)",
-      "dest": "/api/index.js"
+      "source": "/",
+      "destination": "https://bskmt.com",
+      "permanent": false
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/.well-known/(.*)",
+      "destination": "/api/index.js"
     }
   ],
   "crons": [
