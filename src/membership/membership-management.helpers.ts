@@ -34,7 +34,7 @@ export async function getMembershipPaymentHelper(
     transaction.installmentTotal,
   );
 
-  const result: any = {
+  const result: Record<string, unknown> = {
     reference: transaction.reference,
     type: "membership",
     paymentPlan: transaction.paymentPlan,
@@ -141,22 +141,26 @@ export async function cancelPendingMembershipTransactionHelper(
   userId: string,
   reference: string,
 ): Promise<{ message: string }> {
-  const transaction = await deps.transactionModel.findOne({
-    userId,
-    reference,
-  });
+  // F-03: Transición atómica de PENDING a VOIDED
+  const transaction = await deps.transactionModel.findOneAndUpdate(
+    {
+      userId,
+      reference,
+      status: "PENDING",
+    },
+    { $set: { status: "VOIDED" } },
+    { new: true },
+  );
 
   if (!transaction) {
-    throw new NotFoundException("Transacción de membresía no encontrada");
-  }
-
-  if (transaction.status !== "PENDING") {
+    const existing = await deps.transactionModel.findOne({ userId, reference });
+    if (!existing) {
+      throw new NotFoundException("Transacción de membresía no encontrada");
+    }
     throw new BadRequestException(
       "Solo se pueden cancelar transacciones pendientes",
     );
   }
-
-  transaction.status = "VOIDED";
 
   if (transaction.creditUsedAmount > 0 && !transaction.creditReverted) {
     const reverted = await deps.usersService.revertPartialPaymentCredit(
@@ -165,10 +169,10 @@ export async function cancelPendingMembershipTransactionHelper(
     );
     if (reverted) {
       transaction.creditReverted = true;
+      await transaction.save();
     }
   }
 
-  await transaction.save();
   deps.logger.log(
     `Membership transaction cancelled by user: ref=${maskReference(reference)}`,
   );

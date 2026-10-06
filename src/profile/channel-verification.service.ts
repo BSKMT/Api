@@ -9,6 +9,7 @@ import { Model } from "mongoose";
 import { User, UserDocument } from "../users/schemas/user.schema";
 import { BirdVerifyService } from "../bird-verify/bird-verify.service";
 import { BirdSmsService } from "../bird/bird-sms.service";
+import { BirdEmailService } from "../bird/bird-email.service";
 import {
   maskEmail,
   maskPhone,
@@ -19,19 +20,33 @@ import {
   handleVerifyCheckResult,
   updateBetterAuthEmail,
 } from "./channel-verification.helpers";
+import { KvCacheService } from "../kv/kv-cache.service";
 
 @Injectable()
 export class ChannelVerificationService {
   private readonly logger = new Logger(ChannelVerificationService.name);
 
-  private readonly phoneThrottle = new ChannelThrottleStore(5 * 60 * 1000, 3);
-  private readonly emailThrottle = new ChannelThrottleStore(5 * 60 * 1000, 3);
+  private readonly phoneThrottle: ChannelThrottleStore;
+  private readonly emailThrottle: ChannelThrottleStore;
 
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     private readonly birdVerifyService: BirdVerifyService,
     private readonly smsService: BirdSmsService,
-  ) {}
+    private readonly emailService: BirdEmailService,
+    private readonly kvCache: KvCacheService,
+  ) {
+    this.phoneThrottle = new ChannelThrottleStore(
+      5 * 60 * 1000,
+      3,
+      this.kvCache,
+    );
+    this.emailThrottle = new ChannelThrottleStore(
+      5 * 60 * 1000,
+      3,
+      this.kvCache,
+    );
+  }
 
   async initiatePhoneVerification(
     userId: string,
@@ -58,7 +73,17 @@ export class ChannelVerificationService {
       throw new BadRequestException("Este telefono ya esta verificado");
     }
 
-    this.phoneThrottle.enforce(phone, this.logger);
+    // F-10: Validar unicidad del número de teléfono
+    const existingPhoneUser = await this.userModel
+      .findOne({ phone, _id: { $ne: userId } })
+      .lean();
+    if (existingPhoneUser) {
+      throw new ConflictException(
+        "Este número de teléfono ya se encuentra asociado a otra cuenta.",
+      );
+    }
+
+    await this.phoneThrottle.enforce(phone, this.logger);
 
     try {
       await this.birdVerifyService.createPhoneVerification(phone, {
@@ -80,7 +105,7 @@ export class ChannelVerificationService {
     user.phoneVerified = false;
     await user.save();
 
-    this.phoneThrottle.record(phone);
+    await this.phoneThrottle.record(phone);
     this.logger.log(`Phone OTP sent to ${maskPhone(phone)} for user ${userId}`);
   }
 
@@ -155,7 +180,7 @@ export class ChannelVerificationService {
       );
     }
 
-    this.emailThrottle.enforce(normalizedEmail, this.logger);
+    await this.emailThrottle.enforce(normalizedEmail, this.logger);
 
     try {
       await this.birdVerifyService.createEmailVerification(normalizedEmail, {
@@ -176,7 +201,23 @@ export class ChannelVerificationService {
     user.pendingEmail = normalizedEmail;
     await user.save();
 
-    this.emailThrottle.record(normalizedEmail);
+    // F-10: Notificar al correo actual sobre la solicitud de cambio
+    try {
+      const nombre =
+        (user.profile?.["datos-personales"]?.primerNombre as string) ||
+        "Piloto";
+      await this.emailService.sendNotificationEmail({
+        to: user.email,
+        title: "Seguridad BSKMT: Solicitud de cambio de correo electrónico",
+        message: `Hola ${nombre}. Te informamos que se ha solicitado cambiar tu correo electrónico en BSKMT a ${normalizedEmail}. Si no realizaste esta solicitud, cambia tu contraseña inmediatamente o contacta a soporte técnico.`,
+      });
+    } catch (notifyErr) {
+      this.logger.warn(
+        `Alerta de cambio de correo al email previo falló: ${notifyErr instanceof Error ? notifyErr.message : String(notifyErr)}`,
+      );
+    }
+
+    await this.emailThrottle.record(normalizedEmail);
     this.logger.log(
       `Email change OTP sent to ${maskEmail(normalizedEmail)} for user ${userId}`,
     );

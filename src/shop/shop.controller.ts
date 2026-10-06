@@ -10,7 +10,12 @@ import {
   HttpCode,
   HttpStatus,
   NotFoundException,
+  Headers,
+  UnauthorizedException,
+  Logger,
 } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { timingSafeEqual } from "node:crypto";
 import type { Request } from "express";
 import { Public } from "../common/decorators";
 import { SessionGuard } from "../auth/session.guard";
@@ -20,6 +25,7 @@ import { ShopService } from "./shop.service";
 import { CreateOrderDto } from "./dto/create-order.dto";
 import { AddWishlistDto } from "./dto/add-wishlist.dto";
 import { ensureString } from "../common/utils/sanitize-query.util";
+import type { EnvironmentConfig } from "../config/config.interface";
 
 interface AuthenticatedRequest extends Request {
   user: { userId: string; email?: string };
@@ -27,9 +33,12 @@ interface AuthenticatedRequest extends Request {
 
 @Controller("shop")
 export class ShopController {
+  private readonly logger = new Logger(ShopController.name);
+
   constructor(
     private readonly shopService: ShopService,
     private readonly usersService: UsersService,
+    private readonly configService: ConfigService<EnvironmentConfig>,
   ) {}
 
   @Public()
@@ -131,5 +140,50 @@ export class ShopController {
     // NoSQL injection via {"productSlug":{"$ne":null}} deleting all wishlist items
     const { userId } = req.user;
     return this.shopService.removeFromWishlist(userId, dto.productSlug);
+  }
+
+  @Public()
+  @Post("internal/cron/expire-pending")
+  @HttpCode(HttpStatus.OK)
+  async expireStalePendingOrders(
+    @Headers("x-cron-secret") headerSecret: string | undefined,
+    @Headers("authorization") authorization: string | undefined,
+  ) {
+    this.assertCronSecret(headerSecret, authorization);
+    const startedAt = Date.now();
+    const expiredCount = await this.shopService.expireStalePendingOrders(60);
+    const elapsed = Date.now() - startedAt;
+    this.logger.log(
+      `shop expire-pending cron completed in ${elapsed}ms — ${expiredCount} expired`,
+    );
+    return { ok: true, expired: expiredCount, elapsedMs: elapsed };
+  }
+
+  private assertCronSecret(
+    headerSecret: string | undefined,
+    authorization: string | undefined,
+  ): void {
+    const expected =
+      this.configService.get<string>("CRON_SECRET", { infer: true }) ?? "";
+    if (!expected) {
+      throw new UnauthorizedException("CRON_SECRET not configured");
+    }
+    const provided =
+      headerSecret ??
+      (authorization?.startsWith("Bearer ")
+        ? authorization.slice("Bearer ".length)
+        : undefined) ??
+      "";
+    const expectedBuf = Buffer.from(expected);
+    const providedBuf = Buffer.from(provided);
+    if (
+      providedBuf.length !== expectedBuf.length ||
+      !timingSafeEqual(providedBuf, expectedBuf)
+    ) {
+      this.logger.warn(
+        "Unauthorized cron invocation — secret mismatch (or missing).",
+      );
+      throw new UnauthorizedException("Invalid or missing cron secret");
+    }
   }
 }

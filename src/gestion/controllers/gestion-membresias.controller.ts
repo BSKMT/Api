@@ -4,13 +4,17 @@ import {
   Post,
   Param,
   Query,
+  Req,
   UseGuards,
   HttpCode,
   HttpStatus,
   NotFoundException,
+  BadRequestException,
+  Logger,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
-import { Model } from "mongoose";
+import { Model, isValidObjectId } from "mongoose";
+import type { Request } from "express";
 import { SessionGuard } from "../../auth/session.guard";
 import { GestionGuard } from "../../common/guards/gestion.guard";
 import { RequireSubroles } from "../../common/decorators/subroles.decorator";
@@ -20,10 +24,21 @@ import {
   UserSubrole,
 } from "../../users/schemas/user.schema";
 
+interface AuthenticatedRequest extends Request {
+  user: {
+    userId: string;
+    email?: string;
+    role?: string;
+    subrol?: string | null;
+  };
+}
+
 @Controller("gestion/membresias")
 @UseGuards(SessionGuard, GestionGuard)
 @RequireSubroles(UserSubrole.LIDER_MEMBRESIAS, UserSubrole.GESTOR_MEMBRESIAS)
 export class GestionMembresiasController {
+  private readonly logger = new Logger(GestionMembresiasController.name);
+
   constructor(
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
@@ -39,9 +54,10 @@ export class GestionMembresiasController {
       role: { $in: ["member", "admin"] },
     };
 
-    if (search) {
+    if (search && typeof search === "string") {
+      const cleanSearch = search.trim().slice(0, 100);
       const searchRegex = new RegExp(
-        search.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`),
+        cleanSearch.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`),
         "i",
       );
       filter.$or = [
@@ -59,13 +75,16 @@ export class GestionMembresiasController {
     const pg = Math.max(page ? Number.parseInt(page, 10) : 1, 1);
     const skip = (pg - 1) * lim;
 
+    // F-09: Proyección estricta de solo los campos necesarios para gestión de membresías
     const [members, total] = await Promise.all([
       this.userModel
         .find(filter)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(lim)
-        .select("-settings")
+        .select(
+          "_id email role subrol membershipLevel membershipStartDate membershipExpiryDate profile.datos-personales profile.membresia-ecosistema identityVerified phone createdAt",
+        )
         .lean(),
       this.userModel.countDocuments(filter),
     ]);
@@ -89,7 +108,7 @@ export class GestionMembresiasController {
       .sort({ updatedAt: -1 })
       .limit(50)
       .select(
-        "_id email role subrol profile.datos-personales phone identityVerified",
+        "_id email role subrol profile.datos-personales phone identityVerified createdAt",
       )
       .lean();
 
@@ -98,15 +117,64 @@ export class GestionMembresiasController {
 
   @Post("verify/:id")
   @HttpCode(HttpStatus.OK)
-  async verifyIdentity(@Param("id") id: string) {
+  async verifyIdentity(
+    @Param("id") id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    if (!isValidObjectId(id)) {
+      throw new BadRequestException("Identificador de usuario inválido");
+    }
+
+    // F-09: Bloquear que un gestor se auto-verifique
+    if (id === req.user.userId) {
+      throw new BadRequestException(
+        "Conflicto de interés: no puedes verificar tu propia identidad.",
+      );
+    }
+
     const user = await this.userModel.findById(id);
     if (!user) {
       throw new NotFoundException("Usuario no encontrado");
     }
 
+    const existingKyc = user.identityVerification;
+    const personal = user.profile?.["datos-personales"] as
+      Record<string, unknown> | undefined;
+    const primerNombre = (personal?.primerNombre as string) || "";
+    const primerApellido = (personal?.primerApellido as string) || "";
+    const fullName =
+      existingKyc?.fullName ||
+      `${primerNombre} ${primerApellido}`.trim() ||
+      "Verificado Manual";
+    const docNumber =
+      existingKyc?.documentNumber ||
+      (personal?.numeroDocumento as string) ||
+      "MANUAL";
+    const docType =
+      existingKyc?.documentType || (personal?.tipoDocumento as string) || "CC";
+
     user.identityVerified = true;
     user.identityVerifiedAt = new Date();
+    user.identityVerification = {
+      documentType: docType,
+      documentNumber: docNumber,
+      fullName: fullName,
+      firstName: existingKyc?.firstName ?? primerNombre ?? null,
+      lastName: existingKyc?.lastName ?? primerApellido ?? null,
+      dateOfBirth: existingKyc?.dateOfBirth ?? null,
+      gender: existingKyc?.gender ?? null,
+      documentStatus: existingKyc?.documentStatus ?? "VIGENTE",
+      expirationDate: existingKyc?.expirationDate ?? null,
+      verifikId: existingKyc?.verifikId ?? null,
+      verifiedAt: new Date(),
+      verifiedBy: req.user.userId,
+      verificationMethod: "manual_gestion",
+    };
     await user.save();
+
+    this.logger.log(
+      `Identity manually verified for user ${id} by gestor ${req.user.userId}`,
+    );
 
     return {
       success: true,

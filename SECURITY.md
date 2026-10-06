@@ -17,7 +17,10 @@ a continuación, en el orden indicado:
 | `MONGODB_URI` | MongoDB Atlas → cambiar la contraseña del usuario applicational | Actualizar todas las apps que la leen (API + landing page) |
 | `BETTER_AUTH_SECRET` | Regenerar (`openssl rand -hex 32`) | **Invalida todas las sesiones activas** — coordinar con ventana de mantenimiento |
 | `BOLD_SECRET_KEY`, `BOLD_IDENTITY_KEY`, `BOLD_PUBLIC_KEY` | Panel de Bold → regenerar credenciales del comercio | Actualizar webhook HMAC + integrity signature |
-| `ZOHO_CLIENT_SECRET` + `ZOHO_REFRESH_TOKEN` | Zoho API Console → revocar y re-otorgar | Actualizar el servicio de envío de correo |
+| `BIRD_API_KEY`, `BIRD_WORKSPACE_ID`, `BIRD_SIGNING_KEY` | Panel de Bird CRM → rotar API keys y secretos de webhook | Actualizar servicios de SMS, Email y Webhooks |
+| `CLOUDINARY_API_SECRET` | Panel de Cloudinary → rotar API secret | Actualizar firma de subida y transformaciones seguras |
+| `ALEGRA_WEBHOOK_SECRET` | Panel de Alegra → configurar y rotar token de webhook | Actualizar env en Vercel |
+| `ALLIED_WORKSHOP_TOKENS` | Generar tokens criptográficos únicos por taller aliado | Cargar en Vercel con formato `token:NombreTaller` |
 | *GitHub PAT `ghp_...`* | GitHub → Settings → Developer settings → Personal access tokens → Revoke | Crear un PAT nuevo con scope mínimo (`repo`) usando credential helper |
 
 ## Purga del historial de Git

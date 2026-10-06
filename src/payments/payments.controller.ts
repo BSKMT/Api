@@ -64,7 +64,7 @@ export class PaymentsController {
   async getTransactionStatus(
     @Req() req: AuthenticatedRequest,
     @Param("reference") reference: string,
-  ) {
+  ): Promise<Record<string, unknown>> {
     const { userId } = req.user;
     return this.paymentsService.getTransactionStatus(userId, reference);
   }

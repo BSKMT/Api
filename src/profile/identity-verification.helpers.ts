@@ -17,6 +17,7 @@ import {
   mapDocumentType,
 } from "./identity-verification-matcher";
 import { toVerifikDate } from "./identity-verification-checks";
+import type { KvCacheService } from "../kv/kv-cache.service";
 
 export class IdentityAttemptThrottle {
   private readonly logger = new Logger(IdentityAttemptThrottle.name);
@@ -24,12 +25,33 @@ export class IdentityAttemptThrottle {
   private readonly maxAttempts = 3;
   private readonly attempts = new Map<string, number[]>();
 
-  enforce(userId: string): void {
+  constructor(private readonly kvCache?: KvCacheService) {}
+
+  async enforce(userId: string): Promise<void> {
     const now = Date.now();
     const cutoff = now - this.windowMs;
-    const timestamps = (this.attempts.get(userId) ?? []).filter(
-      (t) => t > cutoff,
-    );
+    let timestamps: number[] = [];
+
+    if (this.kvCache?.isAvailable()) {
+      try {
+        const cached = await this.kvCache.get<number[]>(
+          `throttle:id:${userId}`,
+          true,
+        );
+        if (Array.isArray(cached)) {
+          timestamps = cached.filter(
+            (t) => typeof t === "number" && t > cutoff,
+          );
+        }
+      } catch {
+        timestamps = (this.attempts.get(userId) ?? []).filter(
+          (t) => t > cutoff,
+        );
+      }
+    } else {
+      timestamps = (this.attempts.get(userId) ?? []).filter((t) => t > cutoff);
+    }
+
     if (timestamps.length >= this.maxAttempts) {
       this.logger.warn(
         `Identity-verification throttle: user ${userId} exceeded ${this.maxAttempts} attempts in 10 min`,
@@ -41,7 +63,7 @@ export class IdentityAttemptThrottle {
     }
   }
 
-  record(userId: string): void {
+  async record(userId: string): Promise<void> {
     const now = Date.now();
     const cutoff = now - this.windowMs;
     const timestamps = (this.attempts.get(userId) ?? []).filter(
@@ -49,6 +71,20 @@ export class IdentityAttemptThrottle {
     );
     timestamps.push(now);
     this.attempts.set(userId, timestamps);
+
+    if (this.kvCache?.isAvailable()) {
+      try {
+        const ttlSec = Math.ceil(this.windowMs / 1000);
+        await this.kvCache.set(
+          `throttle:id:${userId}`,
+          timestamps,
+          ttlSec,
+          true,
+        );
+      } catch {
+        // Fallback local silencioso
+      }
+    }
   }
 }
 

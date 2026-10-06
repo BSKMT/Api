@@ -13,15 +13,16 @@ export async function executeListUsers(
 ) {
   const filter: Record<string, unknown> = {};
 
-  if (filters.role) {
-    filter.role = filters.role;
+  if (filters.role && typeof filters.role === "string") {
+    filter.role = filters.role.trim().toLowerCase();
   }
-  if (filters.subrol) {
-    filter.subrol = filters.subrol;
+  if (filters.subrol && typeof filters.subrol === "string") {
+    filter.subrol = filters.subrol.trim().toLowerCase();
   }
-  if (filters.search) {
+  if (filters.search && typeof filters.search === "string") {
+    const cleanSearch = filters.search.trim().slice(0, 100);
     const searchRegex = new RegExp(
-      filters.search.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`),
+      cleanSearch.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`),
       "i",
     );
     filter.$or = [
@@ -42,6 +43,7 @@ export async function executeListUsers(
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
+      .select("-settings")
       .lean(),
     userModel.countDocuments(filter),
   ]);

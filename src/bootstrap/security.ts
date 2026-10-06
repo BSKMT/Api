@@ -56,6 +56,19 @@ export function setupSecurityMiddleware(
     .map((o) => o.trim())
     .filter(Boolean);
 
+  const isProduction =
+    configService.get<string>("NODE_ENV", { infer: true }) === "production";
+
+  const devOrigins = isProduction
+    ? []
+    : [
+        "http://localhost:3000",
+        "http://localhost:4321",
+        "http://localhost:4322",
+        "http://localhost:5173",
+        "http://10.0.2.2",
+      ];
+
   const allowedOriginsList = Array.from(
     new Set([
       ...configuredOrigins,
@@ -64,11 +77,7 @@ export function setupSecurityMiddleware(
       "https://dash.bskmt.com",
       landingPageUrl,
       panelUrl,
-      "http://localhost:3000",
-      "http://localhost:4321",
-      "http://localhost:4322",
-      "http://localhost:5173",
-      "http://10.0.2.2",
+      ...devOrigins,
     ]),
   );
 
@@ -104,6 +113,7 @@ export function setupSecurityMiddleware(
       req.path.startsWith("/api/internal/cron/") ||
       req.path === "/api/membership/internal/cron/sweep-pending" ||
       req.path === "/api/events/internal/cron/sweep-stale-registrations" ||
+      req.path === "/api/shop/internal/cron/expire-pending" ||
       req.path === "/api/internal/webhooks/bird/realtime" ||
       req.path === "/api/garage/allied/service-order"
     ) {

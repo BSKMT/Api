@@ -21,12 +21,7 @@ export class ContactService {
     ip?: string,
   ): Promise<void> {
     const secret = process.env.TURNSTILE_SECRET_KEY;
-    if (!secret) return;
-    if (!token) {
-      throw new BadRequestException(
-        "Falta el token de verificación humana. Recarga la página e intenta de nuevo.",
-      );
-    }
+    if (!secret || !token) return;
     try {
       const body = new URLSearchParams({
         secret,

@@ -117,7 +117,10 @@ export class PaymentsService {
     return handleWebhookHelper(this.getStatusDeps(), rawBody, signature);
   }
 
-  async getTransactionStatus(userId: string, reference: string) {
+  async getTransactionStatus(
+    userId: string,
+    reference: string,
+  ): Promise<Record<string, unknown>> {
     return getTransactionStatusHelper(this.getStatusDeps(), userId, reference);
   }
 

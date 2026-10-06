@@ -19,8 +19,17 @@ export const ALLOWED_MIME_TYPES = [
   "image/webp",
   "image/avif",
   "image/gif",
-  "image/svg+xml",
   "application/pdf",
 ];
 
 export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+
+export const ALLOWED_SIGNATURE_PARAMS = [
+  "folder",
+  "timestamp",
+  "upload_preset",
+  "tags",
+  "context",
+  "public_id",
+  "source",
+] as const;

@@ -135,7 +135,7 @@ export async function getTransactionStatusHelper(
     );
   }
 
-  const result: any = {
+  const result: Record<string, unknown> = {
     reference: transaction.reference,
     status: transaction.status,
     amount: transaction.amount,

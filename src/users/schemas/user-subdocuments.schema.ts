@@ -37,6 +37,8 @@ export interface IdentityVerification {
   expirationDate: string | null;
   verifikId: string | null;
   verifiedAt: Date;
+  verifiedBy?: string | null;
+  verificationMethod?: string | null;
 }
 
 export const IdentityVerificationSchema = new MongooseSchema(
@@ -52,6 +54,8 @@ export const IdentityVerificationSchema = new MongooseSchema(
     expirationDate: { type: String, default: null },
     verifikId: { type: String, default: null },
     verifiedAt: { type: Date, required: true },
+    verifiedBy: { type: String, default: null },
+    verificationMethod: { type: String, default: null },
   },
   { _id: false },
 );

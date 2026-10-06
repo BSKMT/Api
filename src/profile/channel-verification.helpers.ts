@@ -7,6 +7,7 @@ import {
 import { getMongoDb } from "../auth/better-auth";
 import { maskPhone, sanitizeForLog } from "../common/utils/log-redact.util";
 import { ObjectId } from "mongodb";
+import type { KvCacheService } from "../kv/kv-cache.service";
 
 export class ChannelThrottleStore {
   private readonly store = new Map<string, number[]>();
@@ -14,12 +15,32 @@ export class ChannelThrottleStore {
   constructor(
     private readonly windowMs = 5 * 60 * 1000,
     private readonly maxSends = 3,
+    private readonly kvCache?: KvCacheService,
   ) {}
 
-  enforce(key: string, logger?: Logger): void {
+  async enforce(key: string, logger?: Logger): Promise<void> {
     const now = Date.now();
     const cutoff = now - this.windowMs;
-    const timestamps = (this.store.get(key) ?? []).filter((t) => t > cutoff);
+    let timestamps: number[] = [];
+
+    if (this.kvCache?.isAvailable()) {
+      try {
+        const cached = await this.kvCache.get<number[]>(
+          `throttle:${key}`,
+          true,
+        );
+        if (Array.isArray(cached)) {
+          timestamps = cached.filter(
+            (t) => typeof t === "number" && t > cutoff,
+          );
+        }
+      } catch {
+        timestamps = (this.store.get(key) ?? []).filter((t) => t > cutoff);
+      }
+    } else {
+      timestamps = (this.store.get(key) ?? []).filter((t) => t > cutoff);
+    }
+
     if (timestamps.length >= this.maxSends) {
       logger?.warn(
         `Throttle: ${maskPhone(key)} exceeded ${this.maxSends} sends in ${this.windowMs / 1000}s`,
@@ -31,12 +52,21 @@ export class ChannelThrottleStore {
     }
   }
 
-  record(key: string): void {
+  async record(key: string): Promise<void> {
     const now = Date.now();
     const cutoff = now - this.windowMs;
     const timestamps = (this.store.get(key) ?? []).filter((t) => t > cutoff);
     timestamps.push(now);
     this.store.set(key, timestamps);
+
+    if (this.kvCache?.isAvailable()) {
+      try {
+        const ttlSec = Math.ceil(this.windowMs / 1000);
+        await this.kvCache.set(`throttle:${key}`, timestamps, ttlSec, true);
+      } catch {
+        // Fallback local silencioso
+      }
+    }
   }
 }
 

@@ -10,6 +10,7 @@ import {
   HttpStatus,
   Headers,
   BadRequestException,
+  UnauthorizedException,
   Logger,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
@@ -85,7 +86,7 @@ export class MembershipController {
   async getPayment(
     @Req() req: AuthenticatedRequest,
     @Param("reference") reference: string,
-  ) {
+  ): Promise<Record<string, unknown>> {
     const { userId } = req.user;
     return this.membershipService.getMembershipPayment(userId, reference);
   }
@@ -189,7 +190,7 @@ export class MembershipController {
     const expected =
       this.configService.get<string>("CRON_SECRET", { infer: true }) ?? "";
     if (!expected) {
-      throw new BadRequestException("CRON_SECRET not configured");
+      throw new UnauthorizedException("CRON_SECRET not configured");
     }
     const provided =
       headerSecret ??
@@ -206,7 +207,7 @@ export class MembershipController {
       this.logger.warn(
         "Unauthorized cron invocation — secret mismatch (or missing).",
       );
-      throw new BadRequestException("Invalid or missing cron secret");
+      throw new UnauthorizedException("Invalid or missing cron secret");
     }
   }
 }

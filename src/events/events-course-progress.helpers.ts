@@ -29,8 +29,23 @@ export async function executeCourseProgress(
   }
 
   const clampedInput = Math.min(100, Math.max(0, progress));
-  const MAX_PROGRESS_DELTA_PER_REQUEST = 10;
   const currentProgress = enrollment.progress ?? 0;
+
+  const lastUpdated = enrollment.updatedAt
+    ? new Date(enrollment.updatedAt).getTime()
+    : 0;
+  const now = Date.now();
+  if (
+    clampedInput > currentProgress &&
+    lastUpdated > 0 &&
+    now - lastUpdated < 5000
+  ) {
+    throw new BadRequestException(
+      "Por favor tómate un momento para asimilar el contenido antes de continuar avanzando.",
+    );
+  }
+
+  const MAX_PROGRESS_DELTA_PER_REQUEST = 10;
   const nextProgress = Math.min(
     100,
     Math.max(currentProgress, clampedInput),
@@ -44,7 +59,7 @@ export async function executeCourseProgress(
         "No puedes completar el curso sin un pago confirmado",
       );
     }
-    const MIN_LEARNING_TIME_MS = 5 * 60 * 1000;
+    const MIN_LEARNING_TIME_MS = 15 * 60 * 1000;
     const enrolledAt = enrollment.createdAt
       ? new Date(enrollment.createdAt).getTime()
       : 0;
