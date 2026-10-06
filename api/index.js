@@ -9,6 +9,25 @@ process.on("warning", (warning) => {
 let appHandlerPromise;
 
 export default async function handler(req, res) {
+  const urlPath = (req.url || "").split("?")[0];
+  if (
+    req.method === "GET" &&
+    (urlPath === "" ||
+      urlPath === "/" ||
+      urlPath === "/api/index.js" ||
+      urlPath === "/index.js")
+  ) {
+    res.setHeader("Content-Type", "application/json");
+    res.statusCode = 200;
+    return res.end(
+      JSON.stringify({
+        status: "ok",
+        name: "BSKMT API",
+        timestamp: new Date().toISOString(),
+      }),
+    );
+  }
+
   if (!appHandlerPromise) {
     appHandlerPromise = import("../dist/main.js").then((m) => m.default);
   }
