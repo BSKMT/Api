@@ -30,11 +30,13 @@ export class KvCacheService {
   constructor(
     private readonly configService: ConfigService<EnvironmentConfig>,
   ) {
-    this.enabled = process.env.CF_KV_ENABLED === "true";
     this.accountId = process.env.CF_ACCOUNT_ID ?? "";
     this.publicNsId = process.env.CF_KV_NAMESPACE_ID_PUBLIC ?? "";
     this.privateNsId = process.env.CF_KV_NAMESPACE_ID_PRIVATE ?? "";
     this.apiToken = process.env.CF_KV_API_TOKEN ?? "";
+    this.enabled =
+      process.env.CF_KV_ENABLED === "true" &&
+      Boolean(this.accountId && this.publicNsId && this.apiToken);
     this.baseUrl = `https://api.cloudflare.com/client/v4/accounts/${this.accountId}/storage/kv/namespaces`;
 
     this.breaker = new KvCircuitBreaker(5, 30000, this.logger);
@@ -56,7 +58,7 @@ export class KvCacheService {
 
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 500);
+      const timeout = setTimeout(() => controller.abort(), 2500);
 
       const res = await fetch(
         `${this.baseUrl}/${nsId}/values/${encodeURIComponent(key)}`,
@@ -72,6 +74,9 @@ export class KvCacheService {
         return null;
       }
       if (!res.ok) {
+        this.logger.warn(
+          `KV GET failed for key "${key}": ${res.status} ${res.statusText}`,
+        );
         this.breaker.recordFailure();
         return null;
       }
@@ -92,7 +97,10 @@ export class KvCacheService {
 
       this.breaker.recordSuccess();
       return sealed.v;
-    } catch {
+    } catch (err) {
+      this.logger.warn(
+        `KV GET exception for key "${key}": ${(err as Error).message}`,
+      );
       this.breaker.recordFailure();
       return null;
     }
@@ -121,7 +129,7 @@ export class KvCacheService {
       }
 
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 500);
+      const timeout = setTimeout(() => controller.abort(), 3000);
 
       const res = await fetch(url, {
         method: "PUT",
@@ -137,9 +145,15 @@ export class KvCacheService {
       if (res.ok) {
         this.breaker.recordSuccess();
       } else {
+        this.logger.warn(
+          `KV PUT failed for key "${key}": ${res.status} ${res.statusText}`,
+        );
         this.breaker.recordFailure();
       }
-    } catch {
+    } catch (err) {
+      this.logger.warn(
+        `KV PUT exception for key "${key}": ${(err as Error).message}`,
+      );
       this.breaker.recordFailure();
     }
   }
@@ -151,7 +165,7 @@ export class KvCacheService {
 
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 500);
+      const timeout = setTimeout(() => controller.abort(), 2500);
 
       const res = await fetch(
         `${this.baseUrl}/${nsId}/values/${encodeURIComponent(key)}`,
@@ -166,9 +180,15 @@ export class KvCacheService {
       if (res.ok || res.status === 404) {
         this.breaker.recordSuccess();
       } else {
+        this.logger.warn(
+          `KV DELETE failed for key "${key}": ${res.status} ${res.statusText}`,
+        );
         this.breaker.recordFailure();
       }
-    } catch {
+    } catch (err) {
+      this.logger.warn(
+        `KV DELETE exception for key "${key}": ${(err as Error).message}`,
+      );
       this.breaker.recordFailure();
     }
   }

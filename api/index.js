@@ -1,21 +1,48 @@
-// Suppress Node.js DEP0169 deprecation warning triggered by Express internal url.parse()
+import url from "node:url";
+
+// 1. Remove Node's native warning listener that writes DEP0169 directly to stderr
+process.removeAllListeners("warning");
 process.on("warning", (warning) => {
-  if (warning.name === "DeprecationWarning" && warning.code === "DEP0169") {
+  if (
+    warning.name === "DeprecationWarning" &&
+    (warning.code === "DEP0169" || warning.message.includes("url.parse()"))
+  ) {
     return;
   }
   process.stderr.write(`${warning.name}: ${warning.message}\n`);
 });
 
+// 2. Monkey-patch url.parse to suppress process.emitWarning during internal parse calls
+const originalUrlParse = url.parse;
+url.parse = function patchedUrlParse(...args) {
+  const origEmitWarning = process.emitWarning;
+  process.emitWarning = (warning, ...rest) => {
+    if (
+      (typeof warning === "string" && warning.includes("url.parse()")) ||
+      rest[1] === "DEP0169"
+    ) {
+      return;
+    }
+    return origEmitWarning.call(process, warning, ...rest);
+  };
+  try {
+    return originalUrlParse.apply(this, args);
+  } finally {
+    process.emitWarning = origEmitWarning;
+  }
+};
+
 let appHandlerPromise;
 
 export default async function handler(req, res) {
-  const urlPath = (req.url || "").split("?")[0];
+  const rawPath = (req.url || "").split("?")[0].replace(/\/+$/, "");
   if (
     req.method === "GET" &&
-    (urlPath === "" ||
-      urlPath === "/" ||
-      urlPath === "/api/index.js" ||
-      urlPath === "/index.js")
+    (rawPath === "" ||
+      rawPath === "/" ||
+      rawPath === "/api" ||
+      rawPath === "/api/index.js" ||
+      rawPath === "/index.js")
   ) {
     res.setHeader("Content-Type", "application/json");
     res.statusCode = 200;
