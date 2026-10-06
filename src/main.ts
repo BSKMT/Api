@@ -1,3 +1,14 @@
+// Suppress Node.js DEP0169 deprecation warning triggered by Express internal url.parse()
+process.on("warning", (warning) => {
+  if (
+    warning.name === "DeprecationWarning" &&
+    (warning as { code?: string }).code === "DEP0169"
+  ) {
+    return;
+  }
+  process.stderr.write(`${warning.name}: ${warning.message}\n`);
+});
+
 import { Logger, ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
@@ -78,6 +89,15 @@ export async function bootstrap(): Promise<express.Express> {
 
   await app.init();
   expressApp = app.getHttpAdapter().getInstance();
+
+  expressApp.get("/", (_req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    res.json({
+      status: "ok",
+      name: "BSKMT API",
+      timestamp: new Date().toISOString(),
+    });
+  });
 
   expressApp.get("/.well-known/assetlinks.json", (_req, res) => {
     res.setHeader("Content-Type", "application/json");
