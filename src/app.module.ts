@@ -26,9 +26,11 @@ import { BirdModule } from "./bird/bird.module";
 import { AlegraModule } from "./alegra/alegra.module";
 import { GarageModule } from "./garage/garage.module";
 import { GestionModule } from "./gestion/gestion.module";
+import { AppController } from "./app.controller";
 import { CloudinaryModule } from "./cloudinary/cloudinary.module";
 
 @Module({
+  controllers: [AppController],
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
