@@ -82,7 +82,7 @@ export class PublicProfileController {
       firstName: personalSection?.primerNombre ?? displayName,
       memberNumber,
       membershipLevel: user.membershipLevel ?? null,
-      role: user.role,
+      role: isOwner ? user.role : null,
       memberSince: (user as unknown as { createdAt?: Date }).createdAt
         ? new Date(
             (user as unknown as { createdAt?: Date }).createdAt!,
@@ -142,8 +142,17 @@ export class PublicProfileController {
     }
 
     const existingRequests = target.friendRequests ?? [];
-    const alreadyRequested = existingRequests.some(
-      (r) => r.fromUserId === req.user.userId && r.status === "pending",
+    const pendingRequests = existingRequests.filter(
+      (r) => r.status === "pending",
+    );
+    if (pendingRequests.length >= 30) {
+      throw new BadRequestException(
+        "Este miembro ha alcanzado el límite de solicitudes pendientes.",
+      );
+    }
+
+    const alreadyRequested = pendingRequests.some(
+      (r) => r.fromUserId === req.user.userId,
     );
     if (alreadyRequested) {
       throw new BadRequestException(
@@ -163,11 +172,13 @@ export class PublicProfileController {
     const senderMemb = sender.profile?.["membresia-ecosistema"] ?? {};
     const senderMemberNumber = str(senderMemb, "numeroMiembro");
 
+    const cleanMessage = message ? message.trim().slice(0, 500) : null;
+
     const newRequest = {
       fromUserId: req.user.userId,
       fromMemberNumber: senderMemberNumber,
       fromDisplayName: senderDisplayName,
-      message: message ?? null,
+      message: cleanMessage,
       status: "pending" as const,
       createdAt: new Date(),
     };

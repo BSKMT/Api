@@ -224,6 +224,15 @@ export class LoginOtpService {
       );
     }
 
+    // F-07: Validar límite local de intentos antes de invocar a Bird Verify
+    if (otpRecord.attempts >= 5) {
+      otpRecord.status = "expired";
+      await otpRecord.save();
+      throw new GoneException(
+        "Has superado el máximo de intentos permitidos. Solicita un nuevo código.",
+      );
+    }
+
     let birdResult: BirdCheckResult;
     try {
       birdResult = await this.birdVerifyService.checkEmailVerification(

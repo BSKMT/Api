@@ -106,23 +106,26 @@ export async function cancelPendingTransactionHelper(
   userId: string,
   reference: string,
 ): Promise<{ message: string }> {
-  const transaction = await deps.transactionModel.findOne({
-    userId,
-    reference,
-  });
+  const updated = await deps.transactionModel.findOneAndUpdate(
+    {
+      userId,
+      reference,
+      status: { $in: ["PENDING", "PROCESSING"] },
+    },
+    { $set: { status: "VOIDED" } },
+    { new: true },
+  );
 
-  if (!transaction) {
-    throw new NotFoundException("Transacción no encontrada");
-  }
-
-  if (transaction.status !== "PENDING" && transaction.status !== "PROCESSING") {
+  if (!updated) {
+    const existing = await deps.transactionModel.findOne({ userId, reference });
+    if (!existing) {
+      throw new NotFoundException("Transacción no encontrada");
+    }
     throw new BadRequestException(
       "Solo se pueden cancelar transacciones pendientes o en proceso",
     );
   }
 
-  transaction.status = "VOIDED";
-  await transaction.save();
   deps.logger.log(
     `Transaction cancelled by user: ref=${maskReference(reference)}`,
   );

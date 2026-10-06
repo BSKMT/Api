@@ -137,8 +137,13 @@ export function isAmountMismatch(
   statusFromEvent: string | null,
 ): boolean {
   if (statusFromEvent !== "APPROVED") return false;
-  if (parsed.amount === undefined) return false;
   if (transaction.amount <= 0) return false;
+  if (parsed.amount === undefined) {
+    logger.warn(
+      `Webhook approval for reference ${parsed.referenceId} did not include payment amount. Expected ${transaction.amount}. Blocking automatic approval.`,
+    );
+    return true;
+  }
   if (parsed.amount === transaction.amount) return false;
 
   logger.warn(

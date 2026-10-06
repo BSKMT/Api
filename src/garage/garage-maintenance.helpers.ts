@@ -63,22 +63,34 @@ export async function executeRecordAlliedServiceOrder(
   dto: AlliedServiceOrderDto,
   logger: Logger,
 ) {
-  const envTokens = (process.env.ALLIED_WORKSHOP_TOKENS ?? "")
+  const rawTokens = (process.env.ALLIED_WORKSHOP_TOKENS ?? "")
     .split(",")
     .map((t) => t.trim())
     .filter(Boolean);
-  const allowedTokens =
-    envTokens.length > 0
-      ? envTokens
-      : ["BSK-PARTNER-WORKSHOP-2026", "BSK-ALLIED-SECRET"];
+
+  if (rawTokens.length === 0) {
+    logger.error(
+      "ALLIED_WORKSHOP_TOKENS no está configurado en el entorno — rechazando orden de taller aliado.",
+    );
+    throw new UnauthorizedException(
+      "Servicio de talleres aliados no configurado o deshabilitado.",
+    );
+  }
 
   const providedBuf = Buffer.from(dto.workshopAuthToken);
-  const isValid = allowedTokens.some((token) => {
+  let matchedWorkshopName: string | null = null;
+
+  const isValid = rawTokens.some((tokenEntry) => {
+    // Soportar formato "token:NombreTaller" o simplemente "token"
+    const [token, workshopName] = tokenEntry.split(":");
     const tokenBuf = Buffer.from(token);
-    return (
+    const match =
       providedBuf.length === tokenBuf.length &&
-      timingSafeEqual(providedBuf, tokenBuf)
-    );
+      timingSafeEqual(providedBuf, tokenBuf);
+    if (match && workshopName) {
+      matchedWorkshopName = workshopName.trim();
+    }
+    return match;
   });
 
   if (!isValid) {
@@ -86,6 +98,8 @@ export async function executeRecordAlliedServiceOrder(
       "Token de autorización de taller aliado inválido",
     );
   }
+
+  const effectiveWorkshopName = matchedWorkshopName || dto.alliedWorkshopName;
 
   const moto = await motorcycleModel.findOne({
     _id: dto.motorcycleId,
@@ -104,14 +118,14 @@ export async function executeRecordAlliedServiceOrder(
     date: new Date(),
     odometerKm: dto.odometerKm,
     maintenanceType: dto.maintenanceType,
-    workshop: dto.alliedWorkshopName.trim(),
+    workshop: effectiveWorkshopName.trim(),
     partsChanged: dto.partsChanged,
     oilType: dto.oilType?.trim() ?? null,
     cost: dto.cost,
     invoiceNumber: dto.invoiceNumber?.trim() ?? null,
     notes: dto.notes?.trim() ?? "Servicio certificado por la red BSK",
     isAlliedVerified: true,
-    alliedWorkshopName: dto.alliedWorkshopName.trim(),
+    alliedWorkshopName: effectiveWorkshopName.trim(),
     alliedVerificationCode: verificationCode,
     alliedVerifiedAt: new Date(),
     source: MaintenanceSource.ALLIED_CERTIFIED,

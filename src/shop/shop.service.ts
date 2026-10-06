@@ -136,6 +136,17 @@ export class ShopService implements OnModuleInit {
       throw new BadRequestException("El pedido debe tener al menos un item");
     }
 
+    // F-04: Mitigar DoS de inventario limitando pedidos PENDING concurrentes por usuario
+    const pendingOrdersCount = await this.orderModel.countDocuments({
+      userId,
+      status: OrderStatus.PENDING,
+    });
+    if (pendingOrdersCount >= 3) {
+      throw new BadRequestException(
+        "Tienes pedidos pendientes de pago. Completa o cancela tus pedidos anteriores antes de crear uno nuevo.",
+      );
+    }
+
     const isMember = isShopMember(membershipLevel);
     const { total, publicTotal, memberDiscount, orderItems } =
       await processOrderItems(this.productModel, dto.items, isMember);
@@ -217,30 +228,64 @@ export class ShopService implements OnModuleInit {
     userId: string,
     orderNumber: string,
   ): Promise<{ message: string }> {
-    const order = await this.orderModel.findOne({ userId, orderNumber });
+    // F-03 / F-04: Transición atómica de PENDING a CANCELLED
+    const order = await this.orderModel.findOneAndUpdate(
+      { userId, orderNumber, status: OrderStatus.PENDING },
+      { $set: { status: OrderStatus.CANCELLED } },
+      { new: true },
+    );
 
     if (!order) {
-      throw new NotFoundException("Pedido no encontrado");
-    }
-
-    if (order.status === OrderStatus.CANCELLED) {
-      throw new BadRequestException("El pedido ya está cancelado");
-    }
-
-    if (order.status !== OrderStatus.PENDING) {
+      const existing = await this.orderModel.findOne({ userId, orderNumber });
+      if (!existing) {
+        throw new NotFoundException("Pedido no encontrado");
+      }
+      if (existing.status === OrderStatus.CANCELLED) {
+        throw new BadRequestException("El pedido ya está cancelado");
+      }
       throw new BadRequestException(
         "No se puede cancelar un pedido que ya fue pagado o enviado",
       );
     }
-
-    order.status = OrderStatus.CANCELLED;
-    await order.save();
 
     await restoreOrderStock(this.productModel, order, this.logger, orderNumber);
 
     this.logger.log(`Order cancelled: ${orderNumber} user=${userId}`);
 
     return { message: "Pedido cancelado exitosamente" };
+  }
+
+  /**
+   * F-04: Libera stock de pedidos PENDING que hayan superado el TTL máximo de pago (default 60 min).
+   */
+  async expireStalePendingOrders(maxAgeMinutes = 60): Promise<number> {
+    const cutoff = new Date(Date.now() - maxAgeMinutes * 60 * 1000);
+    const staleOrders = await this.orderModel.find({
+      status: OrderStatus.PENDING,
+      createdAt: { $lt: cutoff },
+    });
+
+    let expiredCount = 0;
+    for (const order of staleOrders) {
+      const updated = await this.orderModel.findOneAndUpdate(
+        { _id: order._id, status: OrderStatus.PENDING },
+        { $set: { status: OrderStatus.CANCELLED } },
+        { new: true },
+      );
+      if (updated) {
+        await restoreOrderStock(
+          this.productModel,
+          updated,
+          this.logger,
+          updated.orderNumber,
+        );
+        expiredCount++;
+        this.logger.log(
+          `Stale pending order expired and stock released: ${updated.orderNumber}`,
+        );
+      }
+    }
+    return expiredCount;
   }
 
   async getWishlist(userId: string): Promise<WishlistItemDocument[]> {

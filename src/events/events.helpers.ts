@@ -1,4 +1,4 @@
-import { BadRequestException, Logger } from "@nestjs/common";
+import { UnauthorizedException, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { timingSafeEqual } from "node:crypto";
 import type { EnvironmentConfig } from "../config/config.interface";
@@ -21,7 +21,7 @@ export function assertCronSecret(
   const expected =
     configService.get<string>("CRON_SECRET", { infer: true }) ?? "";
   if (!expected) {
-    throw new BadRequestException("CRON_SECRET not configured");
+    throw new UnauthorizedException("CRON_SECRET not configured");
   }
   const provided =
     headerSecret ??
@@ -36,6 +36,6 @@ export function assertCronSecret(
     !timingSafeEqual(providedBuf, expectedBuf)
   ) {
     logger.warn("Unauthorized cron invocation — secret mismatch (or missing).");
-    throw new BadRequestException("Invalid or missing cron secret");
+    throw new UnauthorizedException("Invalid or missing cron secret");
   }
 }

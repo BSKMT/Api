@@ -128,27 +128,50 @@ export class BirdRealtimeController {
 
     const role = req.user?.role ?? "user";
     const displayName = req.user?.email ?? "";
+    const userId = (req.user as { userId?: string })?.userId;
 
-    // Channel-level authorization enforcement
-    if (channelName.startsWith("private-user-")) {
-      const channelOwner = channelName.slice("private-user-".length);
-      const isOwner =
-        channelOwner === betterAuthId ||
-        channelOwner === (req.user as { userId?: string })?.userId;
-      if (!isOwner && role !== "admin") {
-        throw new ForbiddenException(
-          "No tienes autorización para unirte a este canal privado de usuario",
-        );
-      }
-    }
+    // F-12: Channel-level authorization enforcement with strict whitelist
+    let isAuthorized = false;
 
     if (
-      (channelName.startsWith("private-admin") ||
-        channelName.startsWith("presence-admin")) &&
-      role !== "admin"
+      channelName.startsWith("private-user-") ||
+      channelName.startsWith("presence-user-")
     ) {
+      const channelOwner = channelName.startsWith("private-user-")
+        ? channelName.slice("private-user-".length)
+        : channelName.slice("presence-user-".length);
+      const isOwner =
+        channelOwner === betterAuthId || (userId && channelOwner === userId);
+      if (isOwner || role === "admin") {
+        isAuthorized = true;
+      } else {
+        throw new ForbiddenException(
+          "No tienes autorización para unirte a este canal personal de usuario",
+        );
+      }
+    } else if (
+      channelName.startsWith("private-admin") ||
+      channelName.startsWith("presence-admin")
+    ) {
+      if (role === "admin") {
+        isAuthorized = true;
+      } else {
+        throw new ForbiddenException(
+          "Acceso denegado a canales de administración",
+        );
+      }
+    } else if (
+      channelName.startsWith("presence-event-") ||
+      channelName === "presence-community" ||
+      channelName === "presence-chat"
+    ) {
+      // Canales de presencia colaborativa para usuarios autenticados
+      isAuthorized = true;
+    }
+
+    if (!isAuthorized) {
       throw new ForbiddenException(
-        "Acceso denegado a canales de administración",
+        `Canal no reconocido o no autorizado para suscripción: ${channelName}`,
       );
     }
 

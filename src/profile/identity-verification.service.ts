@@ -31,6 +31,7 @@ import {
   handleLookupFailure,
   callVerifikService,
 } from "./identity-verification.helpers";
+import { KvCacheService } from "../kv/kv-cache.service";
 
 export type {
   CheckOutcome,
@@ -43,12 +44,15 @@ export { mapDocumentType } from "./identity-verification-matcher";
 @Injectable()
 export class IdentityVerificationService {
   private readonly logger = new Logger(IdentityVerificationService.name);
-  private readonly throttle = new IdentityAttemptThrottle();
+  private readonly throttle: IdentityAttemptThrottle;
 
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     private readonly verifikService: VerifikService,
-  ) {}
+    private readonly kvCache: KvCacheService,
+  ) {
+    this.throttle = new IdentityAttemptThrottle(this.kvCache);
+  }
 
   /** Returns the current verification state for the UI. */
   async getStatus(userId: string): Promise<IdentityVerificationStatus> {
@@ -121,7 +125,7 @@ export class IdentityVerificationService {
     const { verifikType, documentNumber, verifikExpeditionDate } =
       extractAndValidateDocument(personal, expeditionDate);
 
-    this.throttle.enforce(userId);
+    await this.throttle.enforce(userId);
 
     const lookup = await callVerifikService(
       this.verifikService,
@@ -130,7 +134,7 @@ export class IdentityVerificationService {
       verifikExpeditionDate,
     );
 
-    this.throttle.record(userId);
+    await this.throttle.record(userId);
 
     if (!lookup.ok) {
       handleLookupFailure(lookup, userId, documentNumber, this.logger);

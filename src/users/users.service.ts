@@ -133,13 +133,15 @@ export class UsersService {
     expiryDate: Date,
     paymentPlan: string,
   ): Promise<UserDocument> {
-    return executeActivateMembership(
+    const saved = await executeActivateMembership(
       this.userModel,
       userId,
       startDate,
       expiryDate,
       paymentPlan,
     );
+    await this.invalidateUserCache(saved.betterAuthId);
+    return saved;
   }
 
   async updateInstallmentsPaid(userId: string, count: number): Promise<void> {

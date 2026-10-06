@@ -5,6 +5,7 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  Headers,
   Logger,
   UnauthorizedException,
 } from "@nestjs/common";
@@ -51,24 +52,39 @@ export class AlegraController {
   @Public()
   @Post("webhook")
   @HttpCode(HttpStatus.OK)
-  async handleWebhook(@Body() body: unknown, @Query("token") token?: string) {
+  async handleWebhook(
+    @Body() body: unknown,
+    @Query("token") token?: string,
+    @Headers("x-webhook-token") headerToken?: string,
+    @Headers("authorization") authHeader?: string,
+  ) {
     const configuredSecret = this.configService.get<string>(
       "ALEGRA_WEBHOOK_SECRET",
       { infer: true },
     );
-    if (configuredSecret) {
-      const provided = token ?? "";
-      const secretBuf = Buffer.from(configuredSecret);
-      const providedBuf = Buffer.from(provided);
-      if (
-        providedBuf.length !== secretBuf.length ||
-        !timingSafeEqual(providedBuf, secretBuf)
-      ) {
-        this.logger.warn(
-          "Alegra webhook rejected: invalid or missing secret token",
-        );
-        throw new UnauthorizedException("Invalid webhook secret token");
-      }
+    if (!configuredSecret) {
+      this.logger.error(
+        "ALEGRA_WEBHOOK_SECRET no está configurado en el entorno — rechazando webhook de facturación.",
+      );
+      throw new UnauthorizedException(
+        "Autenticación de webhook de facturación no configurada.",
+      );
+    }
+
+    const bearer = authHeader?.startsWith("Bearer ")
+      ? authHeader.slice("Bearer ".length)
+      : undefined;
+    const provided = headerToken ?? bearer ?? token ?? "";
+    const secretBuf = Buffer.from(configuredSecret);
+    const providedBuf = Buffer.from(provided);
+    if (
+      providedBuf.length !== secretBuf.length ||
+      !timingSafeEqual(providedBuf, secretBuf)
+    ) {
+      this.logger.warn(
+        "Alegra webhook rejected: invalid or missing secret token",
+      );
+      throw new UnauthorizedException("Invalid webhook secret token");
     }
 
     if (!body || typeof body !== "object" || Object.keys(body).length === 0) {

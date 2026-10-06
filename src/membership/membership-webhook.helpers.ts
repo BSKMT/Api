@@ -104,8 +104,8 @@ export function isAmountMismatch(
   statusFromEvent: string | null,
 ): boolean {
   if (statusFromEvent !== "APPROVED") return false;
-  if (parsed.amount === undefined) return false;
   if (transaction.amount <= 0) return false;
+  if (parsed.amount === undefined) return true;
   return parsed.amount !== transaction.amount;
 }
 

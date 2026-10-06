@@ -1,4 +1,5 @@
 import "multer";
+import type { Request } from "express";
 import {
   Controller,
   Post,
@@ -23,12 +24,22 @@ import {
   ALLOWED_MIME_TYPES,
   CloudinaryFolder,
   MAX_FILE_SIZE_BYTES,
+  ALLOWED_SIGNATURE_PARAMS,
 } from "./cloudinary.constants";
 import {
   UploadImageDto,
   UploadBase64Dto,
   GenerateSignatureDto,
 } from "./dto/upload.dto";
+import { UserSubrole } from "../users/schemas/user.schema";
+
+interface AuthenticatedRequest extends Request {
+  user?: {
+    userId?: string;
+    role?: string;
+    subrol?: string | null;
+  };
+}
 
 const RESTRICTED_CATALOG_FOLDERS: readonly CloudinaryFolder[] = [
   "products",
@@ -59,13 +70,16 @@ const STAFF_ROLES: readonly string[] = [
   "community_manager",
 ];
 
+const STAFF_SUBROLES: readonly string[] = Object.values(UserSubrole);
+
 function isStaffUser(role?: string, subrol?: string | null): boolean {
   if (role) {
     const normalized = role.toLowerCase().trim();
     if (STAFF_ROLES.includes(normalized) || normalized === "admin") return true;
   }
   if (subrol) {
-    return true; // Any collaborative staff member
+    const normalizedSub = subrol.toLowerCase().trim();
+    if (STAFF_SUBROLES.includes(normalizedSub)) return true;
   }
   return false;
 }
@@ -114,7 +128,7 @@ export class CloudinaryController {
   async uploadFile(
     @UploadedFile() file: Express.Multer.File,
     @Body() body: UploadImageDto,
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
   ) {
     if (!file) {
       throw new BadRequestException(
@@ -168,7 +182,10 @@ export class CloudinaryController {
    */
   @Post("upload-base64")
   @HttpCode(HttpStatus.OK)
-  async uploadBase64(@Body() body: UploadBase64Dto, @Req() req: any) {
+  async uploadBase64(
+    @Body() body: UploadBase64Dto,
+    @Req() req: AuthenticatedRequest,
+  ) {
     if (!body.image) {
       throw new BadRequestException('Campo "image" en base64 requerido.');
     }
@@ -212,23 +229,36 @@ export class CloudinaryController {
    */
   @Post("signature")
   @HttpCode(HttpStatus.OK)
-  generateSignature(@Body() body: GenerateSignatureDto, @Req() req: any) {
-    const params = { ...(body.paramsToSign || {}) };
+  generateSignature(
+    @Body() body: GenerateSignatureDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const rawParams = body.paramsToSign || {};
+    const filteredParams: Record<string, unknown> = {};
 
-    if (params.overwrite === true || params.overwrite === "true") {
+    // F-05: Filtrar estrictamente los parámetros firmables contra la lista blanca permitida
+    for (const [key, value] of Object.entries(rawParams)) {
+      if ((ALLOWED_SIGNATURE_PARAMS as readonly string[]).includes(key)) {
+        filteredParams[key] = value;
+      }
+    }
+
+    if (rawParams.overwrite === true || rawParams.overwrite === "true") {
       throw new BadRequestException(
         "El parámetro 'overwrite' no está permitido en firmas delegadas.",
       );
     }
-    if (params.notification_url) {
+    if (rawParams.notification_url) {
       throw new BadRequestException(
         "El parámetro 'notification_url' no está permitido en firmas delegadas.",
       );
     }
 
-    const folderCategory = sanitizeFolder(
-      params.folder ? String(params.folder) : undefined,
-    );
+    const rawFolder =
+      typeof filteredParams.folder === "string"
+        ? filteredParams.folder
+        : undefined;
+    const folderCategory = sanitizeFolder(rawFolder);
 
     if (
       RESTRICTED_CATALOG_FOLDERS.includes(folderCategory) &&
@@ -240,14 +270,24 @@ export class CloudinaryController {
     }
 
     // Standardize folder under bskmt/ root namespace
-    params.folder = `bskmt/${folderCategory}`;
+    filteredParams.folder = `bskmt/${folderCategory}`;
+
+    // Sanitizar public_id si fue proporcionado para evitar directory traversal
+    if (
+      filteredParams.public_id &&
+      typeof filteredParams.public_id === "string"
+    ) {
+      filteredParams.public_id = filteredParams.public_id
+        .replace(/[^a-zA-Z0-9_-]/g, "")
+        .slice(0, 100);
+    }
 
     const signatureData =
-      this.cloudinaryService.generateUploadSignature(params);
+      this.cloudinaryService.generateUploadSignature(filteredParams);
     return {
       success: true,
       ...signatureData,
-      folder: params.folder,
+      folder: filteredParams.folder,
     };
   }
 
@@ -292,7 +332,7 @@ export class CloudinaryController {
     @Param("publicId") publicIdParam: string | string[] | undefined,
     @Query("publicId") publicIdQuery: string | undefined,
     @Body("publicId") publicIdBody: string | undefined,
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
   ) {
     if (!isStaffUser(req.user?.role, req.user?.subrol)) {
       throw new ForbiddenException(

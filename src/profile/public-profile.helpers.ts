@@ -26,7 +26,7 @@ export async function getUserIdFromSession(
  */
 export function deriveDisplayName(
   profile: Record<string, Record<string, unknown>>,
-  email: string,
+  _email: string,
 ): string {
   const personal = profile["datos-personales"] ?? {};
   const primerNombre = personal.primerNombre as string | undefined;
@@ -35,7 +35,7 @@ export function deriveDisplayName(
     return `${primerNombre} ${primerApellido}`;
   if (primerNombre) return primerNombre;
   if (primerApellido) return primerApellido;
-  return email ? email.split("@")[0] : "Piloto";
+  return "Piloto BSKMT";
 }
 
 /**
@@ -73,11 +73,12 @@ export function num(
 export function buildPrivacyFlags(user: unknown) {
   const record = user as Record<string, unknown>;
   return {
-    profileVisible: privacyFlag(record, "profileVisible", true),
-    showLocation: privacyFlag(record, "showLocation", true),
+    // F-06: Visibilidad pública por defecto desactivada (opt-in por privacidad)
+    profileVisible: privacyFlag(record, "profileVisible", false),
+    showLocation: privacyFlag(record, "showLocation", false),
     allowFriendRequests: privacyFlag(record, "allowFriendRequests", false),
-    shareStats: privacyFlag(record, "shareStats", true),
-    showMotorcycle: privacyFlag(record, "showMotorcycle", true),
+    shareStats: privacyFlag(record, "shareStats", false),
+    showMotorcycle: privacyFlag(record, "showMotorcycle", false),
   };
 }
 

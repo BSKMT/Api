@@ -35,7 +35,7 @@ export function calculateCoursePricing(
     case "semipresencial":
       return {
         amount: Math.round(
-          basePrice * ((course.memberSemipresencialDiscount ?? 25) / 100),
+          basePrice * (1 - (course.memberSemipresencialDiscount ?? 25) / 100),
         ),
         tier: "course-member-semipresencial",
         requiresPayment: basePrice > 0,

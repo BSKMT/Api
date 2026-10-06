@@ -48,6 +48,7 @@ export class UpdateProfileSectionDto {
     let keyCount = 0;
     for (const [key, value] of Object.entries(obj)) {
       if (++keyCount > this.MAX_KEYS) break;
+      if (key.startsWith("$") || key.includes(".")) continue;
       if (FORBIDDEN_KEYS.has(key) || extraForbidden.has(key)) continue;
       if (Array.isArray(value)) {
         // ADM-18: Sanitize arrays — sanitize each object element, keep primitives
@@ -58,7 +59,9 @@ export class UpdateProfileSectionDto {
                 undefined,
                 depth + 1,
               )
-            : item,
+            : typeof item === "string"
+              ? item.slice(0, 2000)
+              : item,
         );
       } else if (value && typeof value === "object") {
         cleaned[key] = UpdateProfileSectionDto.sanitize(
@@ -66,6 +69,8 @@ export class UpdateProfileSectionDto {
           undefined,
           depth + 1,
         );
+      } else if (typeof value === "string") {
+        cleaned[key] = value.slice(0, 2000);
       } else {
         cleaned[key] = value;
       }

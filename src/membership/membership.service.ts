@@ -90,7 +90,10 @@ export class MembershipService {
     );
   }
 
-  async getMembershipPayment(userId: string, reference: string) {
+  async getMembershipPayment(
+    userId: string,
+    reference: string,
+  ): Promise<Record<string, unknown>> {
     return getMembershipPaymentHelper(
       {
         configService: this.configService,

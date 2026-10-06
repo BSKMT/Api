@@ -82,7 +82,9 @@ export class KvCacheService {
         return null;
       }
 
-      const expectedTag = await this.hmac.computeTag(JSON.stringify(sealed.v));
+      const expectedTag = await this.hmac.computeTag(
+        `${key}:${JSON.stringify(sealed.v)}`,
+      );
       if (sealed.h !== expectedTag) {
         this.logger.warn(`KV integrity check failed for key: ${key}`);
         return null;
@@ -107,7 +109,7 @@ export class KvCacheService {
     if (!nsId) return;
 
     try {
-      const tag = await this.hmac.computeTag(JSON.stringify(value));
+      const tag = await this.hmac.computeTag(`${key}:${JSON.stringify(value)}`);
       const sealed: SealedValue<T> = { v: value, h: tag };
       const body = JSON.stringify(sealed);
 

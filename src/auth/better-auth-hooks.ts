@@ -61,17 +61,50 @@ export function createBetterAuthHooks(mongoDb: Db, authLogger: Logger) {
             });
 
             if (existingUser) {
+              // Prevenir Account Takeover (OWASP A01/A07):
+              // Si ya tiene un betterAuthId asignado diferente al nuevo ID, no permitir sobreescritura.
+              if (
+                existingUser["betterAuthId"] &&
+                existingUser["betterAuthId"] !== user.id
+              ) {
+                authLogger.warn(
+                  `[databaseHooks] Intento de colisión o secuestro de cuenta para email=${maskEmail(user.email)}. Existente betterAuthId=${existingUser["betterAuthId"]}, entrante=${user.id}`,
+                );
+                throw new Error(
+                  "Este correo ya está asociado a otra cuenta activa. Inicia sesión con tus credenciales originales.",
+                );
+              }
+
+              // Si la cuenta existente no tenía betterAuthId pero el email entrante no está verificado:
+              if (!existingUser["betterAuthId"] && !user.emailVerified) {
+                authLogger.warn(
+                  `[databaseHooks] Rechazando vinculación de cuenta huérfana con email no verificado=${maskEmail(user.email)}`,
+                );
+                throw new Error(
+                  "Debes verificar tu correo antes de poder vincular tu cuenta existente.",
+                );
+              }
+
+              const existingProfile =
+                existingUser &&
+                typeof existingUser["profile"] === "object" &&
+                existingUser["profile"] !== null
+                  ? (existingUser["profile"] as Record<string, unknown>)
+                  : null;
+              const hasExistingDatosPersonales = Boolean(
+                existingProfile && existingProfile["datos-personales"],
+              );
+
               await mongoDb.collection("users").updateOne(
                 { _id: existingUser._id },
                 {
                   $set: {
                     betterAuthId: user.id,
                     emailVerified:
-                      user.emailVerified ?? existingUser.emailVerified ?? false,
+                      user.emailVerified ??
+                      Boolean(existingUser["emailVerified"]),
                     updatedAt: new Date(),
-                    ...(tieneDatosPersonales &&
-                    (!existingUser.profile ||
-                      !existingUser.profile["datos-personales"])
+                    ...(tieneDatosPersonales && !hasExistingDatosPersonales
                       ? {
                           "profile.datos-personales": {
                             primerNombre,

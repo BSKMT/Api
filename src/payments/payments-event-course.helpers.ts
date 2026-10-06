@@ -49,6 +49,36 @@ export async function createEventPaymentHelper(
     throw new NotFoundException("Evento no encontrado");
   }
 
+  // F-01: Validar que el usuario tenga una inscripción previa y que el tier corresponda exactamente
+  const registration = await deps.eventsService.getRegistration(
+    userId,
+    dto.eventSlug,
+  );
+  if (!registration) {
+    throw new BadRequestException(
+      "Debes registrarte previamente en el evento antes de iniciar el pago.",
+    );
+  }
+  if (registration.paymentConfirmed) {
+    throw new BadRequestException(
+      "La inscripción para este evento ya se encuentra pagada y confirmada.",
+    );
+  }
+
+  const isWithCompanionReg = registration.registrationType === "with-companion";
+  const isCompanionTier = COMPANION_TIERS.has(dto.tier);
+
+  if (isWithCompanionReg && !isCompanionTier) {
+    throw new BadRequestException(
+      "Tu inscripción incluye acompañante. El tier de pago seleccionado debe ser con acompañante.",
+    );
+  }
+  if (!isWithCompanionReg && isCompanionTier) {
+    throw new BadRequestException(
+      "Tu inscripción es individual. No puedes seleccionar un tier con acompañante.",
+    );
+  }
+
   // M-21: Fail-closed pricing — when a non-member-tier (or member-tier
   // with companion) requires a non-zero price we must reject the
   // payment intent instead of silently accepting a $0 charge.
@@ -150,39 +180,60 @@ export async function createCoursePaymentHelper(
     throw new NotFoundException("Curso no encontrado");
   }
 
-  // M-21: Fail-closed pricing — only member-virtual tolerates unconfigured nonMemberPrice
+  // F-01: Validar que el usuario esté inscrito previamente en el curso
+  const enrollment = await deps.eventsService.getEnrollmentByUserAndCourse(
+    userId,
+    dto.eventSlug,
+  );
+  if (!enrollment) {
+    throw new BadRequestException(
+      "Debes inscribirte en el curso antes de proceder al pago.",
+    );
+  }
+  if (enrollment.paymentConfirmed) {
+    throw new BadRequestException(
+      "El curso ya se encuentra pagado y confirmado.",
+    );
+  }
+
+  // F-01: Derivar autoritativamente el precio y tier esperado según el curso y el usuario
+  const fullUser = await deps.usersService.findById(userId);
+  const membershipLevel = fullUser?.membershipLevel ?? null;
+  const expectedPricing = deps.eventsService.calculateCoursePricing(
+    course,
+    membershipLevel,
+  );
+
+  if (dto.tier !== expectedPricing.tier) {
+    throw new BadRequestException(
+      `El tier de pago no coincide con el requerido para este curso (${expectedPricing.tier}).`,
+    );
+  }
+
+  // M-21: Fail-closed pricing
   const basePrice = course.nonMemberPrice ?? null;
-  if (dto.tier !== "course-member-virtual") {
+  if (expectedPricing.tier !== "course-member-virtual") {
     if (basePrice === null || basePrice <= 0) {
       throw new BadRequestException(
         "El curso no tiene un precio configurado. Contacta al administrador.",
       );
     }
   }
-  const safeBasePrice = basePrice ?? 0;
 
-  let amount: number;
+  const amount = expectedPricing.amount;
   let description: string;
 
-  switch (dto.tier) {
+  switch (expectedPricing.tier) {
     case "course-member-virtual":
-      amount = 0;
       description = `Inscripción ${course.title} - Miembro (Virtual)`;
       break;
     case "course-member-semipresencial":
-      amount = Math.round(
-        safeBasePrice * ((course.memberSemipresencialDiscount ?? 25) / 100),
-      );
       description = `Inscripción ${course.title} - Miembro (Semipresencial)`;
       break;
     case "course-member-presencial":
-      amount = Math.round(
-        safeBasePrice * ((course.memberPresencialDiscount ?? 50) / 100),
-      );
       description = `Inscripción ${course.title} - Miembro (Presencial)`;
       break;
     case "course-non-member":
-      amount = safeBasePrice;
       description = `Inscripción ${course.title} - No Miembro`;
       break;
     default:
@@ -191,7 +242,7 @@ export async function createCoursePaymentHelper(
 
   const timestamp = Date.now();
   const shortUserId = userId.slice(-8);
-  const reference = `${COURSE_TIER_REFERENCE_PREFIX[dto.tier]}-${shortUserId}-${timestamp}-${crypto.randomBytes(4).toString("hex")}`;
+  const reference = `${COURSE_TIER_REFERENCE_PREFIX[expectedPricing.tier]}-${shortUserId}-${timestamp}-${crypto.randomBytes(4).toString("hex")}`;
 
   const transaction = new deps.transactionModel({
     userId,
@@ -200,7 +251,7 @@ export async function createCoursePaymentHelper(
     amount,
     description,
     status: "PENDING",
-    tier: dto.tier,
+    tier: expectedPricing.tier,
     hasCompanion: false,
     purpose: "course",
     relatedReference: null,
