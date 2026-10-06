@@ -6,18 +6,10 @@
       "includeFiles": "dist/**"
     }
   },
-  "rewrites": [
+  "routes": [
     {
-      "source": "/",
-      "destination": "/api/index.js"
-    },
-    {
-      "source": "/api/(.*)",
-      "destination": "/api/index.js"
-    },
-    {
-      "source": "/.well-known/(.*)",
-      "destination": "/api/index.js"
+      "src": "/(.*)",
+      "dest": "/api/index.js"
     }
   ],
   "crons": [
