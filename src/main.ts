@@ -22,18 +22,18 @@ url.parse = function patchedUrlParse(
   ...args: [string, boolean?, boolean?]
 ) {
   const origEmitWarning = process.emitWarning.bind(process);
-  process.emitWarning = (warning: unknown, ...rest: unknown[]) => {
+  (
+    process as unknown as { emitWarning: (...wArgs: unknown[]) => void }
+  ).emitWarning = (warning: unknown, ...rest: unknown[]) => {
     if (
       (typeof warning === "string" && warning.includes("url.parse()")) ||
       rest[1] === "DEP0169"
     ) {
       return;
     }
-    // @ts-expect-error calling original emitWarning
-    return origEmitWarning.call(process, warning, ...rest);
+    return (origEmitWarning as (...wArgs: unknown[]) => void)(warning, ...rest);
   };
   try {
-    // @ts-expect-error invoking originalUrlParse with varied overload arguments
     return originalUrlParse.apply(this, args);
   } finally {
     process.emitWarning = origEmitWarning;
