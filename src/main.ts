@@ -16,11 +16,10 @@ process.on("warning", (warning) => {
 // 2. Monkey-patch url.parse to suppress process.emitWarning during internal parse calls
 
 const originalUrlParse = url.parse.bind(url);
-// @ts-expect-error monkey-patching deprecated url.parse for Express internal calls
-url.parse = function patchedUrlParse(
-  this: unknown,
-  ...args: [string, boolean?, boolean?]
-) {
+const mutableUrl = url as unknown as {
+  parse: (...args: unknown[]) => unknown;
+};
+mutableUrl.parse = function patchedUrlParse(this: unknown, ...args: unknown[]) {
   const origEmitWarning = process.emitWarning.bind(process);
   (
     process as unknown as { emitWarning: (...wArgs: unknown[]) => void }
@@ -34,7 +33,7 @@ url.parse = function patchedUrlParse(
     return (origEmitWarning as (...wArgs: unknown[]) => void)(warning, ...rest);
   };
   try {
-    return originalUrlParse.apply(this, args);
+    return (originalUrlParse as (...a: unknown[]) => unknown).apply(this, args);
   } finally {
     process.emitWarning = origEmitWarning;
   }
