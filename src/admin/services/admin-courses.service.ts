@@ -88,6 +88,9 @@ export class AdminCoursesService {
 
     const created = await this.courseModel.create({
       ...dto,
+      date: dto.date ? new Date(dto.date) : null,
+      endDate: dto.endDate ? new Date(dto.endDate) : null,
+      itinerary: dto.itinerary ?? [],
       status: dto.status ?? CourseStatus.DRAFT,
       enrolledCount: 0,
     });
@@ -101,7 +104,20 @@ export class AdminCoursesService {
     slug: string,
     dto: UpdateCourseDto,
   ): Promise<CourseDocument> {
-    const updateFields = { ...dto };
+    const updateFields: Record<string, unknown> = { ...dto };
+    delete updateFields.slug;
+    if (dto.date) updateFields.date = new Date(dto.date);
+    else if (dto.date === null || (dto.date as unknown) === "")
+      updateFields.date = null;
+    else if (dto.date === undefined) delete updateFields.date;
+
+    if (dto.endDate) updateFields.endDate = new Date(dto.endDate);
+    else if (dto.endDate === null || (dto.endDate as unknown) === "")
+      updateFields.endDate = null;
+    else if (dto.endDate === undefined) delete updateFields.endDate;
+
+    if (dto.itinerary !== undefined) updateFields.itinerary = dto.itinerary;
+
     const updated = await this.courseModel.findOneAndUpdate(
       { slug },
       { $set: updateFields },

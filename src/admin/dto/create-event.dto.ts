@@ -158,4 +158,8 @@ export class CreateEventDto {
 
   @IsOptional()
   metadata?: Record<string, unknown>;
+
+  @IsArray()
+  @IsOptional()
+  itinerary?: Array<Record<string, unknown>>;
 }

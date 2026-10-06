@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import { Document } from "mongoose";
+import type { ItineraryDay } from "./event.schema";
 
 export type CourseDocument = Course & Document;
 
@@ -92,6 +93,15 @@ export class Course {
 
   @Prop({ type: [String], default: [] })
   featuresIncluded!: string[];
+
+  @Prop({ type: Date, default: null })
+  date!: Date | null;
+
+  @Prop({ type: Date, default: null })
+  endDate!: Date | null;
+
+  @Prop({ type: Array, default: [] })
+  itinerary!: ItineraryDay[];
 
   @Prop({ type: Object, default: {} })
   metadata!: Record<string, unknown>;

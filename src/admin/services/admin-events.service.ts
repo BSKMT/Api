@@ -90,6 +90,7 @@ export class AdminEventsService {
       ...dto,
       date: new Date(dto.date),
       endDate: dto.endDate ? new Date(dto.endDate) : null,
+      itinerary: dto.itinerary ?? [],
       status: dto.status ?? EventStatus.DRAFT,
       registeredCount: 0,
     });
@@ -112,6 +113,7 @@ export class AdminEventsService {
     else if (dto.endDate === null || (dto.endDate as unknown) === "")
       update.endDate = null;
     else if (dto.endDate === undefined) delete update.endDate;
+    if (dto.itinerary !== undefined) update.itinerary = dto.itinerary;
 
     const updated = await this.eventModel.findOneAndUpdate(
       { slug },

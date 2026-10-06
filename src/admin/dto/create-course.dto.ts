@@ -1,5 +1,6 @@
 import {
   IsString,
+  IsDateString,
   IsOptional,
   IsEnum,
   IsNumber,
@@ -106,4 +107,16 @@ export class CreateCourseDto {
 
   @IsOptional()
   metadata?: Record<string, unknown>;
+
+  @IsDateString()
+  @IsOptional()
+  date?: string;
+
+  @IsDateString()
+  @IsOptional()
+  endDate?: string;
+
+  @IsArray()
+  @IsOptional()
+  itinerary?: Array<Record<string, unknown>>;
 }
