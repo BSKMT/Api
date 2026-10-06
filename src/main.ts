@@ -83,6 +83,26 @@ export async function bootstrap(): Promise<express.Express> {
 
   app.useGlobalFilters(new GlobalExceptionFilter());
 
+  app.use((req: Request, res: Response, next: () => void) => {
+    const cleanPath = (req.path || req.url || "").split("?")[0];
+    if (
+      req.method === "GET" &&
+      (cleanPath === "/" ||
+        cleanPath === "" ||
+        cleanPath === "/api" ||
+        cleanPath === "/api/")
+    ) {
+      res.setHeader("Content-Type", "application/json");
+      res.status(200).json({
+        status: "ok",
+        name: "BSKMT API",
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+    next();
+  });
+
   app.setGlobalPrefix("api", {
     exclude: ["/", "/.well-known/assetlinks.json"],
   });
