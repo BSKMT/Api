@@ -57,6 +57,10 @@ export class UpdateEventDto {
 
   @IsString()
   @IsOptional()
+  subcategory?: string;
+
+  @IsString()
+  @IsOptional()
   tag?: string;
 
   @IsString()
