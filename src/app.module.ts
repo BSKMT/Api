@@ -28,10 +28,16 @@ import { GarageModule } from "./garage/garage.module";
 import { GestionModule } from "./gestion/gestion.module";
 import { AppController } from "./app.controller";
 import { CloudinaryModule } from "./cloudinary/cloudinary.module";
+import { ObserveModule } from "./observe";
 
 @Module({
   controllers: [AppController],
   imports: [
+    ObserveModule.forRoot({
+      appKey: process.env.OBSERVE_APP_KEY!,
+      appSecret: process.env.OBSERVE_APP_SECRET!,
+      serviceId: "bskmt-api",
+    }),
     ConfigModule.forRoot({
       isGlobal: true,
       validate: validateConfig,
