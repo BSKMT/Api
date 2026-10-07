@@ -161,6 +161,7 @@ export class MembershipController {
    * under a different prefix).
    */
   @Public()
+  @Get("internal/cron/sweep-pending")
   @Post("internal/cron/sweep-pending")
   @HttpCode(HttpStatus.OK)
   async sweepPending(

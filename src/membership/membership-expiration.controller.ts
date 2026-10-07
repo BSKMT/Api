@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   Post,
   Headers,
   HttpCode,
@@ -44,6 +45,7 @@ export class MembershipExpirationController {
   ) {}
 
   @Public()
+  @Get("membership-expiration")
   @Post("membership-expiration")
   @HttpCode(HttpStatus.OK)
   async runMembershipExpiration(
