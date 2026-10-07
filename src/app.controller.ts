@@ -1,8 +1,12 @@
 import { Controller, Get } from "@nestjs/common";
+import { InjectConnection } from "@nestjs/mongoose";
+import { Connection, ConnectionStates } from "mongoose";
 import { Public } from "./common/decorators";
 
 @Controller()
 export class AppController {
+  constructor(@InjectConnection() private readonly connection: Connection) {}
+
   @Public()
   @Get()
   getRoot() {
@@ -26,10 +30,13 @@ export class AppController {
   @Public()
   @Get("health")
   getHealth() {
+    const isDbConnected =
+      this.connection.readyState === ConnectionStates.connected;
     return {
-      status: "ok",
+      status: isDbConnected ? "ok" : "degraded",
       name: "BSKMT API",
       timestamp: new Date().toISOString(),
+      database: isDbConnected ? "connected" : "disconnected",
     };
   }
 
