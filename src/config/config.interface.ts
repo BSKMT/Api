@@ -135,4 +135,26 @@ export interface EnvironmentConfig {
    * Comma-separated list of authorized secret tokens for allied workshop service orders.
    */
   ALLIED_WORKSHOP_TOKENS?: string;
+
+  /** Node environment runtime */
+  NODE_ENV?: "development" | "production" | "test";
+
+  /** Google OAuth & Passkey config */
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  PASSKEY_RP_ID?: string;
+
+  /** Bird WhatsApp template override */
+  BIRD_WHATSAPP_TEMPLATE_SLUG?: string;
+
+  /** NestJS Observe APM */
+  OBSERVE_APP_KEY?: string;
+  OBSERVE_APP_SECRET?: string;
+
+  /** Cloudinary Media Platform */
+  CLOUDINARY_CLOUD_NAME?: string;
+  CLOUDINARY_API_KEY?: string;
+  CLOUDINARY_API_SECRET?: string;
+  CLOUDINARY_URL?: string;
+  CLOUDINARY_UPLOAD_PRESET?: string;
 }

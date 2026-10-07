@@ -16,6 +16,7 @@ import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles, Role } from "../../common/decorators";
 import { UsersService } from "../../users/users.service";
 import { UserSubrole } from "../../users/schemas/user.schema";
+import { ParseObjectIdPipe } from "../../common/pipes/parse-object-id.pipe";
 
 export class UpdateSubrolDto {
   @IsOptional()
@@ -49,7 +50,10 @@ export class AdminUsersController {
 
   @Patch(":id/subrol")
   @HttpCode(HttpStatus.OK)
-  async updateSubrol(@Param("id") id: string, @Body() dto: UpdateSubrolDto) {
+  async updateSubrol(
+    @Param("id", ParseObjectIdPipe) id: string,
+    @Body() dto: UpdateSubrolDto,
+  ) {
     const subrol = dto.subrol ?? null;
     if (
       subrol !== null &&

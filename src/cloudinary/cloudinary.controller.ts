@@ -340,9 +340,11 @@ export class CloudinaryController {
       );
     }
 
-    const resolvedPublicId = Array.isArray(publicIdParam)
-      ? publicIdParam.join("/")
+    const rawId = Array.isArray(publicIdParam)
+      ? publicIdParam.filter(Boolean).join("/")
       : publicIdParam || publicIdQuery || publicIdBody;
+
+    const resolvedPublicId = (rawId || "").trim().replace(/^\/+/, "");
 
     if (!resolvedPublicId) {
       throw new BadRequestException(

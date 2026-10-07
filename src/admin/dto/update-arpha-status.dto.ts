@@ -3,8 +3,8 @@ import { Transform } from "class-transformer";
 import { ArphaRequestStatus } from "../../arpha/schemas/arpha-request.schema";
 
 export class UpdateArphaStatusDto {
-  @Transform(({ value }) => {
-    if (typeof value !== "string") return value;
+  @Transform(({ value }: { value: unknown }): ArphaRequestStatus => {
+    if (typeof value !== "string") return value as ArphaRequestStatus;
     const v = value.toUpperCase().trim();
     if (v === "RESUELTO" || v === "RESOLVED")
       return ArphaRequestStatus.COMPLETED;

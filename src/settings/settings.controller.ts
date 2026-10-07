@@ -130,7 +130,10 @@ export class SettingsController {
 
   @Get("data-export")
   @Throttle({ medium: { ttl: 60000, limit: 3 } })
-  async exportData(@Req() req: Request, @Res() res: Response) {
+  async exportData(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const user = (req as Request & { user: { userId: string } }).user;
     const data = await this.settingsService.exportUserData(user.userId);
     res.setHeader("Content-Type", "application/json");
@@ -138,6 +141,6 @@ export class SettingsController {
       "Content-Disposition",
       `attachment; filename="bskmt-data-export-${Date.now()}.json"`,
     );
-    res.json(data);
+    return data;
   }
 }

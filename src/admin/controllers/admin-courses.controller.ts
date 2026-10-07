@@ -18,6 +18,7 @@ import { AdminCoursesService } from "../services/admin-courses.service";
 import { CreateCourseDto } from "../dto/create-course.dto";
 import { UpdateCourseDto } from "../dto/update-course.dto";
 import { CourseStatus } from "../../events/schemas/course.schema";
+import { ParseObjectIdPipe } from "../../common/pipes/parse-object-id.pipe";
 
 @Controller("admin/courses")
 @UseGuards(SessionGuard, RolesGuard)
@@ -85,7 +86,7 @@ export class AdminCoursesController {
 
   @Post("enrollments/:id/cancel")
   @HttpCode(HttpStatus.OK)
-  async cancelEnrollment(@Param("id") id: string) {
+  async cancelEnrollment(@Param("id", ParseObjectIdPipe) id: string) {
     return this.adminCoursesService.adminCancelEnrollment(id);
   }
 }

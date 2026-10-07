@@ -64,6 +64,44 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       return response.status(status).json(payload);
     }
 
+    // Handle database-level errors gracefully
+    const dbErr = exception as {
+      name?: string;
+      code?: number;
+      message?: string;
+      errors?: Record<string, { message?: string }>;
+    };
+
+    if (dbErr?.name === "CastError") {
+      return response.status(HttpStatus.BAD_REQUEST).json({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: ["Identificador o parámetro con formato inválido"],
+        error: "Bad Request",
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    if (dbErr?.code === 11000) {
+      return response.status(HttpStatus.CONFLICT).json({
+        statusCode: HttpStatus.CONFLICT,
+        message: ["El registro o recurso ya existe"],
+        error: "Conflict",
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    if (dbErr?.name === "ValidationError" && dbErr?.errors) {
+      const messages = Object.values(dbErr.errors).map(
+        (e) => e?.message || "Error de validación en esquema",
+      );
+      return response.status(HttpStatus.BAD_REQUEST).json({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: messages.length > 0 ? messages : ["Error de validación"],
+        error: "Bad Request",
+        timestamp: new Date().toISOString(),
+      });
+    }
+
     this.logger.error(
       "Unhandled exception",
       exception instanceof Error ? exception.stack : String(exception),

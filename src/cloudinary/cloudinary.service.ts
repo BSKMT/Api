@@ -201,10 +201,11 @@ export class CloudinaryService {
         bytes: result.bytes,
         resourceType: result.resource_type,
       };
-    } catch (err: any) {
-      this.logger.error(`Error uploading base64 to Cloudinary: ${err.message}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Error uploading base64 to Cloudinary: ${msg}`);
       throw new BadRequestException(
-        `Error al subir imagen: ${err.message || "Error desconocido"}`,
+        `Error al subir imagen: ${msg || "Error desconocido"}`,
       );
     }
   }
@@ -223,14 +224,15 @@ export class CloudinaryService {
     }
 
     try {
-      const res = await this.cloudinary.uploader.destroy(publicId, {
+      const res = (await this.cloudinary.uploader.destroy(publicId, {
         resource_type: options.resourceType || "image",
-      });
+      })) as { result: string };
       return res;
-    } catch (err: any) {
-      this.logger.error(`Error deleting asset ${publicId}: ${err.message}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Error deleting asset ${publicId}: ${msg}`);
       throw new BadRequestException(
-        `Error al eliminar archivo de Cloudinary: ${err.message}`,
+        `Error al eliminar archivo de Cloudinary: ${msg}`,
       );
     }
   }
@@ -239,7 +241,7 @@ export class CloudinaryService {
    * Generates a signature for authenticated client-side uploads.
    * Useful for Next.js CldUploadWidget or Android MediaManager direct uploads.
    */
-  generateUploadSignature(paramsToSign: Record<string, any> = {}): {
+  generateUploadSignature(paramsToSign: Record<string, unknown> = {}): {
     signature: string;
     timestamp: number;
     apiKey: string;
@@ -308,7 +310,7 @@ export class CloudinaryService {
       publicId = uploadMatch[1];
     }
 
-    const transformation: Record<string, any> = {
+    const transformation: Record<string, unknown> = {
       fetch_format: options?.format || "auto",
       quality: options?.quality || "auto",
     };

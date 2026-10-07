@@ -21,6 +21,7 @@ import {
   CourseEnrollment,
   CourseEnrollmentDocument,
 } from "../../events/schemas/course-enrollment.schema";
+import { ParseObjectIdPipe } from "../../common/pipes/parse-object-id.pipe";
 import {
   IsNumber,
   Min,
@@ -80,7 +81,7 @@ export class GestionCursosController {
   @Post("progress/:id")
   @HttpCode(HttpStatus.OK)
   async updateProgress(
-    @Param("id") id: string,
+    @Param("id", ParseObjectIdPipe) id: string,
     @Body() dto: UpdateCourseProgressDto,
   ) {
     const enrollment = await this.enrollmentModel.findById(id);

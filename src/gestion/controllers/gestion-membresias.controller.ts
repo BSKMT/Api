@@ -13,7 +13,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
-import { Model, isValidObjectId } from "mongoose";
+import { Model } from "mongoose";
 import type { Request } from "express";
 import { SessionGuard } from "../../auth/session.guard";
 import { GestionGuard } from "../../common/guards/gestion.guard";
@@ -23,6 +23,7 @@ import {
   UserDocument,
   UserSubrole,
 } from "../../users/schemas/user.schema";
+import { ParseObjectIdPipe } from "../../common/pipes/parse-object-id.pipe";
 
 interface AuthenticatedRequest extends Request {
   user: {
@@ -118,13 +119,9 @@ export class GestionMembresiasController {
   @Post("verify/:id")
   @HttpCode(HttpStatus.OK)
   async verifyIdentity(
-    @Param("id") id: string,
+    @Param("id", ParseObjectIdPipe) id: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    if (!isValidObjectId(id)) {
-      throw new BadRequestException("Identificador de usuario inválido");
-    }
-
     // F-09: Bloquear que un gestor se auto-verifique
     if (id === req.user.userId) {
       throw new BadRequestException(

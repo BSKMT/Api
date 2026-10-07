@@ -22,7 +22,7 @@ export function extractFirstObject(
 ): Record<string, unknown> | null {
   if (!raw) return null;
   if (Array.isArray(raw)) {
-    const first = raw[0];
+    const first: unknown = (raw as unknown[])[0];
     return typeof first === "object" && first !== null
       ? (first as Record<string, unknown>)
       : null;

@@ -6,14 +6,16 @@ import type {
   VerifikRuntVehicleRecord,
 } from "../verifik/verifik.service";
 
+export interface UserDocumentSource {
+  identityVerification?: {
+    documentType?: string;
+    documentNumber?: string;
+  } | null;
+  profile?: Record<string, unknown>;
+}
+
 export function resolveUserDocumentForRunt(
-  user: {
-    identityVerification?: {
-      documentType?: string;
-      documentNumber?: string;
-    } | null;
-    profile?: Record<string, unknown>;
-  },
+  user: UserDocumentSource,
   dto?: VerifyRuntDto,
 ): { documentType: string; documentNumber: string } {
   if (dto?.documentNumber && dto?.documentType) {
@@ -173,7 +175,7 @@ export function handleUnconfiguredVerifik(
 
 export async function executeVerifyMotorcycleWithRunt(
   verifikService: VerifikService,
-  user: any,
+  user: UserDocumentSource,
   moto: GarageMotorcycleDocument,
   dto: VerifyRuntDto | undefined,
   userId: string,

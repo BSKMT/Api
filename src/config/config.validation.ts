@@ -142,17 +142,30 @@ export const configValidationSchema = Joi.object({
   CLOUDINARY_API_SECRET: Joi.string().allow("").default(""),
   CLOUDINARY_URL: Joi.string().allow("").default(""),
   CLOUDINARY_UPLOAD_PRESET: Joi.string().allow("").default(""),
+
+  NODE_ENV: Joi.string()
+    .valid("development", "production", "test")
+    .default("development"),
+
+  GOOGLE_CLIENT_ID: Joi.string().allow("").default(""),
+  GOOGLE_CLIENT_SECRET: Joi.string().allow("").default(""),
+  PASSKEY_RP_ID: Joi.string().allow("").default(""),
+
+  BIRD_WHATSAPP_TEMPLATE_SLUG: Joi.string().allow("").default(""),
+
+  OBSERVE_APP_KEY: Joi.string().allow("").default(""),
+  OBSERVE_APP_SECRET: Joi.string().allow("").default(""),
 });
 
 export function validateConfig(
   config: Record<string, unknown>,
 ): Record<string, unknown> {
-  const { error, value } = configValidationSchema.validate(config, {
+  const result = configValidationSchema.validate(config, {
     abortEarly: true,
     allowUnknown: true,
   });
-  if (error) {
-    throw new Error(`Config validation error: ${error.message}`);
+  if (result.error) {
+    throw new Error(`Config validation error: ${result.error.message}`);
   }
-  return value as Record<string, unknown>;
+  return result.value as Record<string, unknown>;
 }
