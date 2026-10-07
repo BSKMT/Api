@@ -1,7 +1,6 @@
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import type { ConfigService } from "@nestjs/config";
 import type { Request, Response, NextFunction } from "express";
-import helmet from "helmet";
 import type { EnvironmentConfig } from "../config/config.interface";
 
 export function setupSecurityMiddleware(
@@ -12,27 +11,25 @@ export function setupSecurityMiddleware(
 ) {
   app.set("trust proxy", 2);
 
-  app.use(
-    helmet({
-      crossOriginOpenerPolicy: { policy: "same-origin" },
-      crossOriginEmbedderPolicy: { policy: "unsafe-none" },
-      crossOriginResourcePolicy: { policy: "same-origin" },
-      contentSecurityPolicy: {
-        directives: {
-          defaultSrc: ["'self'"],
-          scriptSrc: ["'self'"],
-          styleSrc: ["'self'", "'unsafe-inline'"],
-          imgSrc: ["'self'", "data:", "https:"],
-          fontSrc: ["'self'", "data:"],
-          connectSrc: ["'self'"],
-          objectSrc: ["'none'"],
-          baseUri: ["'self'"],
-          formAction: ["'self'"],
-          frameAncestors: ["'none'"],
-        },
+  app.useSecurityHeaders({
+    crossOriginOpenerPolicy: { policy: "same-origin" },
+    crossOriginEmbedderPolicy: { policy: "unsafe-none" },
+    crossOriginResourcePolicy: { policy: "same-origin" },
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "https:"],
+        fontSrc: ["'self'", "data:"],
+        connectSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        frameAncestors: ["'none'"],
       },
-    }),
-  );
+    },
+  });
 
   app.use((_req: Request, res: Response, next: NextFunction) => {
     res.setHeader(
