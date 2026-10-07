@@ -55,7 +55,6 @@ export class LoginOtpController {
   async verify(
     @Body() dto: LoginOtpVerifyDto,
     @Res({ passthrough: true }) res: Response,
-    @Req() req: Request,
   ): Promise<{ cookies: string[]; message?: string }> {
     const result = await this.loginOtpService.verifyOtp(
       dto.requestId,
@@ -67,10 +66,8 @@ export class LoginOtpController {
       }
     }
 
-    // F-07: Proteger contra XSS en navegadores web — solo clientes nativos móviles reciben cookies en el cuerpo JSON
-    const isMobileClient = req.headers["x-device-platform"] === "android";
     return {
-      cookies: isMobileClient ? result.cookies : [],
+      cookies: result.cookies ?? [],
       message: "Sesión iniciada exitosamente",
     };
   }
