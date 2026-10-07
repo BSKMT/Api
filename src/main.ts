@@ -1,3 +1,4 @@
+import "dotenv/config";
 import url from "node:url";
 
 // 1. Remove Node's native warning listener that writes DEP0169 directly to stderr
@@ -46,6 +47,7 @@ import { NestExpressApplication } from "@nestjs/platform-express";
 import express, { urlencoded } from "express";
 import type { Request, Response } from "express";
 import { AppModule } from "./app.module";
+import { ObserveInstrument } from "./observe";
 import { GlobalExceptionFilter } from "./common/filters/global-exception.filter";
 import type { EnvironmentConfig } from "./config/config.interface";
 import { getAuth, setAuthDependencies } from "./auth/better-auth";
@@ -63,6 +65,7 @@ export async function bootstrap(): Promise<express.Express> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     cors: false,
     bodyParser: false,
+    instrument: ObserveInstrument,
   });
 
   const configService = app.get(ConfigService<EnvironmentConfig>);
