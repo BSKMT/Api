@@ -136,6 +136,29 @@ export class ShopService implements OnModuleInit {
       throw new BadRequestException("El pedido debe tener al menos un item");
     }
 
+    // F-04: Expire any stale pending orders for this user before checking limits
+    const cutoff = new Date(Date.now() - 60 * 60 * 1000);
+    const staleUserOrders = await this.orderModel.find({
+      userId,
+      status: OrderStatus.PENDING,
+      createdAt: { $lt: cutoff },
+    });
+    for (const stale of staleUserOrders) {
+      const updated = await this.orderModel.findOneAndUpdate(
+        { _id: stale._id, status: OrderStatus.PENDING },
+        { $set: { status: OrderStatus.CANCELLED } },
+        { new: true },
+      );
+      if (updated) {
+        await restoreOrderStock(
+          this.productModel,
+          updated,
+          this.logger,
+          updated.orderNumber,
+        );
+      }
+    }
+
     // F-04: Mitigar DoS de inventario limitando pedidos PENDING concurrentes por usuario
     const pendingOrdersCount = await this.orderModel.countDocuments({
       userId,

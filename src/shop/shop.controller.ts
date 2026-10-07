@@ -143,6 +143,7 @@ export class ShopController {
   }
 
   @Public()
+  @Get("internal/cron/expire-pending")
   @Post("internal/cron/expire-pending")
   @HttpCode(HttpStatus.OK)
   async expireStalePendingOrders(

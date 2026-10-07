@@ -38,7 +38,7 @@
     },
     {
       "path": "/api/shop/internal/cron/expire-pending",
-      "schedule": "0 * * * *"
+      "schedule": "0 6 * * *"
     }
   ]
 }

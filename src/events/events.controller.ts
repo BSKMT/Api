@@ -208,6 +208,7 @@ export class EventsController {
    * `X-Cron-Secret` header or `Authorization: Bearer <secret>`.
    */
   @Public()
+  @Get("internal/cron/sweep-stale-registrations")
   @Post("internal/cron/sweep-stale-registrations")
   @HttpCode(HttpStatus.OK)
   async sweepStaleRegistrations(
