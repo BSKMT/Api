@@ -20,6 +20,7 @@ import { AdminEventsService } from "../services/admin-events.service";
 import { CreateEventDto } from "../dto/create-event.dto";
 import { UpdateEventDto } from "../dto/update-event.dto";
 import { EventStatus } from "../../events/schemas/event.schema";
+import { ParseObjectIdPipe } from "../../common/pipes/parse-object-id.pipe";
 
 interface AuthenticatedRequest extends Request {
   user: { userId: string; role?: string };
@@ -105,13 +106,13 @@ export class AdminEventsController {
 
   @Post("registrations/:id/confirm")
   @HttpCode(HttpStatus.OK)
-  async confirmRegistration(@Param("id") id: string) {
+  async confirmRegistration(@Param("id", ParseObjectIdPipe) id: string) {
     return this.adminEventsService.adminConfirmRegistration(id);
   }
 
   @Post("registrations/:id/cancel")
   @HttpCode(HttpStatus.OK)
-  async cancelRegistration(@Param("id") id: string) {
+  async cancelRegistration(@Param("id", ParseObjectIdPipe) id: string) {
     return this.adminEventsService.adminCancelRegistration(id);
   }
 }

@@ -1,5 +1,5 @@
 import { Module } from "@nestjs/common";
-import { ConfigModule } from "@nestjs/config";
+import { ConfigModule, ConfigService } from "@nestjs/config";
 import { APP_GUARD } from "@nestjs/core";
 import { MongooseModule } from "@nestjs/mongoose";
 import { ScheduleModule } from "@nestjs/schedule";
@@ -8,6 +8,7 @@ import { AuthModule } from "./auth/auth.module";
 import { SessionGuard } from "./auth/session.guard";
 import { B2bModule } from "./b2b/b2b.module";
 import { validateConfig } from "./config/config.validation";
+import type { EnvironmentConfig } from "./config/config.interface";
 import { ContactModule } from "./contact/contact.module";
 import { EventsModule } from "./events/events.module";
 import { KvModule } from "./kv/kv.module";
@@ -34,8 +35,8 @@ import { ObserveModule } from "./observe";
   controllers: [AppController],
   imports: [
     ObserveModule.forRoot({
-      appKey: process.env.OBSERVE_APP_KEY!,
-      appSecret: process.env.OBSERVE_APP_SECRET!,
+      appKey: process.env.OBSERVE_APP_KEY ?? "",
+      appSecret: process.env.OBSERVE_APP_SECRET ?? "",
       serviceId: "bskmt-api",
     }),
     ConfigModule.forRoot({
@@ -43,8 +44,9 @@ import { ObserveModule } from "./observe";
       validate: validateConfig,
     }),
     MongooseModule.forRootAsync({
-      useFactory: () => ({
-        uri: process.env.MONGODB_URI!,
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService<EnvironmentConfig>) => ({
+        uri: configService.get<string>("MONGODB_URI", { infer: true })!,
       }),
     }),
     ScheduleModule.forRoot(),

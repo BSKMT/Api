@@ -25,5 +25,5 @@ export class UploadBase64Dto {
 
 export class GenerateSignatureDto {
   @IsOptional()
-  paramsToSign?: Record<string, any>;
+  paramsToSign?: Record<string, unknown>;
 }

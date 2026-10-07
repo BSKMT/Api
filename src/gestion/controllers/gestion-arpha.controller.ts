@@ -21,6 +21,7 @@ import {
   UpdateGestorLocationDto,
   UpdateGestionStatusDto,
 } from "../services/gestion-arpha.service";
+import { ParseObjectIdPipe } from "../../common/pipes/parse-object-id.pipe";
 
 interface AuthenticatedRequest extends Request {
   user: {
@@ -63,7 +64,7 @@ export class GestionArphaController {
   @Post("requests/:id/assign")
   @HttpCode(HttpStatus.OK)
   async assignRequest(
-    @Param("id") id: string,
+    @Param("id", ParseObjectIdPipe) id: string,
     @Body() dto: AssignArphaDto,
     @Req() req: AuthenticatedRequest,
   ) {
@@ -82,7 +83,7 @@ export class GestionArphaController {
   @Post("requests/:id/location")
   @HttpCode(HttpStatus.OK)
   async updateLocation(
-    @Param("id") id: string,
+    @Param("id", ParseObjectIdPipe) id: string,
     @Body() coords: UpdateGestorLocationDto,
     @Req() req: AuthenticatedRequest,
   ) {
@@ -92,7 +93,7 @@ export class GestionArphaController {
   @Post("requests/:id/status")
   @HttpCode(HttpStatus.OK)
   async updateStatus(
-    @Param("id") id: string,
+    @Param("id", ParseObjectIdPipe) id: string,
     @Body() dto: UpdateGestionStatusDto,
     @Req() req: AuthenticatedRequest,
   ) {

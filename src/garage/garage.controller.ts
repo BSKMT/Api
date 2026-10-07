@@ -23,6 +23,7 @@ import { CreateMaintenanceDto } from "./dto/create-maintenance.dto";
 import { AlliedServiceOrderDto } from "./dto/allied-service-order.dto";
 import { VerifyRuntDto } from "./dto/verify-runt.dto";
 import { ensureString } from "../common/utils/sanitize-query.util";
+import { ParseObjectIdPipe } from "../common/pipes/parse-object-id.pipe";
 
 interface AuthenticatedRequest extends Request {
   user: { userId: string; email?: string };
@@ -54,7 +55,7 @@ export class GarageController {
   @Put("motorcycles/:id")
   async updateMotorcycle(
     @Req() req: AuthenticatedRequest,
-    @Param("id") id: string,
+    @Param("id", ParseObjectIdPipe) id: string,
     @Body() dto: UpdateMotorcycleDto,
   ) {
     return this.garageService.updateMotorcycle(req.user.userId, id, dto);
@@ -63,7 +64,7 @@ export class GarageController {
   @Delete("motorcycles/:id")
   async deleteMotorcycle(
     @Req() req: AuthenticatedRequest,
-    @Param("id") id: string,
+    @Param("id", ParseObjectIdPipe) id: string,
   ) {
     return this.garageService.deleteMotorcycle(req.user.userId, id);
   }
@@ -72,7 +73,7 @@ export class GarageController {
   @HttpCode(HttpStatus.OK)
   async updateOdometer(
     @Req() req: AuthenticatedRequest,
-    @Param("id") id: string,
+    @Param("id", ParseObjectIdPipe) id: string,
     @Body() dto: UpdateOdometerDto,
   ) {
     return this.garageService.updateOdometer(req.user.userId, id, dto);
@@ -82,7 +83,7 @@ export class GarageController {
   @HttpCode(HttpStatus.CREATED)
   async createMaintenance(
     @Req() req: AuthenticatedRequest,
-    @Param("id") id: string,
+    @Param("id", ParseObjectIdPipe) id: string,
     @Body() dto: CreateMaintenanceDto,
   ) {
     return this.garageService.createMaintenance(req.user.userId, id, dto);
@@ -92,7 +93,7 @@ export class GarageController {
   @HttpCode(HttpStatus.OK)
   async verifyRunt(
     @Req() req: AuthenticatedRequest,
-    @Param("id") id: string,
+    @Param("id", ParseObjectIdPipe) id: string,
     @Body() dto?: VerifyRuntDto,
   ) {
     return this.garageService.verifyMotorcycleWithRunt(

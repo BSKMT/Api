@@ -11,7 +11,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
-import { Model, isValidObjectId } from "mongoose";
+import { Model } from "mongoose";
 import { SessionGuard } from "../../auth/session.guard";
 import { GestionGuard } from "../../common/guards/gestion.guard";
 import { RequireSubroles } from "../../common/decorators/subroles.decorator";
@@ -22,6 +22,7 @@ import {
   OrderDocument,
   OrderStatus,
 } from "../../shop/schemas/order.schema";
+import { ParseObjectIdPipe } from "../../common/pipes/parse-object-id.pipe";
 
 class DispatchOrderDto {
   @IsString()
@@ -60,11 +61,10 @@ export class GestionTiendaController {
 
   @Post("orders/:id/dispatch")
   @HttpCode(HttpStatus.OK)
-  async dispatchOrder(@Param("id") id: string, @Body() dto: DispatchOrderDto) {
-    if (!isValidObjectId(id)) {
-      throw new NotFoundException("Orden no encontrada");
-    }
-
+  async dispatchOrder(
+    @Param("id", ParseObjectIdPipe) id: string,
+    @Body() dto: DispatchOrderDto,
+  ) {
     const order = await this.orderModel.findById(id);
     if (!order) {
       throw new NotFoundException("Orden no encontrada");
@@ -83,11 +83,7 @@ export class GestionTiendaController {
 
   @Post("orders/:id/deliver")
   @HttpCode(HttpStatus.OK)
-  async deliverOrder(@Param("id") id: string) {
-    if (!isValidObjectId(id)) {
-      throw new NotFoundException("Orden no encontrada");
-    }
-
+  async deliverOrder(@Param("id", ParseObjectIdPipe) id: string) {
     const order = await this.orderModel.findById(id);
     if (!order) {
       throw new NotFoundException("Orden no encontrada");

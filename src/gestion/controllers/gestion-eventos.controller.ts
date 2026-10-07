@@ -11,7 +11,7 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
-import { Model, isValidObjectId } from "mongoose";
+import { Model } from "mongoose";
 import { SessionGuard } from "../../auth/session.guard";
 import { GestionGuard } from "../../common/guards/gestion.guard";
 import { RequireSubroles } from "../../common/decorators/subroles.decorator";
@@ -21,6 +21,7 @@ import {
   EventRegistration,
   EventRegistrationDocument,
 } from "../../events/schemas/event-registration.schema";
+import { ParseObjectIdPipe } from "../../common/pipes/parse-object-id.pipe";
 
 @Controller("gestion/eventos")
 @UseGuards(SessionGuard, GestionGuard)
@@ -45,7 +46,7 @@ export class GestionEventosController {
 
   @Get("registrations/:eventId")
   async listRegistrations(
-    @Param("eventId") eventId: string,
+    @Param("eventId", ParseObjectIdPipe) eventId: string,
     @Query("search") search?: string,
   ) {
     const event = await this.eventModel.findById(eventId).lean();
@@ -92,11 +93,7 @@ export class GestionEventosController {
 
   @Post("check-in/:id")
   @HttpCode(HttpStatus.OK)
-  async checkIn(@Param("id") id: string) {
-    if (!isValidObjectId(id)) {
-      throw new BadRequestException("Identificador de inscripción inválido");
-    }
-
+  async checkIn(@Param("id", ParseObjectIdPipe) id: string) {
     const reg = await this.registrationModel.findById(id);
     if (!reg) {
       throw new NotFoundException("Inscripción no encontrada");

@@ -15,6 +15,7 @@ import { Roles, Role } from "../../common/decorators";
 import { AdminArphaService } from "../services/admin-arpha.service";
 import { AssignArphaRequestDto } from "../dto/assign-arpha-request.dto";
 import { UpdateArphaStatusDto } from "../dto/update-arpha-status.dto";
+import { ParseObjectIdPipe } from "../../common/pipes/parse-object-id.pipe";
 
 @Controller("admin/arpha")
 @UseGuards(SessionGuard, RolesGuard)
@@ -38,20 +39,23 @@ export class AdminArphaController {
   }
 
   @Get("requests/:id")
-  async getOne(@Param("id") id: string) {
+  async getOne(@Param("id", ParseObjectIdPipe) id: string) {
     return this.adminArphaService.getRequest(id);
   }
 
   @Post("requests/:id/assign")
   @HttpCode(HttpStatus.OK)
-  async assign(@Param("id") id: string, @Body() dto: AssignArphaRequestDto) {
+  async assign(
+    @Param("id", ParseObjectIdPipe) id: string,
+    @Body() dto: AssignArphaRequestDto,
+  ) {
     return this.adminArphaService.assignRequest(id, dto);
   }
 
   @Post("requests/:id/status")
   @HttpCode(HttpStatus.OK)
   async updateStatus(
-    @Param("id") id: string,
+    @Param("id", ParseObjectIdPipe) id: string,
     @Body() dto: UpdateArphaStatusDto,
   ) {
     return this.adminArphaService.updateStatus(id, dto);

@@ -1,7 +1,7 @@
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import type { ConfigService } from "@nestjs/config";
 import type { Request, Response, NextFunction } from "express";
-import * as helmet from "helmet";
+import helmet from "helmet";
 import type { EnvironmentConfig } from "../config/config.interface";
 
 export function setupSecurityMiddleware(
@@ -13,7 +13,7 @@ export function setupSecurityMiddleware(
   app.set("trust proxy", 2);
 
   app.use(
-    helmet.default({
+    helmet({
       crossOriginOpenerPolicy: { policy: "same-origin" },
       crossOriginEmbedderPolicy: { policy: "unsafe-none" },
       crossOriginResourcePolicy: { policy: "same-origin" },
@@ -106,16 +106,18 @@ export function setupSecurityMiddleware(
     if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
       return next();
     }
+    const normalizedPath = (req.path || "").replace(/\/+$/, "");
     if (
-      req.path === "/api/payments/webhook" ||
-      req.path === "/api/membership/webhook" ||
-      req.path === "/api/alegra/webhook" ||
-      req.path.startsWith("/api/internal/cron/") ||
-      req.path === "/api/membership/internal/cron/sweep-pending" ||
-      req.path === "/api/events/internal/cron/sweep-stale-registrations" ||
-      req.path === "/api/shop/internal/cron/expire-pending" ||
-      req.path === "/api/internal/webhooks/bird/realtime" ||
-      req.path === "/api/garage/allied/service-order"
+      normalizedPath === "/api/payments/webhook" ||
+      normalizedPath === "/api/membership/webhook" ||
+      normalizedPath === "/api/alegra/webhook" ||
+      normalizedPath.startsWith("/api/internal/cron/") ||
+      normalizedPath === "/api/membership/internal/cron/sweep-pending" ||
+      normalizedPath ===
+        "/api/events/internal/cron/sweep-stale-registrations" ||
+      normalizedPath === "/api/shop/internal/cron/expire-pending" ||
+      normalizedPath === "/api/internal/webhooks/bird/realtime" ||
+      normalizedPath === "/api/garage/allied/service-order"
     ) {
       return next();
     }

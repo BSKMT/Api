@@ -5,7 +5,7 @@ import { Types } from "mongoose";
 export class ParseObjectIdPipe implements PipeTransform<string, string> {
   transform(value: string): string {
     // EVT-18: Don't reflect user input in error message (potential XSS in logs/UIs)
-    if (!Types.ObjectId.isValid(value)) {
+    if (!value || typeof value !== "string" || !Types.ObjectId.isValid(value)) {
       throw new BadRequestException("ID inválido");
     }
     return value;
