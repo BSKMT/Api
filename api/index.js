@@ -35,34 +35,6 @@ url.parse = function patchedUrlParse(...args) {
 let appHandlerPromise;
 
 export default async function handler(req, res) {
-  const rawPath = (req.url || "")
-    .split("?")[0]
-    .toLowerCase()
-    .replace(/\/+$/, "");
-  const matchedPath = String(req.headers["x-matched-path"] || "").toLowerCase();
-
-  const isRoot =
-    rawPath === "" ||
-    rawPath === "/" ||
-    rawPath === "/api" ||
-    rawPath === "/api/index.js" ||
-    rawPath === "/index.js" ||
-    matchedPath === "/" ||
-    matchedPath === "" ||
-    matchedPath === "/api";
-
-  if (req.method === "GET" && isRoot) {
-    res.setHeader("Content-Type", "application/json");
-    res.statusCode = 200;
-    return res.end(
-      JSON.stringify({
-        status: "ok",
-        name: "BSKMT API",
-        timestamp: new Date().toISOString(),
-      }),
-    );
-  }
-
   if (!appHandlerPromise) {
     appHandlerPromise = import("../dist/main.js").then((m) => m.default);
   }
