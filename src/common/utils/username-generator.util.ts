@@ -41,9 +41,10 @@ export function generateBskmtUsername(
   const cleanNombres = normalizeAscii(nombres);
   const cleanApellidos = normalizeAscii(apellidos);
 
-  const words = [...cleanNombres.split(/\s+/), ...cleanApellidos.split(/\s+/)].filter(
-    (w) => w.length > 0,
-  );
+  const words = [
+    ...cleanNombres.split(/\s+/),
+    ...cleanApellidos.split(/\s+/),
+  ].filter((w) => w.length > 0);
 
   const initials = words.map((w) => w[0]).join("");
 

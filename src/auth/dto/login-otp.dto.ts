@@ -107,7 +107,6 @@ export class LoginOtpSuperAdminInitiateDto {
   turnstileToken?: string;
 }
 
-
 /**
  * DTO para verificar el codigo OTP de login.
  *

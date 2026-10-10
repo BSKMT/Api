@@ -85,7 +85,6 @@ export interface ContractorInfo {
   createdAt?: Date;
 }
 
-
 export enum UserSubrole {
   // GESTION OPERATIVA GENERAL
   GESTOR_CAMPO = "gestor_campo",

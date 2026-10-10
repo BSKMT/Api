@@ -79,7 +79,10 @@ export interface AuthInstance {
         [key: string]: unknown;
       };
       headers?: AuthHeaders;
-    }) => Promise<{ user?: BetterAuthUser; session?: BetterAuthSession } | null>;
+    }) => Promise<{
+      user?: BetterAuthUser;
+      session?: BetterAuthSession;
+    } | null>;
   };
   options: unknown;
   $ERROR_CODES: Record<string, string>;

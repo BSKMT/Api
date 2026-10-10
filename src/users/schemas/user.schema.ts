@@ -87,7 +87,6 @@ export class User {
   })
   subrol?: string | null;
 
-
   @Prop({ default: false })
   profileCompleted!: boolean;
 
