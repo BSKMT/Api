@@ -35,8 +35,8 @@ export class AdminStaffController {
   ) {}
 
   /**
-   * Registro de Colaborador de BSK Fascia (Operaciones / Contratistas).
-   * Permitido para Administradores y Superadministradores.
+   * Registro de Gestor de BSK Fascia (Campo u Oficina / panel.bskmt.com).
+   * Permitido para Administradores (ej. Gerente de Talento Humano) y Superadministradores.
    */
   @Post("collaborators")
   @UseGuards(SessionGuard, RolesGuard)
@@ -49,13 +49,31 @@ export class AdminStaffController {
     return this.contractorService.createCollaborator(dto, req.user.userId);
   }
 
+  @Post("gestores")
+  @UseGuards(SessionGuard, RolesGuard)
+  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @HttpCode(HttpStatus.CREATED)
+  async createGestor(
+    @Body() dto: CreateCollaboratorDto,
+    @Req() req: AuthenticatedUserRequest,
+  ) {
+    return this.contractorService.createCollaborator(dto, req.user.userId);
+  }
+
   /**
-   * Lista todos los colaboradores/gestores de operaciones.
+   * Lista todos los gestores de operaciones (campo y oficina).
    */
   @Get("collaborators")
   @UseGuards(SessionGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.SUPERADMIN)
   async listCollaborators() {
+    return this.contractorService.listCollaborators();
+  }
+
+  @Get("gestores")
+  @UseGuards(SessionGuard, RolesGuard)
+  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  async listGestores() {
     return this.contractorService.listCollaborators();
   }
 

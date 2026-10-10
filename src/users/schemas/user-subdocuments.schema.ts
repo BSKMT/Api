@@ -63,6 +63,7 @@ export const IdentityVerificationSchema = new MongooseSchema(
 export enum UserRole {
   USER = "user",
   MEMBER = "member",
+  GESTOR = "gestor",
   ADMIN = "admin",
   SUPERADMIN = "superadmin",
   ROAD_CAPTAIN = "road-captain",
@@ -86,6 +87,10 @@ export interface ContractorInfo {
 
 
 export enum UserSubrole {
+  // GESTION OPERATIVA GENERAL
+  GESTOR_CAMPO = "gestor_campo",
+  GESTOR_OFICINA = "gestor_oficina",
+
   // ARPHA
   LIDER_ARPHA = "lider_arpha",
   GESTOR_CAMPO_ARPHA = "gestor_campo_arpha",
