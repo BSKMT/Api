@@ -239,13 +239,16 @@ async function initAuth(): Promise<AuthInstance> {
             "https://bskmt.com",
             "https://www.bskmt.com",
             "https://dash.bskmt.com",
+            "https://console.bskmt.com",
           ]
         : [
             "https://bskmt.com",
             "https://dash.bskmt.com",
+            "https://console.bskmt.com",
             "http://localhost:3000",
             "http://localhost:4321",
             "http://localhost:4322",
+            "http://localhost:4323",
           ],
 
     disabledPaths: ["/sign-in/email"],
@@ -259,13 +262,19 @@ async function initAuth(): Promise<AuthInstance> {
         rpName: "BSK Motorcycle Team",
         origin:
           process.env.NODE_ENV === "production"
-            ? ["https://bskmt.com", "https://dash.bskmt.com"]
+            ? [
+                "https://bskmt.com",
+                "https://dash.bskmt.com",
+                "https://console.bskmt.com",
+              ]
             : [
                 "https://bskmt.com",
                 "https://dash.bskmt.com",
+                "https://console.bskmt.com",
                 "http://localhost:3000",
                 "http://localhost:4321",
                 "http://localhost:4322",
+                "http://localhost:4323",
               ],
       }),
     ],
