@@ -166,17 +166,19 @@ export class LoginOtpService {
       );
     }
 
-    // Regla de confianza para Fascia: requiere subrol operativo o rol de administración/superadmin
-    const hasSubrol = Boolean(user.subrol);
+    // Regla de acceso para Fascia (panel.bskmt.com):
+    // Exclusivo para Gestores (campo y oficina) o administradores / superadministradores
+    const isGestor =
+      user.role === UserRole.GESTOR || Boolean(user.subrol);
     const isAdminOrSuper =
       user.role === UserRole.ADMIN || user.role === UserRole.SUPERADMIN;
 
-    if (!hasSubrol && !isAdminOrSuper) {
+    if (!isGestor && !isAdminOrSuper) {
       this.logger.warn(
-        `Fascia login bloqueado: usuario "${normalizedUsername}" (${user.email}) no tiene subrol asignado (rol: ${user.role}).`,
+        `Fascia login bloqueado: usuario "${normalizedUsername}" (${user.email}) no tiene rol de gestor (rol: ${user.role}, subrol: ${user.subrol}).`,
       );
       throw new UnauthorizedException(
-        "Acceso restringido: Esta cuenta no cuenta con rol o subrol de colaborador asignado para BSK Fascia.",
+        "Acceso restringido: Esta cuenta no posee rol de Gestor (Campo u Oficina) asignado para panel.bskmt.com.",
       );
     }
 

@@ -158,7 +158,7 @@ export class ContractorManagementService {
           betterAuthId,
           username,
           internalCode,
-          role: UserRole.MEMBER,
+          role: UserRole.GESTOR,
           subrol: dto.subrol,
           contractorInfo,
           emailVerified: true,
@@ -181,24 +181,25 @@ export class ContractorManagementService {
       { new: true, upsert: true },
     );
 
-    // Sincronizar username en Better Auth
+    // Sincronizar username y rol en Better Auth
     await getMongoDb()
       .collection("user")
       .updateOne(
         { email },
-        { $set: { username, role: UserRole.MEMBER } },
+        { $set: { username, role: UserRole.GESTOR } },
       );
 
     this.logger.log(
-      `Colaborador Fascia creado exitosamente: usuario="${username}", email="${email}", subrol="${dto.subrol}" por admin=${creatorUserId}`,
+      `Gestor Fascia creado exitosamente: usuario="${username}", email="${email}", subrol="${dto.subrol}" por admin=${creatorUserId}`,
     );
 
     return {
-      message: "Colaborador de operaciones registrado exitosamente.",
+      message: "Gestor de operaciones (campo/oficina) registrado exitosamente.",
       collaborator: {
         _id: updatedUser._id,
         username,
         email,
+        role: UserRole.GESTOR,
         subrol: dto.subrol,
         contractorInfo,
       },
@@ -406,6 +407,7 @@ export class ContractorManagementService {
     return this.userModel
       .find({
         $or: [
+          { role: UserRole.GESTOR },
           { contractorInfo: { $ne: null } },
           { subrol: { $ne: null } },
         ],
