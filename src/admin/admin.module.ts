@@ -7,12 +7,14 @@ import { AdminArphaController } from "./controllers/admin-arpha.controller";
 import { AdminMembershipController } from "./controllers/admin-membership.controller";
 import { AdminSettingsController } from "./controllers/admin-settings.controller";
 import { AdminUsersController } from "./controllers/admin-users.controller";
+import { AdminStaffController } from "./controllers/admin-staff.controller";
 import { AdminEventsService } from "./services/admin-events.service";
 import { AdminCoursesService } from "./services/admin-courses.service";
 import { AdminShopService } from "./services/admin-shop.service";
 import { AdminArphaService } from "./services/admin-arpha.service";
 import { AdminMembershipService } from "./services/admin-membership.service";
 import { AdminSettingsService } from "./services/admin-settings.service";
+import { ContractorManagementService } from "./services/contractor-management.service";
 import { Event, EventSchema } from "../events/schemas/event.schema";
 import {
   EventRegistration,
@@ -85,6 +87,7 @@ import { UsersModule } from "../users/users.module";
     AdminMembershipController,
     AdminSettingsController,
     AdminUsersController,
+    AdminStaffController,
     PublicPricingConfigController,
     AdminPricingConfigController,
   ],
@@ -95,8 +98,9 @@ import { UsersModule } from "../users/users.module";
     AdminArphaService,
     AdminMembershipService,
     AdminSettingsService,
+    ContractorManagementService,
     SystemPricingConfigService,
   ],
-  exports: [SystemPricingConfigService],
+  exports: [SystemPricingConfigService, ContractorManagementService],
 })
 export class AdminModule {}

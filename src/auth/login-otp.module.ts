@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { MongooseModule } from "@nestjs/mongoose";
 import { BirdVerifyModule } from "../bird-verify/bird-verify.module";
 import { LoginOtp, LoginOtpSchema } from "./schemas/login-otp.schema";
+import { User, UserSchema } from "../users/schemas/user.schema";
 import { LoginOtpService } from "./login-otp.service";
 import { LoginOtpController } from "./login-otp.controller";
 
@@ -22,6 +23,7 @@ import { LoginOtpController } from "./login-otp.controller";
     BirdVerifyModule,
     MongooseModule.forFeature([
       { name: LoginOtp.name, schema: LoginOtpSchema },
+      { name: User.name, schema: UserSchema },
     ]),
   ],
   controllers: [LoginOtpController],

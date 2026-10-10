@@ -71,6 +71,15 @@ export interface AuthInstance {
       headers: AuthHeaders;
     }) => Promise<unknown>;
     signInEmail: SignInEmailFn;
+    signUpEmail: (params: {
+      body: {
+        email: string;
+        password: string;
+        name: string;
+        [key: string]: unknown;
+      };
+      headers?: AuthHeaders;
+    }) => Promise<{ user?: BetterAuthUser; session?: BetterAuthSession } | null>;
   };
   options: unknown;
   $ERROR_CODES: Record<string, string>;

@@ -64,10 +64,26 @@ export enum UserRole {
   USER = "user",
   MEMBER = "member",
   ADMIN = "admin",
+  SUPERADMIN = "superadmin",
   ROAD_CAPTAIN = "road-captain",
   EVENT_MANAGER = "event-manager",
   MODERATOR = "moderator",
 }
+
+export interface ContractorInfo {
+  cedula: string;
+  nombres: string;
+  apellidos: string;
+  correoInstitucional: string;
+  telefono: string;
+  cargo: string;
+  area?: string;
+  subrol?: string | null;
+  tipoContrato?: string;
+  createdBy?: string;
+  createdAt?: Date;
+}
+
 
 export enum UserSubrole {
   // ARPHA
