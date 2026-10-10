@@ -72,6 +72,7 @@ export function setupSecurityMiddleware(
       "https://bskmt.com",
       "https://www.bskmt.com",
       "https://dash.bskmt.com",
+      "https://console.bskmt.com",
       landingPageUrl,
       panelUrl,
       ...devOrigins,
