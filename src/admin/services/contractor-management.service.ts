@@ -33,8 +33,14 @@ export class ContractorManagementService {
   ): Promise<{ username: string; internalCode: string }> {
     let attempts = 0;
     while (attempts < 10) {
-      const generated = generateBskmtUsername(cedula, primerNombre, primerApellido);
-      const exists = await this.userModel.findOne({ username: generated.username }).lean();
+      const generated = generateBskmtUsername(
+        cedula,
+        primerNombre,
+        primerApellido,
+      );
+      const exists = await this.userModel
+        .findOne({ username: generated.username })
+        .lean();
       if (!exists) {
         return {
           username: generated.username,
@@ -43,7 +49,9 @@ export class ContractorManagementService {
       }
       attempts++;
     }
-    throw new ConflictException("No fue posible generar un nombre de usuario único tras 10 intentos.");
+    throw new ConflictException(
+      "No fue posible generar un nombre de usuario único tras 10 intentos.",
+    );
   }
 
   /**
@@ -77,7 +85,9 @@ export class ContractorManagementService {
       betterAuthId = authRes?.user?.id || "";
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      this.logger.error(`Error en auth.api.signUpEmail para ${email}: ${errMsg}`);
+      this.logger.error(
+        `Error en auth.api.signUpEmail para ${email}: ${errMsg}`,
+      );
       throw new BadRequestException(
         `Error al registrar credenciales de Better Auth: ${errMsg}`,
       );
@@ -91,7 +101,9 @@ export class ContractorManagementService {
       if (rawUser) {
         betterAuthId = String(rawUser._id);
       } else {
-        throw new BadRequestException("No se pudo obtener el identificador de usuario de Better Auth.");
+        throw new BadRequestException(
+          "No se pudo obtener el identificador de usuario de Better Auth.",
+        );
       }
     }
 
@@ -115,7 +127,9 @@ export class ContractorManagementService {
 
     const existingUser = await this.userModel.findOne({ email }).lean();
     if (existingUser) {
-      throw new ConflictException(`El correo institucional ${email} ya se encuentra registrado.`);
+      throw new ConflictException(
+        `El correo institucional ${email} ya se encuentra registrado.`,
+      );
     }
 
     const { username, internalCode } = await this.generateUniqueUsername(
@@ -124,7 +138,8 @@ export class ContractorManagementService {
       dto.primerApellido,
     );
 
-    const fullName = `${dto.primerNombre} ${dto.segundoNombre ? dto.segundoNombre + " " : ""}${dto.primerApellido} ${dto.segundoApellido || ""}`.trim();
+    const fullName =
+      `${dto.primerNombre} ${dto.segundoNombre ? dto.segundoNombre + " " : ""}${dto.primerApellido} ${dto.segundoApellido || ""}`.trim();
 
     const betterAuthId = await this.createBetterAuthAccount(
       email,
@@ -184,10 +199,7 @@ export class ContractorManagementService {
     // Sincronizar username y rol en Better Auth
     await getMongoDb()
       .collection("user")
-      .updateOne(
-        { email },
-        { $set: { username, role: UserRole.GESTOR } },
-      );
+      .updateOne({ email }, { $set: { username, role: UserRole.GESTOR } });
 
     this.logger.log(
       `Gestor Fascia creado exitosamente: usuario="${username}", email="${email}", subrol="${dto.subrol}" por admin=${creatorUserId}`,
@@ -210,12 +222,17 @@ export class ContractorManagementService {
    * Crea un Administrador de BSK Console con datos de contratista y permisos asignados.
    * EXCLUSIVO: Solo puede ser ejecutado por un Superadministrador.
    */
-  async createAdministrator(dto: CreateAdministratorDto, creatorUserId: string) {
+  async createAdministrator(
+    dto: CreateAdministratorDto,
+    creatorUserId: string,
+  ) {
     const email = dto.correoInstitucional.toLowerCase().trim();
 
     const existingUser = await this.userModel.findOne({ email }).lean();
     if (existingUser) {
-      throw new ConflictException(`El correo corporativo ${email} ya se encuentra registrado.`);
+      throw new ConflictException(
+        `El correo corporativo ${email} ya se encuentra registrado.`,
+      );
     }
 
     const { username, internalCode } = await this.generateUniqueUsername(
@@ -224,7 +241,8 @@ export class ContractorManagementService {
       dto.primerApellido,
     );
 
-    const fullName = `${dto.primerNombre} ${dto.segundoNombre ? dto.segundoNombre + " " : ""}${dto.primerApellido} ${dto.segundoApellido || ""}`.trim();
+    const fullName =
+      `${dto.primerNombre} ${dto.segundoNombre ? dto.segundoNombre + " " : ""}${dto.primerApellido} ${dto.segundoApellido || ""}`.trim();
 
     const betterAuthId = await this.createBetterAuthAccount(
       email,
@@ -285,10 +303,7 @@ export class ContractorManagementService {
     // Sincronizar username y role en Better Auth
     await getMongoDb()
       .collection("user")
-      .updateOne(
-        { email },
-        { $set: { username, role: UserRole.ADMIN } },
-      );
+      .updateOne({ email }, { $set: { username, role: UserRole.ADMIN } });
 
     this.logger.log(
       `Administrador Console creado exitosamente: usuario="${username}", email="${email}", area="${dto.area}" por superadmin=${creatorUserId}`,
@@ -317,7 +332,9 @@ export class ContractorManagementService {
 
     const existingUser = await this.userModel.findOne({ email }).lean();
     if (existingUser) {
-      throw new ConflictException(`El correo ${email} ya se encuentra registrado.`);
+      throw new ConflictException(
+        `El correo ${email} ya se encuentra registrado.`,
+      );
     }
 
     const { username, internalCode } = await this.generateUniqueUsername(
@@ -326,7 +343,8 @@ export class ContractorManagementService {
       dto.primerApellido,
     );
 
-    const fullName = `${dto.primerNombre} ${dto.segundoNombre ? dto.segundoNombre + " " : ""}${dto.primerApellido} ${dto.segundoApellido || ""}`.trim();
+    const fullName =
+      `${dto.primerNombre} ${dto.segundoNombre ? dto.segundoNombre + " " : ""}${dto.primerApellido} ${dto.segundoApellido || ""}`.trim();
 
     const betterAuthId = await this.createBetterAuthAccount(
       email,
@@ -379,10 +397,7 @@ export class ContractorManagementService {
 
     await getMongoDb()
       .collection("user")
-      .updateOne(
-        { email },
-        { $set: { username, role: UserRole.SUPERADMIN } },
-      );
+      .updateOne({ email }, { $set: { username, role: UserRole.SUPERADMIN } });
 
     this.logger.log(
       `Superadministrador creado exitosamente: usuario="${username}", email="${email}" por superadmin=${creatorUserId}`,
@@ -425,7 +440,9 @@ export class ContractorManagementService {
       .find({
         role: { $in: [UserRole.ADMIN, UserRole.SUPERADMIN] },
       })
-      .select("email username role subrol adminPermissions contractorInfo isActive createdAt")
+      .select(
+        "email username role subrol adminPermissions contractorInfo isActive createdAt",
+      )
       .sort({ createdAt: -1 })
       .lean();
   }

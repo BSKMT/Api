@@ -148,10 +148,16 @@ export class LoginOtpService {
       throw new BadRequestException("El nombre de usuario es obligatorio.");
     }
 
-    const user = await this.userModel.findOne({ username: normalizedUsername }).lean();
+    const user = await this.userModel
+      .findOne({ username: normalizedUsername })
+      .lean();
     if (!user) {
-      this.logger.warn(`Fascia login fallido: usuario "${normalizedUsername}" no encontrado.`);
-      throw new UnauthorizedException("Credenciales inválidas. Verifica tu usuario y contraseña.");
+      this.logger.warn(
+        `Fascia login fallido: usuario "${normalizedUsername}" no encontrado.`,
+      );
+      throw new UnauthorizedException(
+        "Credenciales inválidas. Verifica tu usuario y contraseña.",
+      );
     }
 
     if (user.isActive === false) {
@@ -169,9 +175,10 @@ export class LoginOtpService {
     // Regla de acceso para Fascia (panel.bskmt.com):
     // Exclusivo para Gestores (campo y oficina) o administradores / superadministradores
     const isGestor =
-      user.role === UserRole.GESTOR || Boolean(user.subrol);
+      user.role === (UserRole.GESTOR as string) || Boolean(user.subrol);
     const isAdminOrSuper =
-      user.role === UserRole.ADMIN || user.role === UserRole.SUPERADMIN;
+      user.role === (UserRole.ADMIN as string) ||
+      user.role === (UserRole.SUPERADMIN as string);
 
     if (!isGestor && !isAdminOrSuper) {
       this.logger.warn(
@@ -250,7 +257,10 @@ export class LoginOtpService {
     }
 
     // Límite estricto: ÚNICAMENTE roles 'admin' o 'superadmin'
-    if (user.role !== UserRole.ADMIN && user.role !== UserRole.SUPERADMIN) {
+    if (
+      user.role !== (UserRole.ADMIN as string) &&
+      user.role !== (UserRole.SUPERADMIN as string)
+    ) {
       this.logger.warn(
         `Console login bloqueado: usuario "${normalizedUsername}" tiene rol "${user.role}" (requiere admin o superadmin).`,
       );
@@ -308,16 +318,16 @@ export class LoginOtpService {
       this.logger.warn(
         `Superadmin login fallido: credenciales no coinciden para "${normalizedEmail}".`,
       );
-      throw new UnauthorizedException("Credenciales de superadministrador inválidas.");
-    }
-
-    if (user.isActive === false) {
       throw new UnauthorizedException(
-        "Cuenta de superadministrador inactiva.",
+        "Credenciales de superadministrador inválidas.",
       );
     }
 
-    if (user.role !== UserRole.SUPERADMIN) {
+    if (user.isActive === false) {
+      throw new UnauthorizedException("Cuenta de superadministrador inactiva.");
+    }
+
+    if (user.role !== (UserRole.SUPERADMIN as string)) {
       this.logger.warn(
         `Superadmin login denegado: usuario "${normalizedUsername}" no tiene rol 'superadmin' (rol actual: ${user.role}).`,
       );
