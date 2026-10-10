@@ -39,6 +39,10 @@ export class RolesGuard implements CanActivate {
 
     const userRole = request.user.role as Role;
 
+    if (userRole === Role.SUPERADMIN) {
+      return true;
+    }
+
     if (!userRole || !requiredRoles.includes(userRole)) {
       throw new ForbiddenException(
         "No tienes permisos para realizar esta acción",

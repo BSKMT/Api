@@ -14,6 +14,7 @@ export function createBetterAuthHooks(mongoDb: Db, authLogger: Logger) {
     "mac.com",
     "yahoo.com",
     "yahoo.es",
+    "bskmt.com",
   ]);
 
   return {

@@ -11,6 +11,7 @@ import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { randomBytes } from "node:crypto";
 import { LoginOtp, LoginOtpDocument } from "./schemas/login-otp.schema";
+import { User, UserDocument, UserRole } from "../users/schemas/user.schema";
 import {
   BirdVerifyService,
   type BirdCheckResult,
@@ -42,6 +43,8 @@ export class LoginOtpService {
   constructor(
     @InjectModel(LoginOtp.name)
     private readonly otpModel: Model<LoginOtpDocument>,
+    @InjectModel(User.name)
+    private readonly userModel: Model<UserDocument>,
     private readonly birdVerifyService: BirdVerifyService,
   ) {
     const secret = process.env.BETTER_AUTH_SECRET;
@@ -57,6 +60,56 @@ export class LoginOtpService {
     return randomBytes(16).toString("hex");
   }
 
+  private async dispatchOtpAndSave(
+    targetEmail: string,
+    session: { sessionCookies: string[]; betterAuthId: string },
+    errorMessage: string = LoginOtpService.GENERIC_AUTH_ERROR,
+  ): Promise<{ requestId: string }> {
+    await this.assertEmailThrottle(targetEmail);
+
+    if (!this.birdVerifyService.isConfigured()) {
+      this.logger.error(
+        "Bird Verify no configurado (BIRD_API_KEY ausente) — initiate bloqueado",
+      );
+      throw new UnauthorizedException(errorMessage, {
+        cause: "Bird Verify not configured",
+      });
+    }
+
+    const requestId = this.generateRequestId();
+    const expiresAt = new Date(Date.now() + 3600 * 1000);
+    const encryptedCookies = encryptSessionCookies(
+      session.sessionCookies,
+      this.sessionEncKey,
+    );
+
+    const otpRecord = await this.otpModel.create({
+      requestId,
+      email: targetEmail,
+      betterAuthId: session.betterAuthId,
+      sessionCookies: encryptedCookies,
+      status: "pending",
+      attempts: 0,
+      expiresAt,
+    });
+
+    await dispatchBirdVerification(
+      this.birdVerifyService,
+      otpRecord,
+      targetEmail,
+      requestId,
+      session.betterAuthId,
+      this.logger,
+      errorMessage,
+    );
+
+    return { requestId };
+  }
+
+  /**
+   * Login estándar para New-panel (dash.bskmt.com):
+   * Requiere correo y contraseña. Envía OTP al correo de la cuenta.
+   */
   async initiateLogin(
     email: string,
     password: string,
@@ -74,45 +127,220 @@ export class LoginOtpService {
       userAgent,
     );
 
-    await this.assertEmailThrottle(session.userEmail);
+    return this.dispatchOtpAndSave(session.userEmail, session);
+  }
 
-    if (!this.birdVerifyService.isConfigured()) {
-      this.logger.error(
-        "Bird Verify no configurado (BIRD_API_KEY ausente) — initiate bloqueado",
-      );
-      throw new UnauthorizedException(LoginOtpService.GENERIC_AUTH_ERROR, {
-        cause: "Bird Verify not configured",
-      });
+  /**
+   * Login para BSK Fascia (panel.bskmt.com - Hub de Operaciones y Colaboradores):
+   * Requiere Nombre de Usuario + Contraseña.
+   * Valida que el colaborador tenga un subrol asignado o rol de gestión.
+   * Envía el código OTP a su correo institucional (o correo registrado).
+   */
+  async initiateFasciaLogin(
+    username: string,
+    password: string,
+    rememberMe?: boolean,
+    clientIp?: string,
+    userAgent?: string,
+  ): Promise<{ requestId: string }> {
+    const normalizedUsername = (username ?? "").toLowerCase().trim();
+    if (!normalizedUsername) {
+      throw new BadRequestException("El nombre de usuario es obligatorio.");
     }
 
-    const requestId = this.generateRequestId();
-    const expiresAt = new Date(Date.now() + 3600 * 1000);
-    const encryptedCookies = encryptSessionCookies(
-      session.sessionCookies,
-      this.sessionEncKey,
+    const user = await this.userModel.findOne({ username: normalizedUsername }).lean();
+    if (!user) {
+      this.logger.warn(`Fascia login fallido: usuario "${normalizedUsername}" no encontrado.`);
+      throw new UnauthorizedException("Credenciales inválidas. Verifica tu usuario y contraseña.");
+    }
+
+    if (user.isActive === false) {
+      throw new UnauthorizedException(
+        "Tu cuenta de colaborador se encuentra inactiva. Contacta al área de talento humano.",
+      );
+    }
+
+    if (user.accountDeletionRequested === true) {
+      throw new UnauthorizedException(
+        "Esta cuenta está en proceso de eliminación.",
+      );
+    }
+
+    // Regla de confianza para Fascia: requiere subrol operativo o rol de administración/superadmin
+    const hasSubrol = Boolean(user.subrol);
+    const isAdminOrSuper =
+      user.role === UserRole.ADMIN || user.role === UserRole.SUPERADMIN;
+
+    if (!hasSubrol && !isAdminOrSuper) {
+      this.logger.warn(
+        `Fascia login bloqueado: usuario "${normalizedUsername}" (${user.email}) no tiene subrol asignado (rol: ${user.role}).`,
+      );
+      throw new UnauthorizedException(
+        "Acceso restringido: Esta cuenta no cuenta con rol o subrol de colaborador asignado para BSK Fascia.",
+      );
+    }
+
+    const targetEmail = (
+      user.contractorInfo?.correoInstitucional || user.email
+    ).toLowerCase();
+
+    const session = await this.authenticateAndExtractSession(
+      user.email,
+      password,
+      rememberMe === true,
+      clientIp,
+      userAgent,
     );
 
-    const otpRecord = await this.otpModel.create({
-      requestId,
-      email: session.userEmail,
-      betterAuthId: session.betterAuthId,
-      sessionCookies: encryptedCookies,
-      status: "pending",
-      attempts: 0,
-      expiresAt,
-    });
+    return this.dispatchOtpAndSave(
+      targetEmail,
+      session,
+      "Error al iniciar sesión en Fascia. Verifica tus credenciales.",
+    );
+  }
 
-    await dispatchBirdVerification(
-      this.birdVerifyService,
-      otpRecord,
-      session.userEmail,
-      requestId,
-      session.betterAuthId,
-      this.logger,
-      LoginOtpService.GENERIC_AUTH_ERROR,
+  /**
+   * Login para BSK Console (console.bskmt.com - Consola Ejecutiva de Administración):
+   * Requisito Cuádruple ESTRICTO: Correo Electrónico + Nombre de Usuario + Contraseña + OTP.
+   * Solo acceden usuarios con rol 'admin' o 'superadmin'.
+   * Envía el OTP al correo corporativo del contratista / administrador.
+   */
+  async initiateConsoleLogin(
+    email: string,
+    username: string,
+    password: string,
+    rememberMe?: boolean,
+    clientIp?: string,
+    userAgent?: string,
+  ): Promise<{ requestId: string }> {
+    const normalizedEmail = (email ?? "").toLowerCase().trim();
+    const normalizedUsername = (username ?? "").toLowerCase().trim();
+
+    if (!normalizedEmail || !normalizedUsername) {
+      throw new BadRequestException(
+        "Tanto el correo electrónico como el nombre de usuario son obligatorios.",
+      );
+    }
+
+    const user = await this.userModel
+      .findOne({ email: normalizedEmail, username: normalizedUsername })
+      .lean();
+
+    if (!user) {
+      this.logger.warn(
+        `Console login fallido: no coincide email "${normalizedEmail}" con usuario "${normalizedUsername}".`,
+      );
+      throw new UnauthorizedException(
+        "Credenciales administrativas inválidas. Verifica tu correo, usuario y contraseña.",
+      );
+    }
+
+    if (user.isActive === false) {
+      throw new UnauthorizedException(
+        "Cuenta administrativa inactiva. Contacta a un Superadministrador.",
+      );
+    }
+
+    if (user.accountDeletionRequested === true) {
+      throw new UnauthorizedException(
+        "Esta cuenta está en proceso de eliminación.",
+      );
+    }
+
+    // Límite estricto: ÚNICAMENTE roles 'admin' o 'superadmin'
+    if (user.role !== UserRole.ADMIN && user.role !== UserRole.SUPERADMIN) {
+      this.logger.warn(
+        `Console login bloqueado: usuario "${normalizedUsername}" tiene rol "${user.role}" (requiere admin o superadmin).`,
+      );
+      throw new UnauthorizedException(
+        "Acceso restringido: Esta cuenta no posee privilegios administrativos ejecutivos.",
+      );
+    }
+
+    const targetEmail = (
+      user.contractorInfo?.correoInstitucional || user.email
+    ).toLowerCase();
+
+    const session = await this.authenticateAndExtractSession(
+      user.email,
+      password,
+      rememberMe === true,
+      clientIp,
+      userAgent,
     );
 
-    return { requestId };
+    return this.dispatchOtpAndSave(
+      targetEmail,
+      session,
+      "Error al iniciar sesión en la Consola Administrativa.",
+    );
+  }
+
+  /**
+   * Login para BSK Superadmin (New-BSKMT - Dueños y Propietarios):
+   * Requisito de máxima seguridad: Correo Electrónico + Nombre de Usuario + Contraseña + OTP.
+   * Acceso exclusivo para el rol 'superadmin'.
+   */
+  async initiateSuperAdminLogin(
+    email: string,
+    username: string,
+    password: string,
+    rememberMe?: boolean,
+    clientIp?: string,
+    userAgent?: string,
+  ): Promise<{ requestId: string }> {
+    const normalizedEmail = (email ?? "").toLowerCase().trim();
+    const normalizedUsername = (username ?? "").toLowerCase().trim();
+
+    if (!normalizedEmail || !normalizedUsername) {
+      throw new BadRequestException(
+        "Tanto el correo electrónico como el nombre de usuario son obligatorios.",
+      );
+    }
+
+    const user = await this.userModel
+      .findOne({ email: normalizedEmail, username: normalizedUsername })
+      .lean();
+
+    if (!user) {
+      this.logger.warn(
+        `Superadmin login fallido: credenciales no coinciden para "${normalizedEmail}".`,
+      );
+      throw new UnauthorizedException("Credenciales de superadministrador inválidas.");
+    }
+
+    if (user.isActive === false) {
+      throw new UnauthorizedException(
+        "Cuenta de superadministrador inactiva.",
+      );
+    }
+
+    if (user.role !== UserRole.SUPERADMIN) {
+      this.logger.warn(
+        `Superadmin login denegado: usuario "${normalizedUsername}" no tiene rol 'superadmin' (rol actual: ${user.role}).`,
+      );
+      throw new UnauthorizedException(
+        "Acceso denegado: Esta cuenta no posee privilegios de Superadministrador (Owner).",
+      );
+    }
+
+    const targetEmail = (
+      user.contractorInfo?.correoInstitucional || user.email
+    ).toLowerCase();
+
+    const session = await this.authenticateAndExtractSession(
+      user.email,
+      password,
+      rememberMe === true,
+      clientIp,
+      userAgent,
+    );
+
+    return this.dispatchOtpAndSave(
+      targetEmail,
+      session,
+      "Error al iniciar sesión como Superadministrador.",
+    );
   }
 
   private async authenticateAndExtractSession(

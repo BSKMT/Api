@@ -35,8 +35,11 @@ export class GestionGuard implements CanActivate {
       throw new ForbiddenException("Acceso denegado — sesión no autenticada");
     }
 
-    // Role 'admin' has complete, unrestricted access to everything
-    if (request.user.role === UserRole.ADMIN) {
+    // Role 'admin' and 'superadmin' have complete access
+    if (
+      request.user.role === UserRole.ADMIN ||
+      request.user.role === UserRole.SUPERADMIN
+    ) {
       return true;
     }
 

@@ -9,12 +9,14 @@ import {
   UserSubrole,
   PartialPaymentCredit,
   PartialPaymentCreditSchema,
+  ContractorInfo,
 } from "./user-subdocuments.schema";
 
 export type {
   FriendRequest,
   IdentityVerification,
   PartialPaymentCredit,
+  ContractorInfo,
 } from "./user-subdocuments.schema";
 export {
   FriendRequestSchema,
@@ -35,6 +37,29 @@ export type UserDocument = User & Document;
 export class User {
   @Prop({ required: true, unique: true, lowercase: true, trim: true })
   email!: string;
+
+  /**
+   * Internal BSKMT unique username (e.g. bskmt5404jaci1849204).
+   * Used for collaborators in Fascia, administrators in Console, and superadmins in New-BSKMT.
+   */
+  @Prop({
+    type: String,
+    unique: true,
+    sparse: true,
+    lowercase: true,
+    trim: true,
+    index: true,
+  })
+  username?: string | null;
+
+  @Prop({ type: String, default: null })
+  internalCode?: string | null;
+
+  @Prop({ type: Object, default: null })
+  contractorInfo?: ContractorInfo | null;
+
+  @Prop({ type: [String], default: [] })
+  adminPermissions?: string[];
 
   /**
    * Reference to the Better Auth `user` collection document.
@@ -61,6 +86,7 @@ export class User {
     index: true,
   })
   subrol?: string | null;
+
 
   @Prop({ default: false })
   profileCompleted!: boolean;
