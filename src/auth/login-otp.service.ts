@@ -118,16 +118,30 @@ export class LoginOtpService {
     userAgent?: string,
   ): Promise<{ requestId: string }> {
     const remember = rememberMe === true;
+    const normalizedEmail = (email ?? "").toLowerCase().trim();
+
+    // Permite iniciar sesión con correo comercial o correo institucional registrado
+    const user = await this.userModel
+      .findOne({
+        $or: [
+          { email: normalizedEmail },
+          { "contractorInfo.correoInstitucional": normalizedEmail },
+          { "profile.contacto.correoInstitucional": normalizedEmail },
+        ],
+      })
+      .lean();
+
+    const authEmail = user?.email || normalizedEmail;
 
     const session = await this.authenticateAndExtractSession(
-      email,
+      authEmail,
       password,
       remember,
       clientIp,
       userAgent,
     );
 
-    return this.dispatchOtpAndSave(session.userEmail, session);
+    return this.dispatchOtpAndSave(normalizedEmail, session);
   }
 
   /**
@@ -232,7 +246,14 @@ export class LoginOtpService {
     }
 
     const user = await this.userModel
-      .findOne({ email: normalizedEmail, username: normalizedUsername })
+      .findOne({
+        username: normalizedUsername,
+        $or: [
+          { email: normalizedEmail },
+          { "contractorInfo.correoInstitucional": normalizedEmail },
+          { "profile.contacto.correoInstitucional": normalizedEmail },
+        ],
+      })
       .lean();
 
     if (!user) {
@@ -269,9 +290,7 @@ export class LoginOtpService {
       );
     }
 
-    const targetEmail = (
-      user.contractorInfo?.correoInstitucional || user.email
-    ).toLowerCase();
+    const targetEmail = normalizedEmail;
 
     const session = await this.authenticateAndExtractSession(
       user.email,
@@ -311,7 +330,14 @@ export class LoginOtpService {
     }
 
     const user = await this.userModel
-      .findOne({ email: normalizedEmail, username: normalizedUsername })
+      .findOne({
+        username: normalizedUsername,
+        $or: [
+          { email: normalizedEmail },
+          { "contractorInfo.correoInstitucional": normalizedEmail },
+          { "profile.contacto.correoInstitucional": normalizedEmail },
+        ],
+      })
       .lean();
 
     if (!user) {
@@ -336,9 +362,7 @@ export class LoginOtpService {
       );
     }
 
-    const targetEmail = (
-      user.contractorInfo?.correoInstitucional || user.email
-    ).toLowerCase();
+    const targetEmail = normalizedEmail;
 
     const session = await this.authenticateAndExtractSession(
       user.email,
