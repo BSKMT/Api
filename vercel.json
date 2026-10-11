@@ -6,6 +6,17 @@
       "includeFiles": "dist/**"
     }
   },
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow, noarchive"
+        }
+      ]
+    }
+  ],
   "redirects": [
     {
       "source": "/",
@@ -14,6 +25,10 @@
     }
   ],
   "rewrites": [
+    {
+      "source": "/robots.txt",
+      "destination": "/api/index.js"
+    },
     {
       "source": "/health",
       "destination": "/api/index.js"

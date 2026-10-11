@@ -1,4 +1,4 @@
-import { Controller, Get } from "@nestjs/common";
+import { Controller, Get, Header } from "@nestjs/common";
 import { InjectConnection } from "@nestjs/mongoose";
 import { Connection, ConnectionStates } from "mongoose";
 import { Public } from "./common/decorators";
@@ -6,6 +6,13 @@ import { Public } from "./common/decorators";
 @Controller()
 export class AppController {
   constructor(@InjectConnection() private readonly connection: Connection) {}
+
+  @Public()
+  @Get("robots.txt")
+  @Header("Content-Type", "text/plain")
+  getRobots() {
+    return "User-agent: *\nDisallow: /\n";
+  }
 
   @Public()
   @Get()
