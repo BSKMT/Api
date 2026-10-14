@@ -22,8 +22,9 @@ import { UpdateEventDto } from "../dto/update-event.dto";
 import {
   clampEventsPagination,
   sanitizeRegistrationsForActor,
-  incrementSeatOnReconfirm,
   invalidateEventCacheHelper,
+  executeAdminConfirmRegistration,
+  executeAdminCancelRegistration,
 } from "./admin-events.helpers";
 
 @Injectable()
@@ -208,43 +209,20 @@ export class AdminEventsService {
   }
 
   async adminConfirmRegistration(registrationId: string) {
-    const registration = await this.registrationModel.findById(registrationId);
-    if (!registration) {
-      throw new NotFoundException("Registro no encontrado");
-    }
-    if (registration.status === "CONFIRMED") {
-      throw new BadRequestException("El registro ya está confirmado");
-    }
-
-    if (registration.status === "CANCELLED") {
-      await incrementSeatOnReconfirm(this.eventModel, registration.eventSlug);
-    }
-
-    registration.status = "CONFIRMED";
-    registration.confirmedAt = new Date();
-    await registration.save();
-    this.logger.log(`Registration admin-confirmed: id=${registrationId}`);
-    return registration;
+    return executeAdminConfirmRegistration(
+      this.registrationModel,
+      this.eventModel,
+      registrationId,
+      this.logger,
+    );
   }
 
   async adminCancelRegistration(registrationId: string) {
-    const registration = await this.registrationModel.findById(registrationId);
-    if (!registration) {
-      throw new NotFoundException("Registro no encontrado");
-    }
-    if (registration.status === "CANCELLED") {
-      throw new BadRequestException("El registro ya está cancelado");
-    }
-    registration.status = "CANCELLED";
-    registration.confirmedAt = null;
-    await registration.save();
-
-    await this.eventModel.findOneAndUpdate(
-      { slug: registration.eventSlug, registeredCount: { $gt: 0 } },
-      { $inc: { registeredCount: -1 } },
+    return executeAdminCancelRegistration(
+      this.registrationModel,
+      this.eventModel,
+      registrationId,
+      this.logger,
     );
-
-    this.logger.log(`Registration admin-cancelled: id=${registrationId}`);
-    return registration;
   }
 }

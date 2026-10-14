@@ -12,62 +12,15 @@ import {
   ArphaRequestDocument,
   ArphaRequestStatus,
 } from "../../arpha/schemas/arpha-request.schema";
-import {
-  IsString,
-  MinLength,
-  IsIn,
-  IsOptional,
-  IsNumber,
-  IsEnum,
-} from "class-validator";
-import { Transform } from "class-transformer";
 import { UsersService } from "../../users/users.service";
 import { UserRole, UserSubrole } from "../../users/schemas/user.schema";
+import {
+  AssignArphaDto,
+  UpdateGestorLocationDto,
+  UpdateGestionStatusDto,
+} from "../dto/gestion-arpha.dto";
 
-export class AssignArphaDto {
-  @IsString()
-  @MinLength(1)
-  gestorId!: string;
-
-  @IsString()
-  @MinLength(1)
-  gestorName!: string;
-
-  @IsIn(["campo", "mesa"])
-  assignedType!: "campo" | "mesa";
-
-  @IsOptional()
-  @IsString()
-  eta?: string;
-}
-
-export class UpdateGestorLocationDto {
-  @IsNumber()
-  lat!: number;
-
-  @IsNumber()
-  lng!: number;
-}
-
-export class UpdateGestionStatusDto {
-  @Transform(({ value }: { value: unknown }): ArphaRequestStatus => {
-    if (typeof value !== "string") return value as ArphaRequestStatus;
-    const v = value.toUpperCase().trim();
-    if (v === "RESUELTO" || v === "RESOLVED")
-      return ArphaRequestStatus.COMPLETED;
-    if (v === "CANCELADO") return ArphaRequestStatus.CANCELLED;
-    if (v === "EN_SITIO" || v === "ENSITIO") return ArphaRequestStatus.EN_SITIO;
-    if (v === "EN_CAMINO" || v === "ENCAMINO")
-      return ArphaRequestStatus.EN_CAMINO;
-    return v as ArphaRequestStatus;
-  })
-  @IsEnum(ArphaRequestStatus)
-  status!: ArphaRequestStatus;
-
-  @IsOptional()
-  @IsString()
-  resolution?: string;
-}
+export { AssignArphaDto, UpdateGestorLocationDto, UpdateGestionStatusDto };
 
 @Injectable()
 export class GestionArphaService {
@@ -217,7 +170,6 @@ export class GestionArphaService {
       );
     }
 
-    // Regla de idempotencia: No se puede volver a marcar como EN_SITIO si ya está en ese estado
     if (
       dto.status === ArphaRequestStatus.EN_SITIO &&
       request.status === ArphaRequestStatus.EN_SITIO
@@ -245,7 +197,6 @@ export class GestionArphaService {
       );
     }
 
-    // Auto-asignación para gestores de campo que toman un auxilio disponible
     if (
       !request.assignedGestorId &&
       user.subrol === UserSubrole.GESTOR_CAMPO_ARPHA

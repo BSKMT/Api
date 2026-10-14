@@ -14,7 +14,6 @@ import {
   Logger,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Throttle } from "@nestjs/throttler";
 import { timingSafeEqual } from "node:crypto";
 import type { Request } from "express";
 import { SessionGuard } from "../auth/session.guard";
@@ -26,14 +25,6 @@ import { Public } from "../common/decorators";
 import { IdentityVerifiedGuard } from "../common/guards";
 import type { EnvironmentConfig } from "../config/config.interface";
 
-import { SavingsPlanService } from "./services/savings-plan.service";
-import {
-  RequestSavingsExtensionDto,
-  RequestSavingsRefundDto,
-  AppealSavingsRefundDto,
-  EscalateSavingsLegalDto,
-} from "./dto/savings-plan.dto";
-
 interface AuthenticatedRequest extends Request {
   user: { userId: string };
 }
@@ -44,7 +35,6 @@ export class MembershipController {
 
   constructor(
     private readonly membershipService: MembershipService,
-    private readonly savingsPlanService: SavingsPlanService,
     private readonly configService: ConfigService<EnvironmentConfig>,
   ) {}
 
@@ -80,7 +70,6 @@ export class MembershipController {
     }
 
     await this.membershipService.handleWebhook(rawBody, signature);
-
     return { received: true };
   }
 
@@ -160,82 +149,8 @@ export class MembershipController {
     return this.membershipService.requestRefund(userId);
   }
 
-  @UseGuards(SessionGuard)
-  @Get("savings-plan")
-  async getSavingsPlan(@Req() req: AuthenticatedRequest) {
-    return this.savingsPlanService.getSavingsPlanSummary(req.user.userId);
-  }
-
-  @UseGuards(SessionGuard)
-  @Get("savings-plan/complete-balance")
-  async getCompleteBalanceContext(@Req() req: AuthenticatedRequest) {
-    return this.savingsPlanService.getCompleteBalanceContext(req.user.userId);
-  }
-
-  @UseGuards(SessionGuard)
-  @Throttle({ medium: { ttl: 60000, limit: 10 } })
-  @Post("savings-plan/request-extension")
-  @HttpCode(HttpStatus.OK)
-  async requestSavingsExtension(
-    @Req() req: AuthenticatedRequest,
-    @Body() dto: RequestSavingsExtensionDto,
-  ) {
-    return this.savingsPlanService.requestExtension(req.user.userId, dto);
-  }
-
-  @UseGuards(SessionGuard, IdentityVerifiedGuard)
-  @Throttle({ medium: { ttl: 60000, limit: 5 } })
-  @Post("savings-plan/refund-request")
-  @HttpCode(HttpStatus.CREATED)
-  async requestSavingsRefund(
-    @Req() req: AuthenticatedRequest,
-    @Body() dto: RequestSavingsRefundDto,
-  ) {
-    return this.savingsPlanService.requestRefund(req.user.userId, dto);
-  }
-
-  @UseGuards(SessionGuard, IdentityVerifiedGuard)
-  @Throttle({ medium: { ttl: 60000, limit: 5 } })
-  @Post("savings-plan/refund-appeal")
-  @HttpCode(HttpStatus.OK)
-  async appealSavingsRefund(
-    @Req() req: AuthenticatedRequest,
-    @Body() dto: AppealSavingsRefundDto,
-  ) {
-    return this.savingsPlanService.appealRefund(req.user.userId, dto);
-  }
-
-  @UseGuards(SessionGuard, IdentityVerifiedGuard)
-  @Throttle({ medium: { ttl: 60000, limit: 5 } })
-  @Post("savings-plan/refund-legal-escalation")
-  @HttpCode(HttpStatus.OK)
-  async escalateSavingsLegal(
-    @Req() req: AuthenticatedRequest,
-    @Body() dto: EscalateSavingsLegalDto,
-  ) {
-    return this.savingsPlanService.escalateToLegalCommittee(
-      req.user.userId,
-      dto,
-    );
-  }
-
-  @UseGuards(SessionGuard)
-  @Throttle({ medium: { ttl: 60000, limit: 5 } })
-  @Post("savings-plan/reinstatement")
-  @HttpCode(HttpStatus.OK)
-  async reinstateMembership(@Req() req: AuthenticatedRequest) {
-    return this.savingsPlanService.reinstateMembership(req.user.userId);
-  }
-
   /**
-   * A-5: Sweeps abandoned PENDING membership transactions whose credit
-   * block would otherwise never be released. Invoked by Vercel Cron
-   * (see `vercel.json`). Authenticated via a shared secret header
-   * (defense-in-depth); neither SessionGuard nor the CSRF origin
-   * middleware apply (the global CSRF middleware exempts
-   * `/api/membership/webhook` and all `/api/internal/cron/*` routes; we
-   * additionally exempt this membership-cron route below, which sits
-   * under a different prefix).
+   * Sweeps abandoned PENDING membership transactions.
    */
   @Public()
   @Get("internal/cron/sweep-pending")
@@ -256,10 +171,7 @@ export class MembershipController {
   }
 
   /**
-   * Defense-in-depth secret check. Accepts either the dedicated
-   * `X-Cron-Secret` header (explicit) or the Vercel-Cron-default
-   * `Authorization: Bearer <secret>` header. Constant-time compare
-   * prevents header-based timing side channels.
+   * Constant-time comparison for cron secret.
    */
   private assertCronSecret(
     headerSecret: string | undefined,

@@ -13,6 +13,12 @@ import {
   createPasswordResetCallback,
   createVerificationEmailCallback,
 } from "./better-auth-email.helpers";
+import {
+  USER_ADDITIONAL_FIELDS,
+  getTrustedOrigins,
+  getPasskeyOrigins,
+} from "./better-auth-config.helpers";
+import { ensureBetterAuthIndexesAndMigrations } from "./better-auth-db.helpers";
 
 export type {
   BetterAuthUser,
@@ -85,42 +91,7 @@ async function initAuth(): Promise<AuthInstance> {
   const { betterAuth, mongodbAdapter, passkeyPlugin } =
     await loadBetterAuthDeps();
 
-  try {
-    const migrationResult = await mongoDb.collection("account").updateMany(
-      {
-        providerId: "credential",
-        $or: [{ issuer: { $exists: false } }, { issuer: null }, { issuer: "" }],
-      },
-      {
-        $set: { issuer: "local:credential" },
-      },
-    );
-    if (migrationResult.modifiedCount > 0) {
-      authLogger.log(
-        `[BetterAuth 1.7 Migration] Backfilled issuer="local:credential" on ${migrationResult.modifiedCount} legacy credential account(s).`,
-      );
-    }
-  } catch (migrationErr) {
-    authLogger.error(
-      `[BetterAuth 1.7 Migration] Failed to backfill account issuer: ${migrationErr instanceof Error ? migrationErr.message : String(migrationErr)}`,
-    );
-  }
-
-  try {
-    await mongoDb
-      .collection("session")
-      .createIndex(
-        { expiresAt: 1 },
-        { expireAfterSeconds: 0, background: true },
-      );
-    await mongoDb
-      .collection("session")
-      .createIndex({ userId: 1 }, { background: true });
-  } catch (indexErr) {
-    authLogger.warn(
-      `Failed to ensure indexes on session collection: ${indexErr instanceof Error ? indexErr.message : String(indexErr)}`,
-    );
-  }
+  await ensureBetterAuthIndexesAndMigrations(mongoDb, authLogger);
 
   const getLandingPage = () =>
     injectedLandingPageUrl ??
@@ -169,56 +140,7 @@ async function initAuth(): Promise<AuthInstance> {
     },
 
     user: {
-      additionalFields: {
-        role: {
-          type: "string",
-          defaultValue: "user",
-          input: false,
-          required: false,
-        },
-        username: {
-          type: "string",
-          defaultValue: "",
-          input: true,
-          required: false,
-        },
-        primerNombre: {
-          type: "string",
-          defaultValue: "",
-          input: true,
-          required: false,
-        },
-        segundoNombre: {
-          type: "string",
-          defaultValue: "",
-          input: true,
-          required: false,
-        },
-        primerApellido: {
-          type: "string",
-          defaultValue: "",
-          input: true,
-          required: false,
-        },
-        segundoApellido: {
-          type: "string",
-          defaultValue: "",
-          input: true,
-          required: false,
-        },
-        country: {
-          type: "string",
-          defaultValue: "",
-          input: true,
-          required: false,
-        },
-        birthDate: {
-          type: "string",
-          defaultValue: "",
-          input: true,
-          required: false,
-        },
-      },
+      additionalFields: USER_ADDITIONAL_FIELDS,
     },
 
     session: {
@@ -239,30 +161,7 @@ async function initAuth(): Promise<AuthInstance> {
       },
     },
 
-    trustedOrigins:
-      process.env.NODE_ENV === "production"
-        ? [
-            "https://bskmt.com",
-            "https://www.bskmt.com",
-            "https://dash.bskmt.com",
-            "https://console.bskmt.com",
-            "https://panel.bskmt.com",
-            "https://super.bskmt.com",
-          ]
-        : [
-            "https://bskmt.com",
-            "https://dash.bskmt.com",
-            "https://console.bskmt.com",
-            "https://panel.bskmt.com",
-            "https://super.bskmt.com",
-            "http://localhost:3000",
-            "http://localhost:4321",
-            "http://localhost:4322",
-            "http://localhost:4323",
-            "http://localhost:4324",
-            "http://localhost:4325",
-          ],
-
+    trustedOrigins: getTrustedOrigins(),
     disabledPaths: ["/sign-in/email"],
     databaseHooks: createBetterAuthHooks(mongoDb, authLogger),
 
@@ -272,28 +171,7 @@ async function initAuth(): Promise<AuthInstance> {
           process.env.PASSKEY_RP_ID ??
           (process.env.NODE_ENV === "production" ? "bskmt.com" : "localhost"),
         rpName: "BSK Motorcycle Team",
-        origin:
-          process.env.NODE_ENV === "production"
-            ? [
-                "https://bskmt.com",
-                "https://dash.bskmt.com",
-                "https://console.bskmt.com",
-                "https://panel.bskmt.com",
-                "https://super.bskmt.com",
-              ]
-            : [
-                "https://bskmt.com",
-                "https://dash.bskmt.com",
-                "https://console.bskmt.com",
-                "https://panel.bskmt.com",
-                "https://super.bskmt.com",
-                "http://localhost:3000",
-                "http://localhost:4321",
-                "http://localhost:4322",
-                "http://localhost:4323",
-                "http://localhost:4324",
-                "http://localhost:4325",
-              ],
+        origin: getPasskeyOrigins(),
       }),
     ],
 

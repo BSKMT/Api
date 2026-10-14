@@ -1,6 +1,7 @@
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, NotFoundException, Logger } from "@nestjs/common";
 import { Model } from "mongoose";
 import { EventDocument } from "../../events/schemas/event.schema";
+import { EventRegistrationDocument } from "../../events/schemas/event-registration.schema";
 import type { KvCacheService } from "../../kv/kv-cache.service";
 
 export function clampEventsPagination(rawLimit?: number, rawPage?: number) {
@@ -81,4 +82,55 @@ export async function invalidateEventCacheHelper(
   await kvCache.invalidatePrefix("events:upcoming:");
   await kvCache.invalidatePrefix("events:featured:");
   if (slug) await kvCache.delete(`event:slug:${slug}`);
+}
+
+export async function executeAdminConfirmRegistration(
+  registrationModel: Model<EventRegistrationDocument>,
+  eventModel: Model<EventDocument>,
+  registrationId: string,
+  logger: Logger,
+): Promise<EventRegistrationDocument> {
+  const registration = await registrationModel.findById(registrationId);
+  if (!registration) {
+    throw new NotFoundException("Registro no encontrado");
+  }
+  if (registration.status === "CONFIRMED") {
+    throw new BadRequestException("El registro ya está confirmado");
+  }
+
+  if (registration.status === "CANCELLED") {
+    await incrementSeatOnReconfirm(eventModel, registration.eventSlug);
+  }
+
+  registration.status = "CONFIRMED";
+  registration.confirmedAt = new Date();
+  await registration.save();
+  logger.log(`Registration admin-confirmed: id=${registrationId}`);
+  return registration;
+}
+
+export async function executeAdminCancelRegistration(
+  registrationModel: Model<EventRegistrationDocument>,
+  eventModel: Model<EventDocument>,
+  registrationId: string,
+  logger: Logger,
+): Promise<EventRegistrationDocument> {
+  const registration = await registrationModel.findById(registrationId);
+  if (!registration) {
+    throw new NotFoundException("Registro no encontrado");
+  }
+  if (registration.status === "CANCELLED") {
+    throw new BadRequestException("El registro ya está cancelado");
+  }
+  registration.status = "CANCELLED";
+  registration.confirmedAt = null;
+  await registration.save();
+
+  await eventModel.findOneAndUpdate(
+    { slug: registration.eventSlug, registeredCount: { $gt: 0 } },
+    { $inc: { registeredCount: -1 } },
+  );
+
+  logger.log(`Registration admin-cancelled: id=${registrationId}`);
+  return registration;
 }

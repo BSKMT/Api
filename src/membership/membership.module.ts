@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { MongooseModule } from "@nestjs/mongoose";
 import { MembershipController } from "./membership.controller";
+import { SavingsPlanController } from "./savings-plan.controller";
 import { MembershipService } from "./membership.service";
 import {
   MembershipTransaction,
@@ -36,7 +37,7 @@ import { SavingsPlanService } from "./services/savings-plan.service";
     NotificationsModule,
     AdminModule,
   ],
-  controllers: [MembershipController],
+  controllers: [MembershipController, SavingsPlanController],
   providers: [MembershipService, SavingsPlanService],
   exports: [MembershipService, SavingsPlanService, MongooseModule],
 })

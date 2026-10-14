@@ -1,5 +1,7 @@
-import { BadRequestException, Logger } from "@nestjs/common";
-import { OrderStatus } from "../../shop/schemas/order.schema";
+import { BadRequestException, NotFoundException, Logger } from "@nestjs/common";
+import { Model } from "mongoose";
+import { OrderDocument, OrderStatus } from "../../shop/schemas/order.schema";
+import { ProductDocument } from "../../shop/schemas/product.schema";
 import type { KvCacheService } from "../../kv/kv-cache.service";
 
 export const VALID_ORDER_TRANSITIONS: Record<string, Set<string>> = {
@@ -63,4 +65,52 @@ export async function invalidateProductCacheHelper(
   await kvCache.invalidatePrefix("shop:products:");
   await kvCache.invalidatePrefix("shop:upcoming:");
   if (slug) await kvCache.delete(`shop:product:${slug}`);
+}
+
+export async function executeUpdateOrderStatus(
+  orderModel: Model<OrderDocument>,
+  productModel: Model<ProductDocument>,
+  orderNumber: string,
+  dto: { status: OrderStatus; trackingNumber?: string },
+  actorId: string | undefined,
+  actorRole: string | undefined,
+  logger: Logger,
+): Promise<OrderDocument> {
+  const order = await orderModel.findOne({ orderNumber });
+  if (!order) {
+    throw new NotFoundException("Pedido no encontrado");
+  }
+
+  const previousStatus = order.status;
+  validateOrderStatusTransition(
+    previousStatus,
+    dto.status,
+    actorRole,
+    actorId,
+    orderNumber,
+    logger,
+  );
+
+  order.status = dto.status;
+  if (dto.trackingNumber) order.trackingNumber = dto.trackingNumber;
+
+  if (
+    dto.status === OrderStatus.CANCELLED &&
+    previousStatus !== OrderStatus.CANCELLED
+  ) {
+    await Promise.all(
+      order.items.map((item) =>
+        productModel.updateOne(
+          { slug: item.productSlug },
+          { $inc: { stock: item.quantity } },
+        ),
+      ),
+    );
+  }
+
+  const saved = await order.save();
+  logger.log(
+    `Order status updated: ${orderNumber} ${previousStatus} -> ${dto.status} by ${actorId ?? "unknown"}`,
+  );
+  return saved;
 }

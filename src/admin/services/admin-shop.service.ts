@@ -24,8 +24,8 @@ import { UpdateOrderStatusDto } from "../dto/update-order-status.dto";
 import { ensureString } from "../../common/utils/sanitize-query.util";
 import {
   clampPagination,
-  validateOrderStatusTransition,
   invalidateProductCacheHelper,
+  executeUpdateOrderStatus,
   type AdminListProductsFilters,
 } from "./admin-shop.helpers";
 
@@ -42,7 +42,6 @@ export class AdminShopService {
   ) {}
 
   async listProducts(filters: AdminListProductsFilters) {
-    // M2: Sanitize filter to prevent NoSQL operator injection
     const filter: Record<string, unknown> = {};
     const status = ensureString(filters.status);
     const collection = ensureString(
@@ -179,7 +178,6 @@ export class AdminShopService {
     limit?: number;
     page?: number;
   }) {
-    // M2: Sanitize filter
     const filter: Record<string, unknown> = {};
     const status = ensureString(filters.status);
     if (status) filter.status = status;
@@ -222,43 +220,14 @@ export class AdminShopService {
     actorId?: string,
     actorRole?: string,
   ): Promise<OrderDocument> {
-    const order = await this.orderModel.findOne({ orderNumber });
-    if (!order) {
-      throw new NotFoundException("Pedido no encontrado");
-    }
-
-    const previousStatus = order.status;
-    validateOrderStatusTransition(
-      previousStatus,
-      dto.status,
-      actorRole,
-      actorId,
+    return executeUpdateOrderStatus(
+      this.orderModel,
+      this.productModel,
       orderNumber,
+      dto,
+      actorId,
+      actorRole,
       this.logger,
     );
-
-    order.status = dto.status;
-    if (dto.trackingNumber) order.trackingNumber = dto.trackingNumber;
-
-    if (
-      dto.status === OrderStatus.CANCELLED &&
-      previousStatus !== OrderStatus.CANCELLED
-    ) {
-      await Promise.all(
-        order.items.map((item) =>
-          this.productModel.updateOne(
-            { slug: item.productSlug },
-            { $inc: { stock: item.quantity } },
-          ),
-        ),
-      );
-    }
-
-    const saved = await order.save();
-    // M7: Log actor for audit trail
-    this.logger.log(
-      `Order status updated: ${orderNumber} ${previousStatus} -> ${dto.status} by ${actorId ?? "unknown"}`,
-    );
-    return saved;
   }
 }

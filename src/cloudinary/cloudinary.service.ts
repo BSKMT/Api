@@ -11,31 +11,25 @@ import {
   UploadApiResponse,
   UploadApiErrorResponse,
   v2 as CloudinaryType,
-  TransformationOptions,
 } from "cloudinary";
 import { Readable } from "node:stream";
 import { CLOUDINARY } from "./cloudinary.constants";
+import { CloudinaryUrlService } from "./cloudinary-url.service";
+import type {
+  CloudinaryUploadResult,
+  UploadOptions,
+  OptimizedUrlOptions,
+  UploadSignatureResult,
+  PublicConfigResult,
+} from "./cloudinary.types";
 
-export interface CloudinaryUploadResult {
-  publicId: string;
-  url: string;
-  secureUrl: string;
-  format: string;
-  width: number;
-  height: number;
-  bytes: number;
-  resourceType: string;
-}
-
-export interface UploadOptions {
-  folder?: string;
-  tags?: string[];
-  publicId?: string;
-  transformation?: TransformationOptions | TransformationOptions[];
-  resourceType?: "image" | "video" | "raw" | "auto";
-  metadata?: Record<string, string>;
-  context?: Record<string, string>;
-}
+export type {
+  CloudinaryUploadResult,
+  UploadOptions,
+  OptimizedUrlOptions,
+  UploadSignatureResult,
+  PublicConfigResult,
+};
 
 @Injectable()
 export class CloudinaryService {
@@ -44,11 +38,9 @@ export class CloudinaryService {
   constructor(
     @Inject(CLOUDINARY) private readonly cloudinary: typeof CloudinaryType,
     private readonly configService: ConfigService,
+    private readonly urlService: CloudinaryUrlService,
   ) {}
 
-  /**
-   * Check if Cloudinary is properly configured.
-   */
   public isConfigured(): boolean {
     const cloudName =
       this.configService.get<string>("CLOUDINARY_CLOUD_NAME") ||
@@ -56,9 +48,19 @@ export class CloudinaryService {
     return Boolean(cloudName);
   }
 
-  /**
-   * Uploads an in-memory buffer via stream directly to Cloudinary.
-   */
+  private buildMetadataString(options: UploadOptions): string | undefined {
+    const entries: string[] = [];
+    if (options.folder) {
+      entries.push(`bsk_module=${options.folder}`);
+    }
+    if (options.metadata) {
+      for (const [k, v] of Object.entries(options.metadata)) {
+        if (v) entries.push(`${k}=${v}`);
+      }
+    }
+    return entries.length > 0 ? entries.join("|") : undefined;
+  }
+
   async uploadBuffer(
     buffer: Buffer,
     options: UploadOptions = {},
@@ -73,18 +75,7 @@ export class CloudinaryService {
     const folderName = options.folder
       ? `bskmt/${options.folder}`
       : "bskmt/general";
-
-    const metadataEntries: string[] = [];
-    if (options.folder) {
-      metadataEntries.push(`bsk_module=${options.folder}`);
-    }
-    if (options.metadata) {
-      for (const [k, v] of Object.entries(options.metadata)) {
-        if (v) metadataEntries.push(`${k}=${v}`);
-      }
-    }
-    const metadataString =
-      metadataEntries.length > 0 ? metadataEntries.join("|") : undefined;
+    const metadataString = this.buildMetadataString(options);
 
     return new Promise((resolve, reject) => {
       const uploadStream = this.cloudinary.uploader.upload_stream(
@@ -133,9 +124,6 @@ export class CloudinaryService {
     });
   }
 
-  /**
-   * Upload an Express.Multer.File object.
-   */
   async uploadFile(
     file: Express.Multer.File,
     options: UploadOptions = {},
@@ -148,9 +136,6 @@ export class CloudinaryService {
     return this.uploadBuffer(file.buffer, options);
   }
 
-  /**
-   * Upload a base64 encoded data URI string (e.g. data:image/png;base64,...).
-   */
   async uploadBase64(
     base64Data: string,
     options: UploadOptions = {},
@@ -164,18 +149,7 @@ export class CloudinaryService {
     const folderName = options.folder
       ? `bskmt/${options.folder}`
       : "bskmt/general";
-
-    const metadataEntries: string[] = [];
-    if (options.folder) {
-      metadataEntries.push(`bsk_module=${options.folder}`);
-    }
-    if (options.metadata) {
-      for (const [k, v] of Object.entries(options.metadata)) {
-        if (v) metadataEntries.push(`${k}=${v}`);
-      }
-    }
-    const metadataString =
-      metadataEntries.length > 0 ? metadataEntries.join("|") : undefined;
+    const metadataString = this.buildMetadataString(options);
 
     try {
       const result = await this.cloudinary.uploader.upload(base64Data, {
@@ -210,9 +184,6 @@ export class CloudinaryService {
     }
   }
 
-  /**
-   * Deletes an asset by its public_id.
-   */
   async deleteFile(
     publicId: string,
     options: { resourceType?: "image" | "video" | "raw" } = {},
@@ -224,10 +195,9 @@ export class CloudinaryService {
     }
 
     try {
-      const res = (await this.cloudinary.uploader.destroy(publicId, {
+      return (await this.cloudinary.uploader.destroy(publicId, {
         resource_type: options.resourceType || "image",
       })) as { result: string };
-      return res;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`Error deleting asset ${publicId}: ${msg}`);
@@ -237,109 +207,20 @@ export class CloudinaryService {
     }
   }
 
-  /**
-   * Generates a signature for authenticated client-side uploads.
-   * Useful for Next.js CldUploadWidget or Android MediaManager direct uploads.
-   */
-  generateUploadSignature(paramsToSign: Record<string, unknown> = {}): {
-    signature: string;
-    timestamp: number;
-    apiKey: string;
-    cloudName: string;
-  } {
-    const apiSecret =
-      this.configService.get<string>("CLOUDINARY_API_SECRET") ||
-      this.cloudinary.config().api_secret;
-    const apiKey =
-      this.configService.get<string>("CLOUDINARY_API_KEY") ||
-      this.cloudinary.config().api_key;
-    const cloudName =
-      this.configService.get<string>("CLOUDINARY_CLOUD_NAME") ||
-      this.cloudinary.config().cloud_name;
-
-    if (!apiSecret || !apiKey || !cloudName) {
-      throw new ServiceUnavailableException(
-        "Credenciales de Cloudinary incompletas.",
-      );
-    }
-
-    const timestamp = Math.round(new Date().getTime() / 1000);
-    const signature = this.cloudinary.utils.api_sign_request(
-      { ...paramsToSign, timestamp },
-      apiSecret,
-    );
-
-    return {
-      signature,
-      timestamp,
-      apiKey,
-      cloudName,
-    };
+  generateUploadSignature(
+    paramsToSign: Record<string, unknown> = {},
+  ): UploadSignatureResult {
+    return this.urlService.generateUploadSignature(paramsToSign);
   }
 
-  /**
-   * Builds an optimized URL with f_auto, q_auto and optional resizing.
-   */
   getOptimizedUrl(
     publicIdOrUrl: string,
-    options?: {
-      width?: number;
-      height?: number;
-      crop?: string;
-      gravity?: string;
-      quality?: string | number;
-      format?: string;
-    },
+    options?: OptimizedUrlOptions,
   ): string {
-    if (!publicIdOrUrl) return "";
-
-    // If it's already a full non-Cloudinary URL, return as is
-    if (
-      publicIdOrUrl.startsWith("http") &&
-      !publicIdOrUrl.includes("cloudinary.com")
-    ) {
-      return publicIdOrUrl;
-    }
-
-    // Extract publicId if a full Cloudinary URL was passed
-    let publicId = publicIdOrUrl;
-    const uploadMatch = publicIdOrUrl.match(
-      /\/upload\/(?:v\d+\/)?(.+?)(?:\.[a-zA-Z0-9]+)?$/,
-    );
-    if (uploadMatch) {
-      publicId = uploadMatch[1];
-    }
-
-    const transformation: Record<string, unknown> = {
-      fetch_format: options?.format || "auto",
-      quality: options?.quality || "auto",
-    };
-
-    if (options?.width) transformation.width = options.width;
-    if (options?.height) transformation.height = options.height;
-    if (options?.crop) transformation.crop = options.crop;
-    if (options?.gravity) transformation.gravity = options.gravity;
-
-    return this.cloudinary.url(publicId, {
-      secure: true,
-      transformation: [transformation],
-    });
+    return this.urlService.getOptimizedUrl(publicIdOrUrl, options);
   }
 
-  /**
-   * Returns public configuration for clients.
-   */
-  getPublicConfig(): { cloudName: string; uploadPreset: string } {
-    const cloudName =
-      this.configService.get<string>("CLOUDINARY_CLOUD_NAME") ||
-      this.cloudinary.config().cloud_name ||
-      "";
-    const uploadPreset =
-      this.configService.get<string>("CLOUDINARY_UPLOAD_PRESET") || "";
-
-    return {
-      cloudName,
-      uploadPreset,
-    };
+  getPublicConfig(): PublicConfigResult {
+    return this.urlService.getPublicConfig();
   }
 }
