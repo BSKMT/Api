@@ -41,7 +41,12 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException("Acceso denegado");
     }
 
-    const userRole = request.user.role as Role;
+    const user = request.user as {
+      userId: string;
+      role?: string;
+      adminPermissions?: string[];
+    };
+    const userRole = user.role as Role;
 
     if (userRole === Role.SUPERADMIN) {
       return true;
@@ -51,6 +56,42 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException(
         "No tienes permisos para realizar esta acción",
       );
+    }
+
+    // Validación granular de permisos por módulo para administradores
+    if (
+      userRole === Role.ADMIN &&
+      Array.isArray(user.adminPermissions) &&
+      user.adminPermissions.length > 0
+    ) {
+      const url = (request.originalUrl || request.url || "").toLowerCase();
+
+      const moduleMap: Record<string, string> = {
+        "/api/admin/users": "users",
+        "/api/admin/staff": "users",
+        "/api/admin/courses": "courses",
+        "/api/admin/events": "events",
+        "/api/admin/shop": "store",
+        "/api/admin/membership": "membership",
+        "/api/admin/arpha": "arpha",
+        "/api/admin/settings": "eliminations",
+        "/api/admin/config": "config",
+      };
+
+      for (const [routePrefix, requiredPerm] of Object.entries(moduleMap)) {
+        if (url.includes(routePrefix)) {
+          const hasPerm =
+            user.adminPermissions.includes(requiredPerm) ||
+            (requiredPerm === "arpha" &&
+              user.adminPermissions.includes("events"));
+          if (!hasPerm) {
+            throw new ForbiddenException(
+              `No tienes permisos asignados para el módulo administrativo '${requiredPerm}'. Contacta a un Superadministrador.`,
+            );
+          }
+          break;
+        }
+      }
     }
 
     return true;

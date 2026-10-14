@@ -143,6 +143,7 @@ export class SessionGuard {
           email: string;
           role: string;
           subrol?: string | null;
+          adminPermissions?: string[];
           betterAuthId: string;
           sessionToken?: string;
           sessionId?: string;
@@ -153,6 +154,7 @@ export class SessionGuard {
       email: session.user.email,
       role: mongooseUser.role,
       subrol: mongooseUser.subrol ?? null,
+      adminPermissions: mongooseUser.adminPermissions ?? [],
       betterAuthId: session.user.id,
       sessionToken: session.session?.token,
       sessionId: session.session?.id,
