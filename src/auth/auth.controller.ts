@@ -61,6 +61,8 @@ export class AuthController {
       membershipPaymentPlan: fullUser?.membershipPaymentPlan ?? null,
       role: fullUser?.role ?? "user",
       subrol: fullUser?.subrol ?? null,
+      adminPermissions: fullUser?.adminPermissions ?? [],
+      contractorInfo: fullUser?.contractorInfo ?? null,
       completedSections: fullUser?.completedSections ?? [],
       profile: fullUser?.profile ?? {},
     };
