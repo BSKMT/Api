@@ -11,23 +11,21 @@ import type { EnvironmentConfig } from "../config/config.interface";
 import { TERMINAL_STATUSES } from "./payments.constants";
 
 export interface ParsedBoldWebhookEvent {
-  notificationId: string | undefined;
-  eventType: string | undefined;
-  paymentId: string | undefined;
-  referenceId: string | undefined;
-  paymentMethod: string | undefined;
-  payerEmail: string | undefined;
-  amount: number | undefined;
+  notificationId?: string;
+  eventType?: string;
+  paymentId?: string;
+  referenceId?: string;
+  paymentMethod?: string;
+  payerEmail?: string;
+  amount?: number;
 }
 
 export function parseBoldAmount(raw: unknown): number | undefined {
   if (typeof raw === "number") return raw;
   if (raw && typeof raw === "object") {
     const obj = raw as Record<string, unknown>;
-    const total = obj["total"];
-    if (typeof total === "number") return total;
-    const amount = obj["amount"];
-    if (typeof amount === "number") return amount;
+    if (typeof obj["total"] === "number") return obj["total"];
+    if (typeof obj["amount"] === "number") return obj["amount"];
   }
   return undefined;
 }
@@ -35,13 +33,11 @@ export function parseBoldAmount(raw: unknown): number | undefined {
 export function parseBoldWebhookEvent(
   event: Record<string, unknown>,
 ): ParsedBoldWebhookEvent {
-  const notificationId = event["id"] as string | undefined;
-  const eventType = event["type"] as string | undefined;
   const data = (event["data"] ?? {}) as Record<string, unknown>;
   const metadata = (data["metadata"] ?? {}) as Record<string, unknown>;
   return {
-    notificationId,
-    eventType,
+    notificationId: event["id"] as string | undefined,
+    eventType: event["type"] as string | undefined,
     paymentId: data["payment_id"] as string | undefined,
     referenceId: metadata["reference"] as string | undefined,
     paymentMethod: data["payment_method"] as string | undefined,
@@ -165,7 +161,6 @@ export function applyWebhookStatusUpdate(
     return false;
   }
 
-  // C-2: Block ALL transitions from a terminal status
   if (TERMINAL_STATUSES.has(transaction.status)) {
     logger.warn(
       `Ignoring ${statusFromEvent} for already-${transaction.status} transaction ${parsed.referenceId}`,
@@ -233,7 +228,6 @@ export async function findWebhookTransaction(
     );
   }
 
-  // PAY-16: If notificationId is missing, use paymentId as fallback dedup
   if (parsed.notificationId === undefined && parsed.paymentId) {
     const seenByPaymentId = transaction.webhookEvents.some(
       (e) =>

@@ -124,3 +124,36 @@ export async function updateBetterAuthEmail(
     );
   }
 }
+
+export async function sendEmailChangeSecurityAlert(
+  emailService: {
+    sendNotificationEmail: (data: {
+      to: string;
+      title: string;
+      message: string;
+    }) => Promise<boolean>;
+  },
+  user: {
+    email: string;
+    profile?: {
+      "datos-personales"?: {
+        primerNombre?: string;
+      };
+    };
+  },
+  normalizedEmail: string,
+  logger: Logger,
+): Promise<void> {
+  try {
+    const nombre = user.profile?.["datos-personales"]?.primerNombre || "Piloto";
+    await emailService.sendNotificationEmail({
+      to: user.email,
+      title: "Seguridad BSKMT: Solicitud de cambio de correo electrónico",
+      message: `Hola ${nombre}. Te informamos que se ha solicitado cambiar tu correo electrónico en BSKMT a ${normalizedEmail}. Si no realizaste esta solicitud, cambia tu contraseña inmediatamente o contacta a soporte técnico.`,
+    });
+  } catch (notifyErr) {
+    logger.warn(
+      `Alerta de cambio de correo al email previo falló: ${notifyErr instanceof Error ? notifyErr.message : String(notifyErr)}`,
+    );
+  }
+}

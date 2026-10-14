@@ -17,7 +17,11 @@ import {
 } from "./schemas/arpha-request.schema";
 import { CreateArphaRequestDto } from "./dto/create-arpha-request.dto";
 import { RateArphaRequestDto } from "./dto/rate-arpha-request.dto";
-import { ArphaPricingResult, isLegendMember } from "./arpha.constants";
+import {
+  ArphaPricingResult,
+  ACTIVE_ARPHA_STATUSES,
+  calculateArphaPrice,
+} from "./arpha.constants";
 
 export type { ArphaPricingResult };
 
@@ -37,13 +41,7 @@ export class ArphaService {
   ): Promise<ArphaPricingResult> {
     const activeRequest = await this.arphaRequestModel.findOne({
       userId,
-      status: {
-        $in: [
-          ArphaRequestStatus.PENDING,
-          ArphaRequestStatus.EN_CAMINO,
-          ArphaRequestStatus.EN_SITIO,
-        ],
-      },
+      status: { $in: ACTIVE_ARPHA_STATUSES },
     });
 
     if (activeRequest) {
@@ -52,8 +50,10 @@ export class ArphaService {
       );
     }
 
-    const isMember = isLegendMember(membershipLevel);
-    const amount = isMember ? 0 : (ARPHA_PRICING[dto.requestType] ?? 15000);
+    const { isMember, amount } = calculateArphaPrice(
+      dto.requestType,
+      membershipLevel,
+    );
 
     const request = new this.arphaRequestModel({
       userId,
@@ -67,12 +67,10 @@ export class ArphaService {
       isMember,
       amount,
       paymentConfirmed: isMember,
-      // M16: Set activeRequestKey to userId — sparse unique index prevents race
       activeRequestKey: userId,
     });
 
-    // M16: Catch E11000 from concurrent createRequest race
-    let saved;
+    let saved: ArphaRequestDocument;
     try {
       saved = await request.save();
     } catch (err: unknown) {
@@ -80,7 +78,7 @@ export class ArphaService {
         err &&
         typeof err === "object" &&
         "code" in err &&
-        err.code === 11000
+        (err as { code: number }).code === 11000
       ) {
         throw new ConflictException(
           "Ya tienes una solicitud de asistencia activa",
@@ -88,8 +86,9 @@ export class ArphaService {
       }
       throw err;
     }
+
     this.logger.log(
-      `ARPHA request created: id=${String(saved._id)} user=${userId} type=${dto.requestType} amount=${amount} member=${isMember}`,
+      `ARPHA request created: id=${String(saved._id)} user=${userId} type=${dto.requestType} amount=${amount}`,
     );
 
     return {
@@ -116,7 +115,6 @@ export class ArphaService {
       : { _id: requestId, userId };
 
     const request = await this.arphaRequestModel.findOne(query);
-
     if (!request) {
       throw new NotFoundException("Solicitud no encontrada");
     }
@@ -130,7 +128,6 @@ export class ArphaService {
       );
     }
 
-    // A request marked as EN_SITIO cannot be cancelled by a regular user; only by a leader or admin
     if (request.status === ArphaRequestStatus.EN_SITIO && !isLeaderOrAdmin) {
       throw new ForbiddenException(
         "La solicitud ya se encuentra marcada en sitio. Solo un líder operativo puede cancelar este auxilio.",
@@ -206,13 +203,7 @@ export class ArphaService {
   async getActiveCount(userId: string): Promise<number> {
     return this.arphaRequestModel.countDocuments({
       userId,
-      status: {
-        $in: [
-          ArphaRequestStatus.PENDING,
-          ArphaRequestStatus.EN_CAMINO,
-          ArphaRequestStatus.EN_SITIO,
-        ],
-      },
+      status: { $in: ACTIVE_ARPHA_STATUSES },
     });
   }
 
@@ -242,8 +233,10 @@ export class ArphaService {
   }
 
   getPricingInfo(requestType: string, membershipLevel: string | null) {
-    const isMember = isLegendMember(membershipLevel);
-    const amount = isMember ? 0 : (ARPHA_PRICING[requestType] ?? 15000);
+    const { isMember, amount } = calculateArphaPrice(
+      requestType,
+      membershipLevel,
+    );
 
     return {
       amount,

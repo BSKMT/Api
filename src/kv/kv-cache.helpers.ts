@@ -71,3 +71,17 @@ export class KvHmacHelper {
       .replace(/={1,2}$/, "");
   }
 }
+
+export async function fetchWithTimeout(
+  url: string | URL,
+  init: RequestInit,
+  timeoutMs = 2500,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}

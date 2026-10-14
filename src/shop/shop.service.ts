@@ -2,7 +2,6 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  BadRequestException,
   OnModuleInit,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
@@ -19,14 +18,11 @@ import {
   WishlistItemDocument,
 } from "./schemas/wishlist-item.schema";
 import { CreateOrderDto } from "./dto/create-order.dto";
-import { maskAmount, maskUserId } from "../common/utils/log-redact.util";
 import {
-  isShopMember,
-  generateOrderNumber,
-  processOrderItems,
-  rollbackStock,
-  restoreOrderStock,
-} from "./shop.helpers";
+  executeCreateOrder,
+  executeCancelOrder,
+  cancelPendingOrdersOlderThan,
+} from "./shop-order.helpers";
 import {
   executeAddToWishlist,
   executeRemoveFromWishlist,
@@ -48,7 +44,6 @@ export class ShopService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     try {
-      // MongoDB official migration: rename legacy fields that conflicted with Mongoose Document reserved keys
       const [colResult, newResult] = await Promise.all([
         this.productModel.updateMany(
           { collection: { $exists: true } },
@@ -61,7 +56,7 @@ export class ShopService implements OnModuleInit {
       ]);
       if (colResult.modifiedCount > 0 || newResult.modifiedCount > 0) {
         this.logger.log(
-          `[Mongoose Schema Migration] Migrated legacy product keys via MongoDB $rename (collections: ${colResult.modifiedCount}, isNew: ${newResult.modifiedCount})`,
+          `[Mongoose Schema Migration] Migrated legacy product keys (collections: ${colResult.modifiedCount}, isNew: ${newResult.modifiedCount})`,
         );
       }
     } catch (err) {
@@ -132,78 +127,14 @@ export class ShopService implements OnModuleInit {
     dto: CreateOrderDto,
     membershipLevel: string | null = null,
   ) {
-    if (!dto.items || dto.items.length === 0) {
-      throw new BadRequestException("El pedido debe tener al menos un item");
-    }
-
-    // F-04: Expire any stale pending orders for this user before checking limits
-    const cutoff = new Date(Date.now() - 60 * 60 * 1000);
-    const staleUserOrders = await this.orderModel.find({
+    return executeCreateOrder(
+      this.orderModel,
+      this.productModel,
       userId,
-      status: OrderStatus.PENDING,
-      createdAt: { $lt: cutoff },
-    });
-    for (const stale of staleUserOrders) {
-      const updated = await this.orderModel.findOneAndUpdate(
-        { _id: stale._id, status: OrderStatus.PENDING },
-        { $set: { status: OrderStatus.CANCELLED } },
-        { new: true },
-      );
-      if (updated) {
-        await restoreOrderStock(
-          this.productModel,
-          updated,
-          this.logger,
-          updated.orderNumber,
-        );
-      }
-    }
-
-    // F-04: Mitigar DoS de inventario limitando pedidos PENDING concurrentes por usuario
-    const pendingOrdersCount = await this.orderModel.countDocuments({
-      userId,
-      status: OrderStatus.PENDING,
-    });
-    if (pendingOrdersCount >= 3) {
-      throw new BadRequestException(
-        "Tienes pedidos pendientes de pago. Completa o cancela tus pedidos anteriores antes de crear uno nuevo.",
-      );
-    }
-
-    const isMember = isShopMember(membershipLevel);
-    const { total, publicTotal, memberDiscount, orderItems } =
-      await processOrderItems(this.productModel, dto.items, isMember);
-
-    const orderNumber = generateOrderNumber();
-    const order = new this.orderModel({
-      userId,
-      orderNumber,
-      items: orderItems,
-      total,
-      memberDiscount,
-      status: total === 0 ? OrderStatus.PAID : OrderStatus.PENDING,
-      shippingAddress: dto.shippingAddress ?? null,
-    });
-
-    let saved: OrderDocument;
-    try {
-      saved = await order.save();
-    } catch (err) {
-      await rollbackStock(this.productModel, orderItems);
-      throw err;
-    }
-
-    this.logger.log(
-      `Order created: ${orderNumber} user=${maskUserId(userId)} total=${maskAmount(total)} publicTotal=${maskAmount(publicTotal)} discount=${maskAmount(memberDiscount)} member=${isMember}`,
+      dto,
+      membershipLevel,
+      this.logger,
     );
-
-    return {
-      orderNumber: saved.orderNumber,
-      total: saved.total,
-      memberDiscount: saved.memberDiscount,
-      status: saved.status,
-      requiresPayment: saved.status === OrderStatus.PENDING,
-    };
   }
 
   async linkOrderPayment(
@@ -251,64 +182,24 @@ export class ShopService implements OnModuleInit {
     userId: string,
     orderNumber: string,
   ): Promise<{ message: string }> {
-    // F-03 / F-04: Transición atómica de PENDING a CANCELLED
-    const order = await this.orderModel.findOneAndUpdate(
-      { userId, orderNumber, status: OrderStatus.PENDING },
-      { $set: { status: OrderStatus.CANCELLED } },
-      { new: true },
+    return executeCancelOrder(
+      this.orderModel,
+      this.productModel,
+      userId,
+      orderNumber,
+      this.logger,
     );
-
-    if (!order) {
-      const existing = await this.orderModel.findOne({ userId, orderNumber });
-      if (!existing) {
-        throw new NotFoundException("Pedido no encontrado");
-      }
-      if (existing.status === OrderStatus.CANCELLED) {
-        throw new BadRequestException("El pedido ya está cancelado");
-      }
-      throw new BadRequestException(
-        "No se puede cancelar un pedido que ya fue pagado o enviado",
-      );
-    }
-
-    await restoreOrderStock(this.productModel, order, this.logger, orderNumber);
-
-    this.logger.log(`Order cancelled: ${orderNumber} user=${userId}`);
-
-    return { message: "Pedido cancelado exitosamente" };
   }
 
-  /**
-   * F-04: Libera stock de pedidos PENDING que hayan superado el TTL máximo de pago (default 60 min).
-   */
   async expireStalePendingOrders(maxAgeMinutes = 60): Promise<number> {
     const cutoff = new Date(Date.now() - maxAgeMinutes * 60 * 1000);
-    const staleOrders = await this.orderModel.find({
-      status: OrderStatus.PENDING,
-      createdAt: { $lt: cutoff },
-    });
-
-    let expiredCount = 0;
-    for (const order of staleOrders) {
-      const updated = await this.orderModel.findOneAndUpdate(
-        { _id: order._id, status: OrderStatus.PENDING },
-        { $set: { status: OrderStatus.CANCELLED } },
-        { new: true },
-      );
-      if (updated) {
-        await restoreOrderStock(
-          this.productModel,
-          updated,
-          this.logger,
-          updated.orderNumber,
-        );
-        expiredCount++;
-        this.logger.log(
-          `Stale pending order expired and stock released: ${updated.orderNumber}`,
-        );
-      }
-    }
-    return expiredCount;
+    return cancelPendingOrdersOlderThan(
+      this.orderModel,
+      this.productModel,
+      cutoff,
+      undefined,
+      this.logger,
+    );
   }
 
   async getWishlist(userId: string): Promise<WishlistItemDocument[]> {

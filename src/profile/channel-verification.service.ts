@@ -10,16 +10,17 @@ import { User, UserDocument } from "../users/schemas/user.schema";
 import { BirdVerifyService } from "../bird-verify/bird-verify.service";
 import { BirdSmsService } from "../bird/bird-sms.service";
 import { BirdEmailService } from "../bird/bird-email.service";
-import {
-  maskEmail,
-  maskPhone,
-  sanitizeForLog,
-} from "../common/utils/log-redact.util";
+import { maskEmail, sanitizeForLog } from "../common/utils/log-redact.util";
 import {
   ChannelThrottleStore,
   handleVerifyCheckResult,
   updateBetterAuthEmail,
+  sendEmailChangeSecurityAlert,
 } from "./channel-verification.helpers";
+import {
+  executeInitiatePhoneVerification,
+  executeVerifyPhone,
+} from "./channel-phone.helpers";
 import { KvCacheService } from "../kv/kv-cache.service";
 
 @Injectable()
@@ -52,61 +53,15 @@ export class ChannelVerificationService {
     userId: string,
     phone: string,
   ): Promise<void> {
-    if (!this.birdVerifyService.isConfigured()) {
-      throw new BadRequestException(
-        "La verificacion por SMS no esta disponible en este momento.",
-      );
-    }
-
-    if (!this.smsService.isValidE164(phone)) {
-      throw new BadRequestException(
-        "El telefono debe estar en formato E.164 (ej: +573001234567)",
-      );
-    }
-
-    const user = await this.userModel.findById(userId);
-    if (!user) {
-      throw new BadRequestException("Usuario no encontrado");
-    }
-
-    if (user.phone === phone && user.phoneVerified) {
-      throw new BadRequestException("Este telefono ya esta verificado");
-    }
-
-    // F-10: Validar unicidad del número de teléfono
-    const existingPhoneUser = await this.userModel
-      .findOne({ phone, _id: { $ne: userId } })
-      .lean();
-    if (existingPhoneUser) {
-      throw new ConflictException(
-        "Este número de teléfono ya se encuentra asociado a otra cuenta.",
-      );
-    }
-
-    await this.phoneThrottle.enforce(phone, this.logger);
-
-    try {
-      await this.birdVerifyService.createPhoneVerification(phone, {
-        userId,
-        channel: "sms",
-      });
-    } catch (err: unknown) {
-      this.logger.error(
-        `initiatePhoneVerification: Bird error for ${maskPhone(phone)}: ${sanitizeForLog(
-          err instanceof Error ? err.message : String(err),
-        )}`,
-      );
-      throw new BadRequestException(
-        "No se pudo enviar el codigo SMS. Verifica el numero e intenta de nuevo.",
-      );
-    }
-
-    user.pendingPhone = phone;
-    user.phoneVerified = false;
-    await user.save();
-
-    await this.phoneThrottle.record(phone);
-    this.logger.log(`Phone OTP sent to ${maskPhone(phone)} for user ${userId}`);
+    return executeInitiatePhoneVerification(
+      this.userModel,
+      this.birdVerifyService,
+      this.smsService,
+      this.phoneThrottle,
+      userId,
+      phone,
+      this.logger,
+    );
   }
 
   async verifyPhone(
@@ -114,43 +69,14 @@ export class ChannelVerificationService {
     phone: string,
     code: string,
   ): Promise<void> {
-    const user = await this.userModel.findById(userId);
-    if (!user) {
-      throw new BadRequestException("Usuario no encontrado");
-    }
-
-    if (user.pendingPhone !== phone) {
-      throw new BadRequestException(
-        "No hay una verificacion pendiente para este telefono",
-      );
-    }
-
-    let result;
-    try {
-      result = await this.birdVerifyService.checkPhoneVerification(phone, code);
-    } catch (err: unknown) {
-      this.logger.error(
-        `verifyPhone: Bird error for ${maskPhone(phone)}: ${sanitizeForLog(
-          err instanceof Error ? err.message : String(err),
-        )}`,
-      );
-      throw new BadRequestException(
-        "No se pudo verificar el codigo. Solicita uno nuevo e intenta de nuevo.",
-      );
-    }
-
-    handleVerifyCheckResult(result, async () => {
-      user.pendingPhone = null;
-      await user.save();
-    });
-
-    user.phone = phone;
-    user.phoneVerified = true;
-    user.phoneVerifiedAt = new Date();
-    user.pendingPhone = null;
-    await user.save();
-
-    this.logger.log(`Phone ${maskPhone(phone)} verified for user ${userId}`);
+    return executeVerifyPhone(
+      this.userModel,
+      this.birdVerifyService,
+      userId,
+      phone,
+      code,
+      this.logger,
+    );
   }
 
   async initiateEmailChange(userId: string, newEmail: string): Promise<void> {
@@ -161,7 +87,6 @@ export class ChannelVerificationService {
     }
 
     const normalizedEmail = newEmail.toLowerCase().trim();
-
     const user = await this.userModel.findById(userId);
     if (!user) {
       throw new BadRequestException("Usuario no encontrado");
@@ -201,21 +126,12 @@ export class ChannelVerificationService {
     user.pendingEmail = normalizedEmail;
     await user.save();
 
-    // F-10: Notificar al correo actual sobre la solicitud de cambio
-    try {
-      const nombre =
-        (user.profile?.["datos-personales"]?.primerNombre as string) ||
-        "Piloto";
-      await this.emailService.sendNotificationEmail({
-        to: user.email,
-        title: "Seguridad BSKMT: Solicitud de cambio de correo electrónico",
-        message: `Hola ${nombre}. Te informamos que se ha solicitado cambiar tu correo electrónico en BSKMT a ${normalizedEmail}. Si no realizaste esta solicitud, cambia tu contraseña inmediatamente o contacta a soporte técnico.`,
-      });
-    } catch (notifyErr) {
-      this.logger.warn(
-        `Alerta de cambio de correo al email previo falló: ${notifyErr instanceof Error ? notifyErr.message : String(notifyErr)}`,
-      );
-    }
+    await sendEmailChangeSecurityAlert(
+      this.emailService,
+      user,
+      normalizedEmail,
+      this.logger,
+    );
 
     await this.emailThrottle.record(normalizedEmail);
     this.logger.log(
@@ -229,7 +145,6 @@ export class ChannelVerificationService {
     code: string,
   ): Promise<void> {
     const normalizedEmail = newEmail.toLowerCase().trim();
-
     const user = await this.userModel.findById(userId);
     if (!user) {
       throw new BadRequestException("Usuario no encontrado");

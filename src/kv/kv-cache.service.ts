@@ -1,16 +1,10 @@
-/**
- * Cloudflare Workers KV cache service for the BSK Motorcycle Team API.
- *
- * Provides a NestJS-compatible service that wraps the official Cloudflare SDK
- * to read/write cached data via the KV REST API.
- */
-
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { EnvironmentConfig } from "../config/config.interface";
 import {
   KvCircuitBreaker,
   KvHmacHelper,
+  fetchWithTimeout,
   type SealedValue,
 } from "./kv-cache.helpers";
 
@@ -57,17 +51,11 @@ export class KvCacheService {
     if (!nsId) return null;
 
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 2500);
-
-      const res = await fetch(
+      const res = await fetchWithTimeout(
         `${this.baseUrl}/${nsId}/values/${encodeURIComponent(key)}`,
-        {
-          headers: { Authorization: `Bearer ${this.apiToken}` },
-          signal: controller.signal,
-        },
+        { headers: { Authorization: `Bearer ${this.apiToken}` } },
+        2500,
       );
-      clearTimeout(timeout);
 
       if (res.status === 404) {
         this.breaker.recordSuccess();
@@ -128,19 +116,18 @@ export class KvCacheService {
         url.searchParams.set("expiration_ttl", String(ttlSeconds));
       }
 
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 3000);
-
-      const res = await fetch(url, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${this.apiToken}`,
-          "Content-Type": "application/json",
+      const res = await fetchWithTimeout(
+        url,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${this.apiToken}`,
+            "Content-Type": "application/json",
+          },
+          body,
         },
-        body,
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
+        3000,
+      );
 
       if (res.ok) {
         this.breaker.recordSuccess();
@@ -164,18 +151,14 @@ export class KvCacheService {
     if (!nsId) return;
 
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 2500);
-
-      const res = await fetch(
+      const res = await fetchWithTimeout(
         `${this.baseUrl}/${nsId}/values/${encodeURIComponent(key)}`,
         {
           method: "DELETE",
           headers: { Authorization: `Bearer ${this.apiToken}` },
-          signal: controller.signal,
         },
+        2500,
       );
-      clearTimeout(timeout);
 
       if (res.ok || res.status === 404) {
         this.breaker.recordSuccess();
@@ -199,17 +182,11 @@ export class KvCacheService {
     if (!nsId) return;
 
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 2000);
-
-      const res = await fetch(
+      const res = await fetchWithTimeout(
         `${this.baseUrl}/${nsId}/keys?prefix=${encodeURIComponent(prefix)}&limit=1000`,
-        {
-          headers: { Authorization: `Bearer ${this.apiToken}` },
-          signal: controller.signal,
-        },
+        { headers: { Authorization: `Bearer ${this.apiToken}` } },
+        2000,
       );
-      clearTimeout(timeout);
 
       if (!res.ok) {
         this.breaker.recordFailure();
@@ -226,19 +203,18 @@ export class KvCacheService {
         return;
       }
 
-      const delController = new AbortController();
-      const delTimeout = setTimeout(() => delController.abort(), 2000);
-
-      const delRes = await fetch(`${this.baseUrl}/${nsId}/bulk/delete`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.apiToken}`,
-          "Content-Type": "application/json",
+      const delRes = await fetchWithTimeout(
+        `${this.baseUrl}/${nsId}/bulk/delete`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${this.apiToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(keys),
         },
-        body: JSON.stringify(keys),
-        signal: delController.signal,
-      });
-      clearTimeout(delTimeout);
+        2000,
+      );
 
       if (delRes.ok) {
         this.breaker.recordSuccess();
