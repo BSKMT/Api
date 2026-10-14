@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Put,
+  Patch,
   Param,
   Query,
   UseGuards,
@@ -92,6 +94,8 @@ export class GestionEventosController {
   }
 
   @Post("check-in/:id")
+  @Put("check-in/:id")
+  @Patch("check-in/:id")
   @HttpCode(HttpStatus.OK)
   async checkIn(@Param("id", ParseObjectIdPipe) id: string) {
     const reg = await this.registrationModel.findById(id);

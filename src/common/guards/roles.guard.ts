@@ -33,6 +33,10 @@ export class RolesGuard implements CanActivate {
       .switchToHttp()
       .getRequest<Request & { user?: { userId: string; role?: string } }>();
 
+    if (request.method === "OPTIONS") {
+      return true;
+    }
+
     if (!request.user?.userId) {
       throw new ForbiddenException("Acceso denegado");
     }

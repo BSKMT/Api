@@ -102,6 +102,16 @@ export class AdminStaffController {
   }
 
   /**
+   * Lista todos los superadministradores (Owners).
+   * EXCLUSIVO: Solo un Superadministrador puede consultar la lista de superadministradores.
+   */
+  @Get("superadmins")
+  @UseGuards(SessionGuard, SuperAdminGuard)
+  async listSuperAdmins() {
+    return this.contractorService.listSuperAdmins();
+  }
+
+  /**
    * Registro de nuevo Superadministrador para BSK Superadmin (New-BSKMT).
    * EXCLUSIVO: Solo un Superadministrador puede registrar a otro Superadministrador.
    */

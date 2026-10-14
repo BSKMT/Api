@@ -36,7 +36,11 @@ export class IdentityVerifiedGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
 
-    const user = await this.usersService.findById(request.user.userId);
+    if (request.method === "OPTIONS") {
+      return true;
+    }
+
+    const user = await this.usersService.findById(request.user?.userId);
 
     if (user?.identityVerified === true) {
       return true;

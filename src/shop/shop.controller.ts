@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
   Body,
   Param,
   Query,
@@ -131,6 +132,7 @@ export class ShopController {
 
   @UseGuards(SessionGuard)
   @Post("wishlist/remove")
+  @Delete("wishlist")
   @HttpCode(HttpStatus.OK)
   async removeFromWishlist(
     @Req() req: AuthenticatedRequest,

@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Put,
+  Patch,
   Param,
   Query,
   Req,
@@ -117,6 +119,8 @@ export class GestionMembresiasController {
   }
 
   @Post("verify/:id")
+  @Put("verify/:id")
+  @Patch("verify/:id")
   @HttpCode(HttpStatus.OK)
   async verifyIdentity(
     @Param("id", ParseObjectIdPipe) id: string,

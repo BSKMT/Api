@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -53,6 +54,7 @@ export class GarageController {
   }
 
   @Put("motorcycles/:id")
+  @Patch("motorcycles/:id")
   async updateMotorcycle(
     @Req() req: AuthenticatedRequest,
     @Param("id", ParseObjectIdPipe) id: string,

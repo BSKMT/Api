@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Put,
+  Patch,
   Body,
   Param,
   Query,
@@ -79,6 +81,8 @@ export class GestionCursosController {
   }
 
   @Post("progress/:id")
+  @Put("progress/:id")
+  @Patch("progress/:id")
   @HttpCode(HttpStatus.OK)
   async updateProgress(
     @Param("id", ParseObjectIdPipe) id: string,

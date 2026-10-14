@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -60,6 +61,7 @@ export class AdminShopController {
   }
 
   @Put("products/:slug")
+  @Patch("products/:slug")
   async updateProduct(
     @Param("slug") slug: string,
     @Body() dto: UpdateProductDto,
@@ -109,6 +111,8 @@ export class AdminShopController {
   }
 
   @Post("orders/:orderNumber/status")
+  @Put("orders/:orderNumber/status")
+  @Patch("orders/:orderNumber/status")
   @HttpCode(HttpStatus.OK)
   async updateOrderStatus(
     @Req() req: AuthenticatedRequest,

@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Put,
+  Patch,
   Body,
   Param,
   Query,
@@ -60,6 +62,8 @@ export class GestionTiendaController {
   }
 
   @Post("orders/:id/dispatch")
+  @Put("orders/:id/dispatch")
+  @Patch("orders/:id/dispatch")
   @HttpCode(HttpStatus.OK)
   async dispatchOrder(
     @Param("id", ParseObjectIdPipe) id: string,
@@ -82,6 +86,8 @@ export class GestionTiendaController {
   }
 
   @Post("orders/:id/deliver")
+  @Put("orders/:id/deliver")
+  @Patch("orders/:id/deliver")
   @HttpCode(HttpStatus.OK)
   async deliverOrder(@Param("id", ParseObjectIdPipe) id: string) {
     const order = await this.orderModel.findById(id);

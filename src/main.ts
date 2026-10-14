@@ -121,7 +121,7 @@ export async function bootstrap(): Promise<express.Express> {
       "?",
     )[0];
     if (
-      req.method === "GET" &&
+      (req.method === "GET" || req.method === "HEAD") &&
       (rawPath === "/" ||
         rawPath === "" ||
         rawPath === "/api" ||
@@ -135,16 +135,28 @@ export async function bootstrap(): Promise<express.Express> {
       });
       return;
     }
+    if (
+      req.method === "OPTIONS" &&
+      (rawPath === "/" ||
+        rawPath === "" ||
+        rawPath === "/api" ||
+        rawPath === "/api/")
+    ) {
+      res.setHeader("Allow", "GET, HEAD, OPTIONS");
+      res.status(204).end();
+      return;
+    }
     next();
   });
 
   app.setGlobalPrefix("api", {
     exclude: [
-      { path: "", method: RequestMethod.GET },
-      { path: "/", method: RequestMethod.GET },
-      { path: "api", method: RequestMethod.GET },
-      { path: "health", method: RequestMethod.GET },
-      { path: ".well-known/assetlinks.json", method: RequestMethod.GET },
+      { path: "", method: RequestMethod.ALL },
+      { path: "/", method: RequestMethod.ALL },
+      { path: "api", method: RequestMethod.ALL },
+      { path: "health", method: RequestMethod.ALL },
+      { path: "robots.txt", method: RequestMethod.ALL },
+      { path: ".well-known/assetlinks.json", method: RequestMethod.ALL },
     ],
   });
 

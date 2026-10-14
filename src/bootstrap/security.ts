@@ -90,7 +90,7 @@ export function setupSecurityMiddleware(
         callback(null, false);
       }
     },
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
     credentials: true,
     allowedHeaders: [
       "Content-Type",

@@ -62,6 +62,7 @@ export class SessionGuard {
     if (isPublic) return true;
 
     const request = context.switchToHttp().getRequest<Request>();
+    if (request.method === "OPTIONS") return true;
 
     const auth: AuthInstance = await getAuth();
     const fromNodeHeaders = await loadFromNodeHeaders();

@@ -31,6 +31,10 @@ export class GestionGuard implements CanActivate {
       .switchToHttp()
       .getRequest<AuthenticatedGestionRequest>();
 
+    if (request.method === "OPTIONS") {
+      return true;
+    }
+
     if (!request.user?.userId) {
       throw new ForbiddenException("Acceso denegado — sesión no autenticada");
     }

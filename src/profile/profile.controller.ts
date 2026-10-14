@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Put,
+  Patch,
   Delete,
   Post,
   Body,
@@ -81,6 +82,7 @@ export class ProfileController {
   }
 
   @Put()
+  @Patch()
   async updateSection(
     @Req() req: AuthenticatedRequest,
     @Body() dto: UpdateProfileSectionDto,

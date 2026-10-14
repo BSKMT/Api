@@ -27,6 +27,10 @@ export class SuperAdminGuard implements CanActivate {
       .switchToHttp()
       .getRequest<AuthenticatedSuperAdminRequest>();
 
+    if (request.method === "OPTIONS") {
+      return true;
+    }
+
     if (!request.user?.userId) {
       throw new ForbiddenException("Acceso denegado — sesión no autenticada");
     }

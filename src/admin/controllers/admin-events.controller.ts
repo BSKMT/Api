@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -59,6 +60,7 @@ export class AdminEventsController {
   }
 
   @Put(":slug")
+  @Patch(":slug")
   async update(@Param("slug") slug: string, @Body() dto: UpdateEventDto) {
     return this.adminEventsService.updateEvent(slug, dto);
   }

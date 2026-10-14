@@ -446,4 +446,19 @@ export class ContractorManagementService {
       .sort({ createdAt: -1 })
       .lean();
   }
+
+  /**
+   * Lista todos los superadministradores.
+   */
+  async listSuperAdmins() {
+    return this.userModel
+      .find({
+        role: UserRole.SUPERADMIN,
+      })
+      .select(
+        "email username role subrol adminPermissions contractorInfo isActive createdAt",
+      )
+      .sort({ createdAt: -1 })
+      .lean();
+  }
 }
