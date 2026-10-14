@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Put,
+  Patch,
   Body,
   Param,
   Req,
@@ -62,6 +64,8 @@ export class GestionArphaController {
   }
 
   @Post("requests/:id/assign")
+  @Put("requests/:id/assign")
+  @Patch("requests/:id/assign")
   @HttpCode(HttpStatus.OK)
   async assignRequest(
     @Param("id", ParseObjectIdPipe) id: string,
@@ -81,6 +85,8 @@ export class GestionArphaController {
   }
 
   @Post("requests/:id/location")
+  @Put("requests/:id/location")
+  @Patch("requests/:id/location")
   @HttpCode(HttpStatus.OK)
   async updateLocation(
     @Param("id", ParseObjectIdPipe) id: string,
@@ -91,6 +97,8 @@ export class GestionArphaController {
   }
 
   @Post("requests/:id/status")
+  @Put("requests/:id/status")
+  @Patch("requests/:id/status")
   @HttpCode(HttpStatus.OK)
   async updateStatus(
     @Param("id", ParseObjectIdPipe) id: string,

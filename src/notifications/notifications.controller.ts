@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Put,
+  Patch,
   Delete,
   Param,
   Query,
@@ -56,6 +58,8 @@ export class NotificationsController {
   }
 
   @Post(":id/read")
+  @Patch(":id/read")
+  @Put(":id/read")
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 60000, limit: 20 } })
   // B-9: Validate notificationId is a valid ObjectId

@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Patch,
+  Put,
+  Post,
   Body,
   Param,
   Query,
@@ -49,6 +51,8 @@ export class AdminUsersController {
   }
 
   @Patch(":id/subrol")
+  @Put(":id/subrol")
+  @Post(":id/subrol")
   @HttpCode(HttpStatus.OK)
   async updateSubrol(
     @Param("id", ParseObjectIdPipe) id: string,

@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Put,
+  Patch,
   Body,
   Req,
   Res,
@@ -73,6 +74,7 @@ export class AdminPricingConfigController {
   }
 
   @Put()
+  @Patch()
   @Throttle({ medium: { ttl: 60000, limit: 20 } })
   @HttpCode(HttpStatus.OK)
   async updateAdminPricing(

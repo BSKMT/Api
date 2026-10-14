@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Put,
+  Patch,
   Post,
   Delete,
   Body,
@@ -42,6 +43,7 @@ export class SettingsController {
   }
 
   @Put()
+  @Patch()
   async updateSettings(@Req() req: Request, @Body() dto: UpdateSettingsDto) {
     const user = (req as Request & { user: { userId: string } }).user;
     return this.settingsService.updateSettings(

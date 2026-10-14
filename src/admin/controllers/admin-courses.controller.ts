@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -55,6 +56,7 @@ export class AdminCoursesController {
   }
 
   @Put(":slug")
+  @Patch(":slug")
   async update(@Param("slug") slug: string, @Body() dto: UpdateCourseDto) {
     return this.adminCoursesService.updateCourse(slug, dto);
   }

@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Put,
+  Patch,
   Body,
   Param,
   Query,
@@ -53,6 +55,8 @@ export class AdminArphaController {
   }
 
   @Post("requests/:id/status")
+  @Put("requests/:id/status")
+  @Patch("requests/:id/status")
   @HttpCode(HttpStatus.OK)
   async updateStatus(
     @Param("id", ParseObjectIdPipe) id: string,
