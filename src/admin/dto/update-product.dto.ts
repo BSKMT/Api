@@ -13,7 +13,13 @@ import {
 import { ProductStatus } from "../../shop/schemas/product.schema";
 
 export class UpdateProductDto {
-  // A9: slug removed — slug is the identifier, cannot be changed via update
+  @IsOptional()
+  _id?: unknown;
+
+  @IsString()
+  @IsOptional()
+  slug?: string;
+
   @IsString()
   @MinLength(2)
   @MaxLength(200)
