@@ -39,6 +39,14 @@ import {
   ServiceCreditTransaction,
   ServiceCreditTransactionSchema,
 } from "../membership/schemas/service-credit-transaction.schema";
+import {
+  SavingsPlan,
+  SavingsPlanSchema,
+} from "../membership/schemas/savings-plan.schema";
+import {
+  SavingsRefundRequest,
+  SavingsRefundRequestSchema,
+} from "../membership/schemas/savings-refund-request.schema";
 import { User, UserSchema } from "../users/schemas/user.schema";
 import {
   SystemPricingConfig,
@@ -69,6 +77,14 @@ import { UsersModule } from "../users/users.module";
       {
         name: ServiceCreditTransaction.name,
         schema: ServiceCreditTransactionSchema,
+      },
+      {
+        name: SavingsPlan.name,
+        schema: SavingsPlanSchema,
+      },
+      {
+        name: SavingsRefundRequest.name,
+        schema: SavingsRefundRequestSchema,
       },
       { name: User.name, schema: UserSchema },
       {

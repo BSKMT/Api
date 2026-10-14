@@ -25,6 +25,14 @@ import { Public } from "../common/decorators";
 import { IdentityVerifiedGuard } from "../common/guards";
 import type { EnvironmentConfig } from "../config/config.interface";
 
+import { SavingsPlanService } from "./services/savings-plan.service";
+import {
+  RequestSavingsExtensionDto,
+  RequestSavingsRefundDto,
+  AppealSavingsRefundDto,
+  EscalateSavingsLegalDto,
+} from "./dto/savings-plan.dto";
+
 interface AuthenticatedRequest extends Request {
   user: { userId: string };
 }
@@ -35,6 +43,7 @@ export class MembershipController {
 
   constructor(
     private readonly membershipService: MembershipService,
+    private readonly savingsPlanService: SavingsPlanService,
     private readonly configService: ConfigService<EnvironmentConfig>,
   ) {}
 
@@ -148,6 +157,68 @@ export class MembershipController {
   async requestRefund(@Req() req: AuthenticatedRequest) {
     const { userId } = req.user;
     return this.membershipService.requestRefund(userId);
+  }
+
+  @UseGuards(SessionGuard)
+  @Get("savings-plan")
+  async getSavingsPlan(@Req() req: AuthenticatedRequest) {
+    return this.savingsPlanService.getSavingsPlanSummary(req.user.userId);
+  }
+
+  @UseGuards(SessionGuard)
+  @Get("savings-plan/complete-balance")
+  async getCompleteBalanceContext(@Req() req: AuthenticatedRequest) {
+    return this.savingsPlanService.getCompleteBalanceContext(req.user.userId);
+  }
+
+  @UseGuards(SessionGuard)
+  @Post("savings-plan/request-extension")
+  @HttpCode(HttpStatus.OK)
+  async requestSavingsExtension(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: RequestSavingsExtensionDto,
+  ) {
+    return this.savingsPlanService.requestExtension(req.user.userId, dto);
+  }
+
+  @UseGuards(SessionGuard, IdentityVerifiedGuard)
+  @Post("savings-plan/refund-request")
+  @HttpCode(HttpStatus.CREATED)
+  async requestSavingsRefund(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: RequestSavingsRefundDto,
+  ) {
+    return this.savingsPlanService.requestRefund(req.user.userId, dto);
+  }
+
+  @UseGuards(SessionGuard, IdentityVerifiedGuard)
+  @Post("savings-plan/refund-appeal")
+  @HttpCode(HttpStatus.OK)
+  async appealSavingsRefund(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: AppealSavingsRefundDto,
+  ) {
+    return this.savingsPlanService.appealRefund(req.user.userId, dto);
+  }
+
+  @UseGuards(SessionGuard, IdentityVerifiedGuard)
+  @Post("savings-plan/refund-legal-escalation")
+  @HttpCode(HttpStatus.OK)
+  async escalateSavingsLegal(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: EscalateSavingsLegalDto,
+  ) {
+    return this.savingsPlanService.escalateToLegalCommittee(
+      req.user.userId,
+      dto,
+    );
+  }
+
+  @UseGuards(SessionGuard)
+  @Post("savings-plan/reinstatement")
+  @HttpCode(HttpStatus.OK)
+  async reinstateMembership(@Req() req: AuthenticatedRequest) {
+    return this.savingsPlanService.reinstateMembership(req.user.userId);
   }
 
   /**

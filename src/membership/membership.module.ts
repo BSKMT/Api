@@ -14,6 +14,13 @@ import { UsersModule } from "../users/users.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { AdminModule } from "../admin/admin.module";
 
+import { SavingsPlan, SavingsPlanSchema } from "./schemas/savings-plan.schema";
+import {
+  SavingsRefundRequest,
+  SavingsRefundRequestSchema,
+} from "./schemas/savings-refund-request.schema";
+import { SavingsPlanService } from "./services/savings-plan.service";
+
 @Module({
   imports: [
     MongooseModule.forFeature([
@@ -22,13 +29,15 @@ import { AdminModule } from "../admin/admin.module";
         name: ServiceCreditTransaction.name,
         schema: ServiceCreditTransactionSchema,
       },
+      { name: SavingsPlan.name, schema: SavingsPlanSchema },
+      { name: SavingsRefundRequest.name, schema: SavingsRefundRequestSchema },
     ]),
     UsersModule,
     NotificationsModule,
     AdminModule,
   ],
   controllers: [MembershipController],
-  providers: [MembershipService],
-  exports: [MembershipService],
+  providers: [MembershipService, SavingsPlanService],
+  exports: [MembershipService, SavingsPlanService, MongooseModule],
 })
 export class MembershipModule {}

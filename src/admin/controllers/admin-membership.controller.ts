@@ -19,6 +19,12 @@ import { AdminMembershipService } from "../services/admin-membership.service";
 import { RejectRefundDto } from "../dto/reject-refund.dto";
 import { ExtendMembershipDto } from "../dto/extend-membership.dto";
 import { ParseObjectIdPipe } from "../../common/pipes/parse-object-id.pipe";
+import {
+  ReviewSavingsExtensionDto,
+  ReviewSavingsRefundConsoleDto,
+  ReviewSavingsRefundFinanceDto,
+  ReviewSavingsLegalDto,
+} from "../../membership/dto/savings-plan.dto";
 
 interface AuthenticatedRequest extends Request {
   user: { userId: string; email?: string };
@@ -141,6 +147,82 @@ export class AdminMembershipController {
     return this.adminMembershipService.rejectRefund(
       userId,
       dto.reason,
+      req.user.userId,
+    );
+  }
+
+  @Get("savings/extensions")
+  async listSavingsExtensions() {
+    return this.adminMembershipService.listSavingsExtensions();
+  }
+
+  @Post("savings/extensions/:planId/review")
+  @HttpCode(HttpStatus.OK)
+  async reviewSavingsExtension(
+    @Req() req: AuthenticatedRequest,
+    @Param("planId", ParseObjectIdPipe) planId: string,
+    @Body() dto: ReviewSavingsExtensionDto,
+  ) {
+    return this.adminMembershipService.reviewSavingsExtension(
+      planId,
+      dto,
+      req.user.userId,
+    );
+  }
+
+  @Get("savings/refunds")
+  async listSavingsRefundsConsole() {
+    return this.adminMembershipService.listSavingsRefundsConsole();
+  }
+
+  @Post("savings/refunds/:requestId/console-review")
+  @HttpCode(HttpStatus.OK)
+  async reviewSavingsRefundConsole(
+    @Req() req: AuthenticatedRequest,
+    @Param("requestId", ParseObjectIdPipe) requestId: string,
+    @Body() dto: ReviewSavingsRefundConsoleDto,
+  ) {
+    return this.adminMembershipService.reviewSavingsRefundConsole(
+      requestId,
+      dto,
+      req.user.userId,
+    );
+  }
+
+  @Get("savings/finance-refunds")
+  async listSavingsRefundsFinance() {
+    return this.adminMembershipService.listSavingsRefundsFinance();
+  }
+
+  @Post("savings/refunds/:requestId/finance-review")
+  @HttpCode(HttpStatus.OK)
+  async reviewSavingsRefundFinance(
+    @Req() req: AuthenticatedRequest,
+    @Param("requestId", ParseObjectIdPipe) requestId: string,
+    @Body() dto: ReviewSavingsRefundFinanceDto,
+  ) {
+    return this.adminMembershipService.reviewSavingsRefundFinance(
+      requestId,
+      dto,
+      req.user.userId,
+    );
+  }
+
+  @Get("savings/legal-escalations")
+  async listSavingsLegalEscalations() {
+    return this.adminMembershipService.listSavingsLegalEscalations();
+  }
+
+  @Post("savings/refunds/:requestId/legal-review")
+  @HttpCode(HttpStatus.OK)
+  async reviewSavingsLegal(
+    @Req() req: AuthenticatedRequest,
+    @Param("requestId", ParseObjectIdPipe) requestId: string,
+    @Body() dto: ReviewSavingsLegalDto,
+  ) {
+    return this.adminMembershipService.reviewSavingsLegal(
+      requestId,
+      dto,
       req.user.userId,
     );
   }
