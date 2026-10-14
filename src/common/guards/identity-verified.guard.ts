@@ -42,6 +42,15 @@ export class IdentityVerifiedGuard implements CanActivate {
 
     const user = await this.usersService.findById(request.user?.userId);
 
+    if (!user?.profileCompleted || !user?.legalConsentAccepted) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: "profile_incomplete",
+        message:
+          "Debes completar todos los datos de tu perfil y aceptar las políticas de BSK antes de realizar esta acción.",
+      });
+    }
+
     if (user?.identityVerified === true) {
       return true;
     }

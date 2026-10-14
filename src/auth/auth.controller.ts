@@ -54,6 +54,7 @@ export class AuthController {
       pendingEmail: fullUser?.pendingEmail ?? null,
       profileCompleted: fullUser?.profileCompleted ?? false,
       identityVerified: fullUser?.identityVerified ?? false,
+      legalConsentAccepted: fullUser?.legalConsentAccepted ?? false,
       membershipLevel: fullUser?.membershipLevel ?? null,
       membershipExpired: fullUser?.membershipExpired ?? true,
       membershipExpiryDate: fullUser?.membershipExpiryDate ?? null,
