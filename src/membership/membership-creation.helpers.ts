@@ -141,12 +141,14 @@ export async function createMembershipPaymentHelper(
   }
 
   const pricingConfig = await deps.pricingConfigService.getConfig();
-  validateCampaignEnrollmentEligibility(
-    pricingConfig.campaign,
-    pricingConfig.seasonYear,
-    now,
-    isRenewal,
-  );
+  if (dto.paymentPlan === "single") {
+    validateCampaignEnrollmentEligibility(
+      pricingConfig.campaign,
+      pricingConfig.seasonYear,
+      now,
+      isRenewal,
+    );
+  }
   const renewalAmt =
     pricingConfig.membership?.renewalAmount ?? MEMBERSHIP_RENEWAL_AMOUNT;
   const newMemberAmt =

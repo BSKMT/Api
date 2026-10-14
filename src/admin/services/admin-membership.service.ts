@@ -35,6 +35,31 @@ import {
   queryPendingRefunds,
 } from "./admin-membership-query.helpers";
 
+import {
+  SavingsPlan,
+  SavingsPlanDocument,
+} from "../../membership/schemas/savings-plan.schema";
+import {
+  SavingsRefundRequest,
+  SavingsRefundRequestDocument,
+} from "../../membership/schemas/savings-refund-request.schema";
+import {
+  ReviewSavingsExtensionDto,
+  ReviewSavingsRefundConsoleDto,
+  ReviewSavingsRefundFinanceDto,
+  ReviewSavingsLegalDto,
+} from "../../membership/dto/savings-plan.dto";
+import {
+  executeListPendingExtensions,
+  executeReviewExtension,
+  executeListRefundsForConsole,
+  executeReviewRefundConsole,
+  executeListRefundsForFinance,
+  executeReviewRefundFinance,
+  executeListLegalEscalations,
+  executeReviewLegalEscalation,
+} from "./admin-savings.helpers";
+
 @Injectable()
 export class AdminMembershipService {
   private readonly logger = new Logger(AdminMembershipService.name);
@@ -47,6 +72,10 @@ export class AdminMembershipService {
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
     private readonly notificationsService: NotificationsService,
+    @InjectModel(SavingsPlan.name)
+    private readonly savingsPlanModel: Model<SavingsPlanDocument>,
+    @InjectModel(SavingsRefundRequest.name)
+    private readonly refundRequestModel: Model<SavingsRefundRequestDocument>,
   ) {}
 
   async listTransactions(filters: {
@@ -224,6 +253,81 @@ export class AdminMembershipService {
       reason,
       actorId,
       this.logger,
+    );
+  }
+
+  async listSavingsExtensions() {
+    return executeListPendingExtensions(this.savingsPlanModel);
+  }
+
+  async reviewSavingsExtension(
+    planId: string,
+    dto: ReviewSavingsExtensionDto,
+    actorId = "",
+  ) {
+    return executeReviewExtension(
+      this.savingsPlanModel,
+      this.userModel,
+      this.notificationsService,
+      planId,
+      dto,
+      actorId,
+    );
+  }
+
+  async listSavingsRefundsConsole() {
+    return executeListRefundsForConsole(this.refundRequestModel);
+  }
+
+  async reviewSavingsRefundConsole(
+    requestId: string,
+    dto: ReviewSavingsRefundConsoleDto,
+    actorId = "",
+  ) {
+    return executeReviewRefundConsole(
+      this.refundRequestModel,
+      this.notificationsService,
+      requestId,
+      dto,
+      actorId,
+    );
+  }
+
+  async listSavingsRefundsFinance() {
+    return executeListRefundsForFinance(this.refundRequestModel);
+  }
+
+  async reviewSavingsRefundFinance(
+    requestId: string,
+    dto: ReviewSavingsRefundFinanceDto,
+    actorId = "",
+  ) {
+    return executeReviewRefundFinance(
+      this.refundRequestModel,
+      this.savingsPlanModel,
+      this.notificationsService,
+      requestId,
+      dto,
+      actorId,
+    );
+  }
+
+  async listSavingsLegalEscalations() {
+    return executeListLegalEscalations(this.refundRequestModel);
+  }
+
+  async reviewSavingsLegal(
+    requestId: string,
+    dto: ReviewSavingsLegalDto,
+    actorId = "",
+  ) {
+    return executeReviewLegalEscalation(
+      this.refundRequestModel,
+      this.savingsPlanModel,
+      this.notificationsService,
+      requestId,
+      dto,
+      actorId,
     );
   }
 }
