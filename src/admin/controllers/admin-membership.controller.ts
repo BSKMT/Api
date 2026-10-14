@@ -157,6 +157,7 @@ export class AdminMembershipController {
   }
 
   @Post("savings/extensions/:planId/review")
+  @Throttle({ medium: { ttl: 60000, limit: 10 } })
   @HttpCode(HttpStatus.OK)
   async reviewSavingsExtension(
     @Req() req: AuthenticatedRequest,
@@ -176,6 +177,7 @@ export class AdminMembershipController {
   }
 
   @Post("savings/refunds/:requestId/console-review")
+  @Throttle({ medium: { ttl: 60000, limit: 10 } })
   @HttpCode(HttpStatus.OK)
   async reviewSavingsRefundConsole(
     @Req() req: AuthenticatedRequest,
@@ -195,6 +197,7 @@ export class AdminMembershipController {
   }
 
   @Post("savings/refunds/:requestId/finance-review")
+  @Throttle({ medium: { ttl: 60000, limit: 10 } })
   @HttpCode(HttpStatus.OK)
   async reviewSavingsRefundFinance(
     @Req() req: AuthenticatedRequest,
@@ -214,6 +217,7 @@ export class AdminMembershipController {
   }
 
   @Post("savings/refunds/:requestId/legal-review")
+  @Throttle({ medium: { ttl: 60000, limit: 10 } })
   @HttpCode(HttpStatus.OK)
   async reviewSavingsLegal(
     @Req() req: AuthenticatedRequest,

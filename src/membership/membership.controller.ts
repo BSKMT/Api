@@ -14,6 +14,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { Throttle } from "@nestjs/throttler";
 import { timingSafeEqual } from "node:crypto";
 import type { Request } from "express";
 import { SessionGuard } from "../auth/session.guard";
@@ -172,6 +173,7 @@ export class MembershipController {
   }
 
   @UseGuards(SessionGuard)
+  @Throttle({ medium: { ttl: 60000, limit: 10 } })
   @Post("savings-plan/request-extension")
   @HttpCode(HttpStatus.OK)
   async requestSavingsExtension(
@@ -182,6 +184,7 @@ export class MembershipController {
   }
 
   @UseGuards(SessionGuard, IdentityVerifiedGuard)
+  @Throttle({ medium: { ttl: 60000, limit: 5 } })
   @Post("savings-plan/refund-request")
   @HttpCode(HttpStatus.CREATED)
   async requestSavingsRefund(
@@ -192,6 +195,7 @@ export class MembershipController {
   }
 
   @UseGuards(SessionGuard, IdentityVerifiedGuard)
+  @Throttle({ medium: { ttl: 60000, limit: 5 } })
   @Post("savings-plan/refund-appeal")
   @HttpCode(HttpStatus.OK)
   async appealSavingsRefund(
@@ -202,6 +206,7 @@ export class MembershipController {
   }
 
   @UseGuards(SessionGuard, IdentityVerifiedGuard)
+  @Throttle({ medium: { ttl: 60000, limit: 5 } })
   @Post("savings-plan/refund-legal-escalation")
   @HttpCode(HttpStatus.OK)
   async escalateSavingsLegal(
@@ -215,6 +220,7 @@ export class MembershipController {
   }
 
   @UseGuards(SessionGuard)
+  @Throttle({ medium: { ttl: 60000, limit: 5 } })
   @Post("savings-plan/reinstatement")
   @HttpCode(HttpStatus.OK)
   async reinstateMembership(@Req() req: AuthenticatedRequest) {
