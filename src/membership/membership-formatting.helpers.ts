@@ -142,6 +142,53 @@ export function validateNewMembershipEligibility(
   }
 }
 
+export function validateCampaignEnrollmentEligibility(
+  campaignConfig?: {
+    startDate?: string;
+    endDate?: string;
+    isActive?: boolean;
+    lotMaxCapacity?: number;
+  },
+  seasonYear?: number,
+  now: Date = new Date(),
+): void {
+  if (!campaignConfig) return;
+
+  if (campaignConfig.isActive === false) {
+    throw new BadRequestException(
+      `La ventana de inscripciones oficiales para la temporada ${seasonYear ?? 2027} se encuentra pausada o no está activa.`,
+    );
+  }
+
+  const nowMs = now.getTime();
+  if (campaignConfig.startDate) {
+    const startMs = new Date(campaignConfig.startDate).getTime();
+    if (nowMs < startMs) {
+      const startFmt = new Date(campaignConfig.startDate).toLocaleDateString(
+        "es-CO",
+        {
+          timeZone: "America/Bogota",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        },
+      );
+      throw new BadRequestException(
+        `Las inscripciones oficiales para la temporada ${seasonYear ?? 2027} aún no han abierto. Fecha de habilitación oficial: ${startFmt}.`,
+      );
+    }
+  }
+
+  if (campaignConfig.endDate) {
+    const endMs = new Date(campaignConfig.endDate).getTime();
+    if (nowMs > endMs) {
+      throw new BadRequestException(
+        `El periodo de inscripciones oficiales para la temporada ${seasonYear ?? 2027} ha finalizado.`,
+      );
+    }
+  }
+}
+
 export async function computeNextInstallmentNumber(
   transactionModel: Model<MembershipTransactionDocument>,
   userId: string,

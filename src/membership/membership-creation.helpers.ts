@@ -23,6 +23,7 @@ import {
   buildBoldConfig,
   validateRenewalEligibility,
   validateNewMembershipEligibility,
+  validateCampaignEnrollmentEligibility,
   computeNextInstallmentNumber,
   assertNoPendingMembershipTransaction,
 } from "./membership-formatting.helpers";
@@ -140,6 +141,11 @@ export async function createMembershipPaymentHelper(
   }
 
   const pricingConfig = await deps.pricingConfigService.getConfig();
+  validateCampaignEnrollmentEligibility(
+    pricingConfig.campaign,
+    pricingConfig.seasonYear,
+    now,
+  );
   const renewalAmt =
     pricingConfig.membership?.renewalAmount ?? MEMBERSHIP_RENEWAL_AMOUNT;
   const newMemberAmt =
