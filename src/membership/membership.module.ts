@@ -20,6 +20,7 @@ import {
   SavingsRefundRequest,
   SavingsRefundRequestSchema,
 } from "./schemas/savings-refund-request.schema";
+import { User, UserSchema } from "../users/schemas/user.schema";
 import { SavingsPlanService } from "./services/savings-plan.service";
 
 @Module({
@@ -32,6 +33,7 @@ import { SavingsPlanService } from "./services/savings-plan.service";
       },
       { name: SavingsPlan.name, schema: SavingsPlanSchema },
       { name: SavingsRefundRequest.name, schema: SavingsRefundRequestSchema },
+      { name: User.name, schema: UserSchema },
     ]),
     UsersModule,
     NotificationsModule,
