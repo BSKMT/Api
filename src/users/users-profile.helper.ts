@@ -103,6 +103,63 @@ function applySectionToProfile(
   }
 }
 
+export const SECTION_REQUIRED_FIELDS: Record<string, string[]> = {
+  "datos-personales": [
+    "primerNombre",
+    "primerApellido",
+    "tipoDocumento",
+    "numeroDocumento",
+    "fechaNacimiento",
+    "nacionalidad",
+  ],
+  contacto: [
+    "celular",
+    "direccionResidencia",
+    "barrio",
+    "ciudad",
+    "departamento",
+    "contactoEmergenciaNombre",
+    "contactoEmergenciaParentesco",
+    "contactoEmergenciaTelefono",
+  ],
+  motocicleta: [
+    "marcaMoto",
+    "lineaMoto",
+    "anioMoto",
+    "cilindraje",
+    "placaMoto",
+    "tipoMoto",
+  ],
+  "salud-seguridad": ["grupoSanguineo", "eps"],
+  "documentacion-legal": [
+    "licenciaConduccionCategoria",
+    "licenciaConduccionNumero",
+    "poseeSeguroMoto",
+  ],
+  "experiencia-motera": ["anosExperiencia"],
+};
+
+export function isSectionValid(
+  sectionId: string,
+  data: Record<string, unknown>,
+): boolean {
+  const reqFields = SECTION_REQUIRED_FIELDS[sectionId];
+  if (!reqFields) return true;
+  return reqFields.every((f) => {
+    const val = data[f];
+    if (typeof val === "string") {
+      return val.trim().length > 0;
+    }
+    if (typeof val === "number") {
+      return !Number.isNaN(val);
+    }
+    if (typeof val === "boolean") {
+      return true;
+    }
+    return false;
+  });
+}
+
 export async function executeUpdateProfileSection(
   userModel: Model<UserDocument>,
   userId: string,
@@ -126,9 +183,14 @@ export async function executeUpdateProfileSection(
   const profile = user.profile ?? {};
   applySectionToProfile(profile, sectionId, sanitizedData);
 
-  const completedSections = [...(user.completedSections ?? [])];
-  if (!completedSections.includes(sectionId)) {
-    completedSections.push(sectionId);
+  const sectionComplete = isSectionValid(sectionId, sanitizedData);
+  let completedSections = [...(user.completedSections ?? [])];
+  if (sectionComplete) {
+    if (!completedSections.includes(sectionId)) {
+      completedSections.push(sectionId);
+    }
+  } else {
+    completedSections = completedSections.filter((s) => s !== sectionId);
   }
 
   const profileCompleted = REQUIRED_PROFILE_SECTIONS.every((s) =>

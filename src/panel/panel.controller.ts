@@ -1,4 +1,10 @@
-import { Controller, Get, Req, UseGuards } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Req,
+  UseGuards,
+  ForbiddenException,
+} from "@nestjs/common";
 import type { Request } from "express";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
@@ -49,6 +55,17 @@ export class PanelController {
 
     if (!fullUser) {
       return { user: null, activity: {}, profile: {} };
+    }
+
+    if (!fullUser.profileCompleted || !fullUser.legalConsentAccepted) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: "profile_incomplete",
+        message:
+          "Debes completar todos tus datos de perfil y aceptar las políticas antes de acceder al panel de control.",
+        profileCompleted: fullUser.profileCompleted ?? false,
+        legalConsentAccepted: fullUser.legalConsentAccepted ?? false,
+      });
     }
 
     const profile = fullUser.profile ?? {};
