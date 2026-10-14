@@ -7,6 +7,7 @@ import {
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { User, UserDocument, UserRole } from "../../users/schemas/user.schema";
+import { UserSubrole } from "../../users/schemas/user-subdocuments.schema";
 import { getAuth, getMongoDb } from "../../auth/better-auth";
 import { generateBskmtUsername } from "../../common/utils/username-generator.util";
 import {
@@ -119,77 +120,188 @@ export class ContractorManagementService {
   }
 
   /**
+   * Helper que normaliza y valida campos comunes (nombres, documentos, emails, teléfonos, etc.)
+   * aceptando tanto nombres en español como aliases en inglés.
+   */
+  private normalizeStaffPayload(
+    dto: CreateCollaboratorDto | CreateAdministratorDto | CreateSuperAdminDto,
+    defaultCargo: string,
+    defaultArea: string,
+  ) {
+    const cedula = (dto.cedula || dto.docNumber || "").trim();
+    if (!cedula) {
+      throw new BadRequestException(
+        "El número de documento o cédula es obligatorio.",
+      );
+    }
+
+    let primerNombre = (dto.primerNombre || "").trim();
+    let segundoNombre = (dto.segundoNombre || "").trim() || undefined;
+    if (!primerNombre && dto.firstName) {
+      const parts = dto.firstName.trim().split(/\s+/);
+      primerNombre = parts[0] || "";
+      segundoNombre = parts.slice(1).join(" ") || undefined;
+    }
+    if (!primerNombre) {
+      throw new BadRequestException("El nombre es obligatorio.");
+    }
+
+    let primerApellido = (dto.primerApellido || "").trim();
+    let segundoApellido = (dto.segundoApellido || "").trim() || undefined;
+    if (!primerApellido && dto.lastName) {
+      const parts = dto.lastName.trim().split(/\s+/);
+      primerApellido = parts[0] || "";
+      segundoApellido = parts.slice(1).join(" ") || undefined;
+    }
+    if (!primerApellido) {
+      throw new BadRequestException("El apellido es obligatorio.");
+    }
+
+    const email = (dto.correoInstitucional || dto.institutionalEmail || "")
+      .toLowerCase()
+      .trim();
+    if (!email) {
+      throw new BadRequestException(
+        "El correo corporativo o institucional es obligatorio.",
+      );
+    }
+
+    const telefono = (dto.telefono || dto.phone || "").trim();
+    if (!telefono) {
+      throw new BadRequestException(
+        "El número de teléfono o celular es obligatorio.",
+      );
+    }
+
+    const cargo = (dto.cargo || dto.position || defaultCargo).trim();
+    const area = (dto.area || dto.department || defaultArea).trim();
+    const password = (dto.password || "").trim();
+    if (!password || password.length < 8) {
+      throw new BadRequestException(
+        "La contraseña debe contener al menos 8 caracteres.",
+      );
+    }
+
+    return {
+      cedula,
+      primerNombre,
+      segundoNombre,
+      primerApellido,
+      segundoApellido,
+      email,
+      telefono,
+      cargo,
+      area,
+      password,
+      docType: dto.docType || "CC",
+      personalEmail: dto.personalEmail?.trim()?.toLowerCase() || undefined,
+      address: dto.address?.trim() || undefined,
+      birthDate: dto.birthDate || undefined,
+      bloodType: dto.bloodType || undefined,
+      emergencyContactName: dto.emergencyContactName?.trim() || undefined,
+      emergencyContactPhone: dto.emergencyContactPhone?.trim() || undefined,
+    };
+  }
+
+  /**
    * Crea un Gestor / Colaborador de BSK Fascia con datos de contratista y credenciales.
    * Puede ser ejecutado por Administrador de Talento Humano o Superadmin.
    */
   async createCollaborator(dto: CreateCollaboratorDto, creatorUserId: string) {
-    const email = dto.correoInstitucional.toLowerCase().trim();
+    const norm = this.normalizeStaffPayload(
+      dto,
+      "Gestor de Operaciones en Campo",
+      "Operaciones de Campo",
+    );
 
-    const existingUser = await this.userModel.findOne({ email }).lean();
+    const existingUser = await this.userModel
+      .findOne({ email: norm.email })
+      .lean();
     if (existingUser) {
       throw new ConflictException(
-        `El correo institucional ${email} ya se encuentra registrado.`,
+        `El correo institucional ${norm.email} ya se encuentra registrado.`,
       );
     }
 
     const { username, internalCode } = await this.generateUniqueUsername(
-      dto.cedula,
-      dto.primerNombre,
-      dto.primerApellido,
+      norm.cedula,
+      norm.primerNombre,
+      norm.primerApellido,
     );
 
     const fullName =
-      `${dto.primerNombre} ${dto.segundoNombre ? dto.segundoNombre + " " : ""}${dto.primerApellido} ${dto.segundoApellido || ""}`.trim();
+      `${norm.primerNombre} ${norm.segundoNombre ? norm.segundoNombre + " " : ""}${norm.primerApellido} ${norm.segundoApellido || ""}`.trim();
 
     const betterAuthId = await this.createBetterAuthAccount(
-      email,
-      dto.password,
+      norm.email,
+      norm.password,
       fullName,
-      dto.primerNombre,
-      dto.segundoNombre,
-      dto.primerApellido,
-      dto.segundoApellido,
+      norm.primerNombre,
+      norm.segundoNombre,
+      norm.primerApellido,
+      norm.segundoApellido,
     );
 
+    const subrol = dto.subrol || UserSubrole.GESTOR_CAMPO;
+
     const contractorInfo = {
-      cedula: dto.cedula.trim(),
-      nombres: `${dto.primerNombre} ${dto.segundoNombre || ""}`.trim(),
-      apellidos: `${dto.primerApellido} ${dto.segundoApellido || ""}`.trim(),
-      correoInstitucional: email,
-      telefono: dto.telefono.trim(),
-      cargo: dto.cargo.trim(),
-      area: dto.area?.trim() || "Operaciones",
-      subrol: dto.subrol,
+      cedula: norm.cedula,
+      docType: norm.docType,
+      nombres: `${norm.primerNombre} ${norm.segundoNombre || ""}`.trim(),
+      apellidos: `${norm.primerApellido} ${norm.segundoApellido || ""}`.trim(),
+      correoInstitucional: norm.email,
+      personalEmail: norm.personalEmail,
+      telefono: norm.telefono,
+      cargo: norm.cargo,
+      area: norm.area,
+      address: norm.address,
+      bloodType: norm.bloodType,
+      emergencyContactName: norm.emergencyContactName,
+      emergencyContactPhone: norm.emergencyContactPhone,
+      subrol,
       tipoContrato: dto.tipoContrato || "Contrato de Prestación de Servicios",
       createdBy: creatorUserId,
       createdAt: new Date(),
     };
 
     const updatedUser = await this.userModel.findOneAndUpdate(
-      { $or: [{ email }, { betterAuthId }] },
+      { $or: [{ email: norm.email }, { betterAuthId }] },
       {
         $set: {
-          email,
+          email: norm.email,
           betterAuthId,
           username,
           internalCode,
           role: UserRole.GESTOR,
-          subrol: dto.subrol,
+          subrol,
           contractorInfo,
           emailVerified: true,
           isActive: true,
           profileCompleted: true,
           "profile.datos-personales": {
-            primerNombre: dto.primerNombre,
-            segundoNombre: dto.segundoNombre || "",
-            primerApellido: dto.primerApellido,
-            segundoApellido: dto.segundoApellido || "",
-            tipoDocumento: "Cédula de Ciudadanía",
-            numeroDocumento: dto.cedula.trim(),
+            primerNombre: norm.primerNombre,
+            segundoNombre: norm.segundoNombre || "",
+            primerApellido: norm.primerApellido,
+            segundoApellido: norm.segundoApellido || "",
+            tipoDocumento:
+              norm.docType === "CE"
+                ? "Cédula de Extranjería"
+                : norm.docType === "PASSPORT"
+                  ? "Pasaporte"
+                  : "Cédula de Ciudadanía",
+            numeroDocumento: norm.cedula,
+            fechaNacimiento: norm.birthDate || "",
           },
           "profile.contacto": {
-            celular: dto.telefono.trim(),
-            correoInstitucional: email,
+            celular: norm.telefono,
+            correoInstitucional: norm.email,
+            correoPersonal: norm.personalEmail || "",
+            direccion: norm.address || "",
+          },
+          "profile.salud-seguridad": {
+            rh: norm.bloodType || "O+",
+            contactoEmergenciaNombre: norm.emergencyContactName || "",
+            contactoEmergenciaTelefono: norm.emergencyContactPhone || "",
           },
         },
       },
@@ -199,10 +311,13 @@ export class ContractorManagementService {
     // Sincronizar username y rol en Better Auth
     await getMongoDb()
       .collection("user")
-      .updateOne({ email }, { $set: { username, role: UserRole.GESTOR } });
+      .updateOne(
+        { email: norm.email },
+        { $set: { username, role: UserRole.GESTOR } },
+      );
 
     this.logger.log(
-      `Gestor Fascia creado exitosamente: usuario="${username}", email="${email}", subrol="${dto.subrol}" por admin=${creatorUserId}`,
+      `Gestor Fascia creado exitosamente: usuario="${username}", email="${norm.email}", subrol="${subrol}" por admin=${creatorUserId}`,
     );
 
     return {
@@ -210,9 +325,9 @@ export class ContractorManagementService {
       collaborator: {
         _id: updatedUser._id,
         username,
-        email,
+        email: norm.email,
         role: UserRole.GESTOR,
-        subrol: dto.subrol,
+        subrol,
         contractorInfo,
       },
     };
@@ -226,74 +341,104 @@ export class ContractorManagementService {
     dto: CreateAdministratorDto,
     creatorUserId: string,
   ) {
-    const email = dto.correoInstitucional.toLowerCase().trim();
+    const norm = this.normalizeStaffPayload(
+      dto,
+      "Administrador Ejecutivo",
+      "Administración Central",
+    );
 
-    const existingUser = await this.userModel.findOne({ email }).lean();
+    const existingUser = await this.userModel
+      .findOne({ email: norm.email })
+      .lean();
     if (existingUser) {
       throw new ConflictException(
-        `El correo corporativo ${email} ya se encuentra registrado.`,
+        `El correo corporativo ${norm.email} ya se encuentra registrado.`,
       );
     }
 
     const { username, internalCode } = await this.generateUniqueUsername(
-      dto.cedula,
-      dto.primerNombre,
-      dto.primerApellido,
+      norm.cedula,
+      norm.primerNombre,
+      norm.primerApellido,
     );
 
     const fullName =
-      `${dto.primerNombre} ${dto.segundoNombre ? dto.segundoNombre + " " : ""}${dto.primerApellido} ${dto.segundoApellido || ""}`.trim();
+      `${norm.primerNombre} ${norm.segundoNombre ? norm.segundoNombre + " " : ""}${norm.primerApellido} ${norm.segundoApellido || ""}`.trim();
 
     const betterAuthId = await this.createBetterAuthAccount(
-      email,
-      dto.password,
+      norm.email,
+      norm.password,
       fullName,
-      dto.primerNombre,
-      dto.segundoNombre,
-      dto.primerApellido,
-      dto.segundoApellido,
+      norm.primerNombre,
+      norm.segundoNombre,
+      norm.primerApellido,
+      norm.segundoApellido,
     );
 
+    const subrol = dto.subrol || dto.role || null;
+    const adminPermissions = Array.isArray(dto.adminPermissions)
+      ? dto.adminPermissions
+      : [];
+
     const contractorInfo = {
-      cedula: dto.cedula.trim(),
-      nombres: `${dto.primerNombre} ${dto.segundoNombre || ""}`.trim(),
-      apellidos: `${dto.primerApellido} ${dto.segundoApellido || ""}`.trim(),
-      correoInstitucional: email,
-      telefono: dto.telefono.trim(),
-      cargo: dto.cargo.trim(),
-      area: dto.area.trim(),
-      subrol: dto.subrol || null,
+      cedula: norm.cedula,
+      docType: norm.docType,
+      nombres: `${norm.primerNombre} ${norm.segundoNombre || ""}`.trim(),
+      apellidos: `${norm.primerApellido} ${norm.segundoApellido || ""}`.trim(),
+      correoInstitucional: norm.email,
+      personalEmail: norm.personalEmail,
+      telefono: norm.telefono,
+      cargo: norm.cargo,
+      area: norm.area,
+      address: norm.address,
+      bloodType: norm.bloodType,
+      emergencyContactName: norm.emergencyContactName,
+      emergencyContactPhone: norm.emergencyContactPhone,
+      subrol,
       tipoContrato: "Contrato Laboral / Directivo BSKMT",
       createdBy: creatorUserId,
       createdAt: new Date(),
     };
 
     const updatedUser = await this.userModel.findOneAndUpdate(
-      { $or: [{ email }, { betterAuthId }] },
+      { $or: [{ email: norm.email }, { betterAuthId }] },
       {
         $set: {
-          email,
+          email: norm.email,
           betterAuthId,
           username,
           internalCode,
           role: UserRole.ADMIN,
-          subrol: dto.subrol || null,
-          adminPermissions: dto.adminPermissions || [],
+          subrol,
+          adminPermissions,
           contractorInfo,
           emailVerified: true,
           isActive: true,
           profileCompleted: true,
           "profile.datos-personales": {
-            primerNombre: dto.primerNombre,
-            segundoNombre: dto.segundoNombre || "",
-            primerApellido: dto.primerApellido,
-            segundoApellido: dto.segundoApellido || "",
-            tipoDocumento: "Cédula de Ciudadanía",
-            numeroDocumento: dto.cedula.trim(),
+            primerNombre: norm.primerNombre,
+            segundoNombre: norm.segundoNombre || "",
+            primerApellido: norm.primerApellido,
+            segundoApellido: norm.segundoApellido || "",
+            tipoDocumento:
+              norm.docType === "CE"
+                ? "Cédula de Extranjería"
+                : norm.docType === "PASSPORT"
+                  ? "Pasaporte"
+                  : "Cédula de Ciudadanía",
+            numeroDocumento: norm.cedula,
+            fechaNacimiento: norm.birthDate || "",
           },
           "profile.contacto": {
-            celular: dto.telefono.trim(),
-            correoInstitucional: email,
+            celular: norm.telefono,
+            correoInstitucional: norm.email,
+            correoPersonal: norm.personalEmail || "",
+            direccion: norm.address || "",
+          },
+          "profile.salud-seguridad": {
+            rh: norm.bloodType || "O+",
+            contactoEmergenciaNombre: norm.emergencyContactName || "",
+            contactoEmergenciaTelefono: norm.emergencyContactPhone || "",
           },
         },
       },
@@ -303,10 +448,13 @@ export class ContractorManagementService {
     // Sincronizar username y role en Better Auth
     await getMongoDb()
       .collection("user")
-      .updateOne({ email }, { $set: { username, role: UserRole.ADMIN } });
+      .updateOne(
+        { email: norm.email },
+        { $set: { username, role: UserRole.ADMIN } },
+      );
 
     this.logger.log(
-      `Administrador Console creado exitosamente: usuario="${username}", email="${email}", area="${dto.area}" por superadmin=${creatorUserId}`,
+      `Administrador Console creado exitosamente: usuario="${username}", email="${norm.email}", area="${norm.area}" por superadmin=${creatorUserId}`,
     );
 
     return {
@@ -314,10 +462,10 @@ export class ContractorManagementService {
       administrator: {
         _id: updatedUser._id,
         username,
-        email,
+        email: norm.email,
         role: UserRole.ADMIN,
-        area: dto.area,
-        adminPermissions: dto.adminPermissions || [],
+        area: norm.area,
+        adminPermissions,
         contractorInfo,
       },
     };
@@ -328,52 +476,64 @@ export class ContractorManagementService {
    * EXCLUSIVO: Solo puede ser ejecutado por otro Superadministrador.
    */
   async createSuperAdmin(dto: CreateSuperAdminDto, creatorUserId: string) {
-    const email = dto.correoInstitucional.toLowerCase().trim();
+    const norm = this.normalizeStaffPayload(
+      dto,
+      "Superadministrador General / Propietario",
+      "Dirección General / Presidencia",
+    );
 
-    const existingUser = await this.userModel.findOne({ email }).lean();
+    const existingUser = await this.userModel
+      .findOne({ email: norm.email })
+      .lean();
     if (existingUser) {
       throw new ConflictException(
-        `El correo ${email} ya se encuentra registrado.`,
+        `El correo ${norm.email} ya se encuentra registrado.`,
       );
     }
 
     const { username, internalCode } = await this.generateUniqueUsername(
-      dto.cedula,
-      dto.primerNombre,
-      dto.primerApellido,
+      norm.cedula,
+      norm.primerNombre,
+      norm.primerApellido,
     );
 
     const fullName =
-      `${dto.primerNombre} ${dto.segundoNombre ? dto.segundoNombre + " " : ""}${dto.primerApellido} ${dto.segundoApellido || ""}`.trim();
+      `${norm.primerNombre} ${norm.segundoNombre ? norm.segundoNombre + " " : ""}${norm.primerApellido} ${norm.segundoApellido || ""}`.trim();
 
     const betterAuthId = await this.createBetterAuthAccount(
-      email,
-      dto.password,
+      norm.email,
+      norm.password,
       fullName,
-      dto.primerNombre,
-      dto.segundoNombre,
-      dto.primerApellido,
-      dto.segundoApellido,
+      norm.primerNombre,
+      norm.segundoNombre,
+      norm.primerApellido,
+      norm.segundoApellido,
     );
 
     const contractorInfo = {
-      cedula: dto.cedula.trim(),
-      nombres: `${dto.primerNombre} ${dto.segundoNombre || ""}`.trim(),
-      apellidos: `${dto.primerApellido} ${dto.segundoApellido || ""}`.trim(),
-      correoInstitucional: email,
-      telefono: dto.telefono.trim(),
-      cargo: dto.cargo.trim(),
-      area: "Dirección General / Presidencia",
+      cedula: norm.cedula,
+      docType: norm.docType,
+      nombres: `${norm.primerNombre} ${norm.segundoNombre || ""}`.trim(),
+      apellidos: `${norm.primerApellido} ${norm.segundoApellido || ""}`.trim(),
+      correoInstitucional: norm.email,
+      personalEmail: norm.personalEmail,
+      telefono: norm.telefono,
+      cargo: norm.cargo,
+      area: norm.area,
+      address: norm.address,
+      bloodType: norm.bloodType,
+      emergencyContactName: norm.emergencyContactName,
+      emergencyContactPhone: norm.emergencyContactPhone,
       tipoContrato: "Propietario / Socio Fundador",
       createdBy: creatorUserId,
       createdAt: new Date(),
     };
 
     const updatedUser = await this.userModel.findOneAndUpdate(
-      { $or: [{ email }, { betterAuthId }] },
+      { $or: [{ email: norm.email }, { betterAuthId }] },
       {
         $set: {
-          email,
+          email: norm.email,
           betterAuthId,
           username,
           internalCode,
@@ -383,12 +543,29 @@ export class ContractorManagementService {
           isActive: true,
           profileCompleted: true,
           "profile.datos-personales": {
-            primerNombre: dto.primerNombre,
-            segundoNombre: dto.segundoNombre || "",
-            primerApellido: dto.primerApellido,
-            segundoApellido: dto.segundoApellido || "",
-            tipoDocumento: "Cédula de Ciudadanía",
-            numeroDocumento: dto.cedula.trim(),
+            primerNombre: norm.primerNombre,
+            segundoNombre: norm.segundoNombre || "",
+            primerApellido: norm.primerApellido,
+            segundoApellido: norm.segundoApellido || "",
+            tipoDocumento:
+              norm.docType === "CE"
+                ? "Cédula de Extranjería"
+                : norm.docType === "PASSPORT"
+                  ? "Pasaporte"
+                  : "Cédula de Ciudadanía",
+            numeroDocumento: norm.cedula,
+            fechaNacimiento: norm.birthDate || "",
+          },
+          "profile.contacto": {
+            celular: norm.telefono,
+            correoInstitucional: norm.email,
+            correoPersonal: norm.personalEmail || "",
+            direccion: norm.address || "",
+          },
+          "profile.salud-seguridad": {
+            rh: norm.bloodType || "O+",
+            contactoEmergenciaNombre: norm.emergencyContactName || "",
+            contactoEmergenciaTelefono: norm.emergencyContactPhone || "",
           },
         },
       },
@@ -397,10 +574,13 @@ export class ContractorManagementService {
 
     await getMongoDb()
       .collection("user")
-      .updateOne({ email }, { $set: { username, role: UserRole.SUPERADMIN } });
+      .updateOne(
+        { email: norm.email },
+        { $set: { username, role: UserRole.SUPERADMIN } },
+      );
 
     this.logger.log(
-      `Superadministrador creado exitosamente: usuario="${username}", email="${email}" por superadmin=${creatorUserId}`,
+      `Superadministrador creado exitosamente: usuario="${username}", email="${norm.email}" por superadmin=${creatorUserId}`,
     );
 
     return {
@@ -408,7 +588,7 @@ export class ContractorManagementService {
       superadmin: {
         _id: updatedUser._id,
         username,
-        email,
+        email: norm.email,
         role: UserRole.SUPERADMIN,
         contractorInfo,
       },

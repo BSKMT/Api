@@ -157,6 +157,18 @@ export class TierFeaturesDto {
 }
 
 export class UpdateSystemPricingConfigDto {
+  @IsOptional()
+  _id?: unknown;
+
+  @IsOptional()
+  createdAt?: unknown;
+
+  @IsOptional()
+  updatedAt?: unknown;
+
+  @IsOptional()
+  __v?: unknown;
+
   @IsNumber()
   @Min(2025)
   @Max(2100)

@@ -19,7 +19,13 @@ import {
 } from "../../events/schemas/course.schema";
 
 export class UpdateCourseDto {
-  // A-7: slug removed — slug is the identifier, cannot be changed via update
+  @IsOptional()
+  _id?: unknown;
+
+  @IsString()
+  @IsOptional()
+  slug?: string;
+
   @IsString()
   @MinLength(2)
   @MaxLength(200)
