@@ -145,6 +145,7 @@ export async function createMembershipPaymentHelper(
     pricingConfig.campaign,
     pricingConfig.seasonYear,
     now,
+    isRenewal,
   );
   const renewalAmt =
     pricingConfig.membership?.renewalAmount ?? MEMBERSHIP_RENEWAL_AMOUNT;
