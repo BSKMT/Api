@@ -29,6 +29,15 @@ export class CampaignConfig {
   @Prop({ required: true, default: "2027-01-31T23:59:59.000Z" })
   endDate!: string;
 
+  @Prop({ required: false, default: "2027-01-10T00:00:00.000Z" })
+  renewalStartDate?: string;
+
+  @Prop({ required: false, default: "2027-01-31T23:59:59.000Z" })
+  renewalEndDate?: string;
+
+  @Prop({ required: false, default: "2027-01-18T00:00:00.000Z" })
+  newMemberStartDate?: string;
+
   @Prop({ required: true, default: 150 })
   lotMinCapacity!: number;
 

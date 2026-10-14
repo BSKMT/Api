@@ -20,6 +20,9 @@ export const DEFAULT_PRICING_CONFIG: Omit<SystemPricingConfig, "updatedBy"> = {
   campaign: {
     startDate: "2027-01-10T00:00:00.000Z",
     endDate: "2027-01-31T23:59:59.000Z",
+    renewalStartDate: "2027-01-10T00:00:00.000Z",
+    renewalEndDate: "2027-01-31T23:59:59.000Z",
+    newMemberStartDate: "2027-01-18T00:00:00.000Z",
     lotMinCapacity: 150,
     lotMaxCapacity: 200,
     earlyBirdBonusAmount: 150000,

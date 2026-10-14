@@ -40,6 +40,18 @@ export class CampaignDto {
   @IsDateString()
   endDate!: string;
 
+  @IsOptional()
+  @IsDateString()
+  renewalStartDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  renewalEndDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  newMemberStartDate?: string;
+
   @IsNumber()
   @Min(1)
   lotMinCapacity!: number;
