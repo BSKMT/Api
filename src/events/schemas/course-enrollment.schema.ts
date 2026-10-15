@@ -47,6 +47,12 @@ export class CourseEnrollment {
   @Prop({ type: String, default: null })
   checkedInByName?: string | null;
 
+  @Prop({ default: false })
+  confirmationEmailSent?: boolean;
+
+  @Prop({ type: Date, default: null })
+  confirmationEmailSentAt?: Date | null;
+
   createdAt!: Date;
 
   updatedAt!: Date;

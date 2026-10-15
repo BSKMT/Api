@@ -13,6 +13,7 @@ import {
   ContactInternalEmail,
   type ContactInternalEmailProps,
 } from "./contact-internal";
+import { TicketNotificationEmail } from "./ticket-notification";
 
 export { EmailLayout, type EmailLayoutProps } from "./email-layout";
 export {
@@ -28,6 +29,10 @@ export {
   ContactInternalEmail,
   type ContactInternalEmailProps,
 } from "./contact-internal";
+export {
+  TicketNotificationEmail,
+  type TicketNotificationEmailProps,
+} from "./ticket-notification";
 
 export interface RenderedEmailResult {
   html: string;
@@ -106,4 +111,13 @@ export function renderContactInternal(
   props: ContactInternalEmailProps,
 ): Promise<RenderedEmailResult> {
   return renderReactEmail(React.createElement(ContactInternalEmail, props));
+}
+
+/**
+ * Renderiza el correo de confirmación de registro y ticket de asistencia con React Email.
+ */
+export function renderTicketNotification(
+  props: import("./ticket-notification").TicketNotificationEmailProps,
+): Promise<RenderedEmailResult> {
+  return renderReactEmail(React.createElement(TicketNotificationEmail, props));
 }

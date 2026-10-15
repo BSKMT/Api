@@ -71,6 +71,12 @@ export class EventRegistration {
 
   @Prop({ type: String, default: null })
   checkedInByName?: string | null;
+
+  @Prop({ default: false })
+  confirmationEmailSent?: boolean;
+
+  @Prop({ type: Date, default: null })
+  confirmationEmailSentAt?: Date | null;
 }
 
 export const EventRegistrationSchema =
