@@ -25,6 +25,12 @@ import {
   computeMembershipStatus,
   buildPrivilegedSection,
 } from "./public-profile.helpers";
+import {
+  serializeProfileIdentifier,
+  deserializeProfileIdentifier,
+  buildSecureQrPayload,
+  isSerializedProfileToken,
+} from "./profile-token.helper";
 
 export { SendFriendRequestDto };
 
@@ -44,9 +50,24 @@ export class PublicProfileController {
   private async findUserByIdentifier(
     identifier: string,
   ): Promise<Awaited<ReturnType<UsersService["findById"]>>> {
-    if (!identifier || identifier.length > 64) {
+    if (!identifier || identifier.length > 512) {
       return null;
     }
+
+    if (isSerializedProfileToken(identifier)) {
+      const parsed = deserializeProfileIdentifier(identifier);
+      if (!parsed) {
+        return null;
+      }
+      if (parsed.memberNumber) {
+        return this.usersService.findByMemberNumber(parsed.memberNumber);
+      }
+      if (parsed.userId) {
+        return this.usersService.findById(parsed.userId);
+      }
+      return null;
+    }
+
     const upper = identifier.toUpperCase();
     if (upper.startsWith("BSK-")) {
       return this.usersService.findByMemberNumber(upper);
@@ -105,14 +126,24 @@ export class PublicProfileController {
       }
     }
 
+    const isSerialized = isSerializedProfileToken(identifier);
     const user = await this.findUserByIdentifier(identifier);
     if (!user) {
-      throw new NotFoundException("Perfil no encontrado");
+      throw new NotFoundException("Perfil no encontrado o token inválido");
     }
 
     const isOwner =
       String(user._id) === requester.userId ||
       user.betterAuthId === requester.betterAuthId;
+
+    // Prevención de ataques de enumeración secuencial (Anti-IDOR):
+    // Si la consulta NO usó un token serializado seguro, y el consultante NO es staff operativo ni el dueño del perfil,
+    // se deniega el acceso para evitar scraping de perfiles mediante números correlativos (ej. BSK-10023 -> BSK-10024).
+    if (!isSerialized && !isStaff && !isOwner) {
+      throw new ForbiddenException(
+        "Acceso restringido: Para proteger la privacidad y prevenir ataques de enumeración de miembros, debes usar el enlace seguro serializado o escanear el carnet oficial con la cámara.",
+      );
+    }
 
     if (!user.profileCompleted && !isStaff && !isOwner) {
       throw new NotFoundException(
@@ -128,6 +159,13 @@ export class PublicProfileController {
     const memberNumber = str(membSection, "numeroMiembro");
     const personalSection = profile["datos-personales"];
 
+    const serializedProfileToken = memberNumber
+      ? serializeProfileIdentifier(memberNumber, String(user._id))
+      : null;
+    const secureQrPayload = serializedProfileToken
+      ? buildSecureQrPayload(serializedProfileToken)
+      : null;
+
     // Proyectar información privilegiada según el rol asignado
     const operationalData = isOwner
       ? null
@@ -140,6 +178,8 @@ export class PublicProfileController {
       displayName,
       firstName: personalSection?.primerNombre ?? displayName,
       memberNumber,
+      serializedProfileToken,
+      secureQrPayload,
       membershipLevel: user.membershipLevel ?? null,
       membershipStatus: membershipInfo.status,
       isMembershipValid: membershipInfo.isValid,

@@ -82,12 +82,13 @@ export function buildPrivacyFlags(user: unknown) {
   };
 }
 
-export function computeMembershipStatus(user: Record<string, unknown>): {
+export function computeMembershipStatus(user: unknown): {
   status: "ACTIVO" | "VENCIDO" | "INACTIVO";
   isValid: boolean;
   expiryFormatted: string | null;
 } {
-  const expiryRaw = user["membershipExpiryDate"];
+  const record = (user ?? {}) as Record<string, unknown>;
+  const expiryRaw = record["membershipExpiryDate"];
   if (!expiryRaw) {
     return { status: "INACTIVO", isValid: false, expiryFormatted: null };
   }
@@ -96,7 +97,7 @@ export function computeMembershipStatus(user: Record<string, unknown>): {
     return { status: "INACTIVO", isValid: false, expiryFormatted: null };
   }
   const now = new Date();
-  const isValid = expiry > now && !user["membershipExpired"];
+  const isValid = expiry > now && !record["membershipExpired"];
   return {
     status: isValid ? "ACTIVO" : "VENCIDO",
     isValid,
