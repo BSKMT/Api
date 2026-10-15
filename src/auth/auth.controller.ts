@@ -3,6 +3,11 @@ import type { Request } from "express";
 import { UsersService } from "../users/users.service";
 import { SessionGuard } from "./session.guard";
 
+import {
+  serializeProfileIdentifier,
+  buildSecureQrPayload,
+} from "../profile/profile-token.helper";
+
 interface AuthenticatedUser {
   userId: string;
   email: string;
@@ -38,6 +43,12 @@ export class AuthController {
       memberNumber = await this.usersService.ensureOfficialNumber(fullUser);
     }
     const personal = fullUser?.profile?.["datos-personales"] ?? {};
+    const serializedProfileToken = memberNumber
+      ? serializeProfileIdentifier(memberNumber, user.userId)
+      : null;
+    const secureQrPayload = serializedProfileToken
+      ? buildSecureQrPayload(serializedProfileToken)
+      : null;
 
     return {
       userId: user.userId,
@@ -48,6 +59,8 @@ export class AuthController {
       primerApellido: (personal.primerApellido as string) ?? null,
       segundoApellido: (personal.segundoApellido as string) ?? null,
       memberNumber,
+      serializedProfileToken,
+      secureQrPayload,
       phone: fullUser?.phone ?? null,
       phoneVerified: fullUser?.phoneVerified ?? false,
       pendingPhone: fullUser?.pendingPhone ?? null,
