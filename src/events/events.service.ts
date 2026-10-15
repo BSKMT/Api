@@ -37,6 +37,10 @@ import {
   executeCancelRegistration,
   executeSweepStaleRegistrations,
 } from "./events-sweep.helpers";
+import { ConfigService } from "@nestjs/config";
+import { User, UserDocument } from "../users/schemas/user.schema";
+import { BirdEmailService } from "../bird/bird-email.service";
+import { dispatchConfirmedEventTicketNotification } from "./events-ticket-notification.helper";
 import type { CoursePricing } from "./events.constants";
 import type { CoursePricingInput } from "./events-course-pricing.helpers";
 
@@ -56,9 +60,13 @@ export class EventsService {
     private readonly courseModel: Model<CourseDocument>,
     @InjectModel(CourseEnrollment.name)
     private readonly courseEnrollmentModel: Model<CourseEnrollmentDocument>,
+    @InjectModel(User.name)
+    private readonly userModel: Model<UserDocument>,
     private readonly notificationsService: NotificationsService,
     private readonly kvCache: KvCacheService,
     private readonly coursesService: CoursesService,
+    private readonly birdEmailService: BirdEmailService,
+    private readonly configService: ConfigService,
   ) {}
 
   async registerForEvent(
@@ -66,7 +74,7 @@ export class EventsService {
     dto: RegisterEventDto,
     membershipLevel: string | null,
   ): Promise<EventRegistrationDocument> {
-    return executeRegisterForEvent(
+    const registration = await executeRegisterForEvent(
       this.eventModel,
       this.eventRegistrationModel,
       userId,
@@ -74,19 +82,67 @@ export class EventsService {
       membershipLevel,
       this.logger,
     );
+
+    if (
+      registration.status === "CONFIRMED" &&
+      (registration.paymentConfirmed ||
+        registration.membershipStatus === "active-member" ||
+        registration.membershipStatus === "non-member-free")
+    ) {
+      const event = await this.eventModel.findOne({ slug: dto.eventSlug });
+      if (event) {
+        const panelUrl =
+          this.configService.get<string>("PANEL_URL") ??
+          "https://panel.bskmt.com";
+        void dispatchConfirmedEventTicketNotification(
+          registration,
+          event,
+          this.userModel,
+          this.birdEmailService,
+          panelUrl,
+          this.logger,
+        );
+      }
+    }
+
+    return registration;
   }
 
   async confirmRegistration(
     userId: string,
     eventSlug: string,
   ): Promise<EventRegistrationDocument> {
-    return executeConfirmRegistration(
+    const registration = await executeConfirmRegistration(
       this.eventModel,
       this.eventRegistrationModel,
       userId,
       eventSlug,
       this.logger,
     );
+
+    if (
+      registration.status === "CONFIRMED" &&
+      (registration.paymentConfirmed ||
+        registration.membershipStatus === "active-member" ||
+        registration.membershipStatus === "non-member-free")
+    ) {
+      const event = await this.eventModel.findOne({ slug: eventSlug });
+      if (event) {
+        const panelUrl =
+          this.configService.get<string>("PANEL_URL") ??
+          "https://panel.bskmt.com";
+        void dispatchConfirmedEventTicketNotification(
+          registration,
+          event,
+          this.userModel,
+          this.birdEmailService,
+          panelUrl,
+          this.logger,
+        );
+      }
+    }
+
+    return registration;
   }
 
   async acceptWaiver(
@@ -122,7 +178,7 @@ export class EventsService {
     eventSlug: string,
     transactionReference: string,
   ): Promise<EventRegistrationDocument> {
-    return executeLinkPayment(
+    const registration = await executeLinkPayment(
       this.eventModel,
       this.eventRegistrationModel,
       userId,
@@ -130,6 +186,25 @@ export class EventsService {
       transactionReference,
       this.logger,
     );
+
+    if (registration.paymentConfirmed) {
+      const event = await this.eventModel.findOne({ slug: eventSlug });
+      if (event) {
+        const panelUrl =
+          this.configService.get<string>("PANEL_URL") ??
+          "https://panel.bskmt.com";
+        void dispatchConfirmedEventTicketNotification(
+          registration,
+          event,
+          this.userModel,
+          this.birdEmailService,
+          panelUrl,
+          this.logger,
+        );
+      }
+    }
+
+    return registration;
   }
 
   async getRegistration(userId: string, eventSlug: string) {

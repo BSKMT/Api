@@ -5,12 +5,14 @@ import {
   emailVerificationTemplate,
   notificationTemplate,
   passwordResetTemplate,
+  ticketNotificationTemplate,
 } from "./email.templates";
 import {
   renderContactInternal,
   renderEmailVerification,
   renderNotification,
   renderPasswordReset,
+  renderTicketNotification,
 } from "./templates";
 import { maskEmail } from "../common/utils/log-redact.util";
 import { formatBirdError, renderWithFallback } from "./bird-email.helpers";
@@ -183,6 +185,75 @@ export class BirdEmailService {
     } catch (err: unknown) {
       this.logger.error(
         `Error enviando correo de reset via Bird: ${formatBirdError(err)}`,
+      );
+      return false;
+    }
+  }
+
+  async sendTicketNotificationEmail(data: {
+    to: string;
+    recipientName: string;
+    type: "EVENT" | "COURSE";
+    title: string;
+    slug: string;
+    checkInCode: string;
+    qrDataUrl: string;
+    dateText: string;
+    timeText?: string;
+    locationText?: string;
+    meetingPointText?: string;
+    coordinatorName?: string;
+    panelUrl: string;
+    pdfBuffer?: Buffer;
+  }): Promise<boolean> {
+    if (!this.birdService.isConfigured()) {
+      this.logger.warn(
+        `Bird no configurado: correo de ticket para ${maskEmail(data.to)} omitido`,
+      );
+      return false;
+    }
+
+    try {
+      const client = await this.birdService.getClient();
+      const rendered = await renderWithFallback(
+        () => renderTicketNotification(data),
+        () => ticketNotificationTemplate(data),
+        this.logger,
+        "ticket",
+      );
+
+      const attachments = data.pdfBuffer
+        ? [
+            {
+              filename: `Ticket-BSK-${data.checkInCode}.pdf`,
+              content: data.pdfBuffer.toString("base64"),
+              content_type: "application/pdf",
+            },
+          ]
+        : undefined;
+
+      const subject =
+        data.type === "EVENT"
+          ? `¡Tu registro está confirmado! Pase de Asistencia BSK · ${data.title}`
+          : `¡Tu matrícula está confirmada! Ticket Oficial BSK Academy · ${data.title}`;
+
+      await client.email.send({
+        from: this.getFrom(),
+        to: [data.to],
+        subject,
+        html: rendered.html,
+        ...(rendered.text ? { text: rendered.text } : {}),
+        category: "transactional",
+        ...(attachments ? { attachments } : {}),
+      });
+
+      this.logger.log(
+        `Ticket de ${data.type} (${data.checkInCode}) enviado exitosamente a ${maskEmail(data.to)} via Bird`,
+      );
+      return true;
+    } catch (err: unknown) {
+      this.logger.error(
+        `Error enviando correo de ticket via Bird a ${maskEmail(data.to)}: ${formatBirdError(err)}`,
       );
       return false;
     }

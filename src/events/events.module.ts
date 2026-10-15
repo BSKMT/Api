@@ -19,6 +19,7 @@ import { UsersModule } from "../users/users.module";
 // cancelCourseEnrollment can emit a notification when a paid entry
 // is cancelled (refund pending admin review).
 import { NotificationsModule } from "../notifications/notifications.module";
+import { BirdModule } from "../bird/bird.module";
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { NotificationsModule } from "../notifications/notifications.module";
     ]),
     UsersModule,
     NotificationsModule,
+    BirdModule,
   ],
   controllers: [EventsController, CoursesController],
   providers: [EventsService, CoursesService],

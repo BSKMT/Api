@@ -149,6 +149,55 @@ export function passwordResetTemplate(data: {
   );
 }
 
+export function ticketNotificationTemplate(data: {
+  recipientName: string;
+  type: "EVENT" | "COURSE";
+  title: string;
+  checkInCode: string;
+  qrDataUrl: string;
+  dateText: string;
+  timeText?: string;
+  locationText?: string;
+  meetingPointText?: string;
+  coordinatorName?: string;
+  panelUrl: string;
+}): string {
+  const safeName = escapeHtml(data.recipientName);
+  const safeTitle = escapeHtml(data.title);
+  const safeCode = escapeHtml(data.checkInCode);
+  const safeDate = escapeHtml(data.dateText);
+  const safeLoc = escapeHtml(
+    data.meetingPointText || data.locationText || "Punto oficial BSK",
+  );
+  const safeUrl = escapeHtml(data.panelUrl);
+  const typeLabel = data.type === "EVENT" ? "Evento" : "Curso";
+
+  return SHELL(
+    `Confirmación de Registro y Ticket - ${safeTitle}`,
+    `${HEADING(`¡Tu registro en ${safeTitle} está confirmado!`)}
+    ${PARAGRAPH(`Hola ${safeName}, tu cupo para el ${typeLabel.toLowerCase()} <strong>${safeTitle}</strong> ha sido confirmado exitosamente.`)}
+    <div style="background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin:16px 0;">
+      <p style="margin:0 0 8px;font-size:13px;color:#1e293b;"><strong>Fecha:</strong> ${safeDate} ${data.timeText ? `· ${escapeHtml(data.timeText)}` : ""}</p>
+      <p style="margin:0 0 8px;font-size:13px;color:#1e293b;"><strong>Lugar / Encuentro:</strong> ${safeLoc}</p>
+      ${data.coordinatorName ? `<p style="margin:0;font-size:13px;color:#1e293b;"><strong>Coordinador:</strong> ${escapeHtml(data.coordinatorName)}</p>` : ""}
+    </div>
+    <div style="background-color:#ffffff;border:2px dashed #cbd5e1;border-radius:16px;padding:20px;text-align:center;margin:20px 0;">
+      <p style="margin:0 0 12px;color:#dc2626;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">PASE DIGITAL DE ASISTENCIA</p>
+      <img src="${data.qrDataUrl}" width="180" height="180" alt="QR Asistencia" style="display:block;margin:0 auto 12px;" />
+      <p style="margin:0;font-family:Courier,monospace;font-size:22px;font-weight:800;color:#0f172a;">${safeCode}</p>
+      <p style="margin:4px 0 0;font-size:11px;color:#64748b;">Presenta este código al coordinador en campo</p>
+    </div>
+    <p style="background-color:#f1f5f9;border-left:4px solid #38bdf8;padding:10px 14px;border-radius:4px;font-size:12px;color:#334155;">
+      📎 <strong>Ticket PDF adjunto:</strong> Hemos adjuntado tu ticket oficial en formato PDF para que puedas guardarlo o imprimirlo.
+    </p>
+    <p style="margin:24px 0;text-align:center;">
+      <a href="${safeUrl}" style="display:inline-block;background-color:#dc2626;color:#ffffff;font-size:14px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;padding:12px 32px;border-radius:9999px;text-decoration:none;">
+        Ver en el Panel BSK
+      </a>
+    </p>`,
+  );
+}
+
 // ── SMS Text Templates ─────────────────────────────────────────────
 //
 // SMS messages are billed per segment (160 GSM-7 chars, 70 UCS-2).

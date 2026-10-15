@@ -13,6 +13,12 @@ export interface BirdEmailSendParams {
   metadata?: Record<string, unknown>;
   track_opens?: boolean;
   track_clicks?: boolean;
+  attachments?: {
+    filename: string;
+    content: string;
+    content_type?: string;
+    content_id?: string;
+  }[];
 }
 
 /** Respuesta de Bird Email (`202 Accepted`). */

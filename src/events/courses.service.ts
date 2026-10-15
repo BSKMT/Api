@@ -25,6 +25,10 @@ import {
   generateCheckInCode,
   buildQrTicketPayload,
 } from "./events-checkin.helpers";
+import { ConfigService } from "@nestjs/config";
+import { User, UserDocument } from "../users/schemas/user.schema";
+import { BirdEmailService } from "../bird/bird-email.service";
+import { dispatchConfirmedCourseTicketNotification } from "./events-ticket-notification.helper";
 import type { CoursePricing } from "./events.constants";
 import type { CoursePricingInput } from "./events-course-pricing.helpers";
 
@@ -37,8 +41,12 @@ export class CoursesService {
     private readonly courseModel: Model<CourseDocument>,
     @InjectModel(CourseEnrollment.name)
     private readonly courseEnrollmentModel: Model<CourseEnrollmentDocument>,
+    @InjectModel(User.name)
+    private readonly userModel: Model<UserDocument>,
     private readonly notificationsService: NotificationsService,
     private readonly kvCache: KvCacheService,
+    private readonly birdEmailService: BirdEmailService,
+    private readonly configService: ConfigService,
   ) {}
 
   async getAvailableCourses(limit = 6) {
@@ -54,7 +62,7 @@ export class CoursesService {
     courseSlug: string,
     membershipLevel: string | null,
   ): Promise<{ enrollment: CourseEnrollmentDocument; pricing: CoursePricing }> {
-    return executeEnrollInCourse(
+    const result = await executeEnrollInCourse(
       this.courseModel,
       this.courseEnrollmentModel,
       userId,
@@ -62,6 +70,28 @@ export class CoursesService {
       membershipLevel,
       this.logger,
     );
+
+    if (
+      result.enrollment.status === "ACTIVE" &&
+      result.enrollment.paymentConfirmed
+    ) {
+      const course = await this.courseModel.findOne({ slug: courseSlug });
+      if (course) {
+        const panelUrl =
+          this.configService.get<string>("PANEL_URL") ??
+          "https://panel.bskmt.com";
+        void dispatchConfirmedCourseTicketNotification(
+          result.enrollment,
+          course,
+          this.userModel,
+          this.birdEmailService,
+          panelUrl,
+          this.logger,
+        );
+      }
+    }
+
+    return result;
   }
 
   calculateCoursePricing(
@@ -100,13 +130,32 @@ export class CoursesService {
     courseSlug: string,
     transactionReference: string,
   ): Promise<CourseEnrollmentDocument> {
-    return executeLinkCoursePayment(
+    const enrollment = await executeLinkCoursePayment(
       this.courseEnrollmentModel,
       userId,
       courseSlug,
       transactionReference,
       this.logger,
     );
+
+    if (enrollment.paymentConfirmed) {
+      const course = await this.courseModel.findOne({ slug: courseSlug });
+      if (course) {
+        const panelUrl =
+          this.configService.get<string>("PANEL_URL") ??
+          "https://panel.bskmt.com";
+        void dispatchConfirmedCourseTicketNotification(
+          enrollment,
+          course,
+          this.userModel,
+          this.birdEmailService,
+          panelUrl,
+          this.logger,
+        );
+      }
+    }
+
+    return enrollment;
   }
 
   async getMyEnrollments(userId: string, includeCancelled = false) {
