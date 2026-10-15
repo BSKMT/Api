@@ -8,24 +8,34 @@ import {
   Body,
   BadRequestException,
   ForbiddenException,
+  UnauthorizedException,
   UseGuards,
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import type { Request } from "express";
 import { UsersService } from "../users/users.service";
 import { SessionGuard } from "../auth/session.guard";
-import { Public } from "../common/decorators";
 import { SendFriendRequestDto } from "./public-profile.dto";
 import {
-  getUserIdFromSession,
   deriveDisplayName,
   privacyFlag,
   str,
   buildPrivacyFlags,
   buildOptionalSections,
+  computeMembershipStatus,
+  buildPrivilegedSection,
 } from "./public-profile.helpers";
 
 export { SendFriendRequestDto };
+
+interface AuthenticatedRequestUser {
+  userId: string;
+  email: string;
+  role: string;
+  subrol?: string | null;
+  adminPermissions?: string[];
+  betterAuthId: string;
+}
 
 @Controller("profile")
 export class PublicProfileController {
@@ -47,41 +57,93 @@ export class PublicProfileController {
     return null;
   }
 
-  @Public()
+  /**
+   * Consulta de perfil y credencial oficial de membresía BSK.
+   *
+   * POLÍTICA DE SEGURIDAD Y PROTECCIÓN DE DATOS:
+   * - Acceso restringido exclusivamente a personas registradas y logueadas (SessionGuard obligatorio).
+   * - Si un usuario común (miembro) consulta el perfil, ÚNICAMENTE recibe información pública:
+   *   nombre de display, número de miembro, nivel y estado oficial de membresía (ACTIVO/VENCIDO),
+   *   y secciones opcionales (moto/rutas) según los ajustes de privacidad del titular.
+   * - CERO divulgación de datos privados (cédula, celular, dirección, contactos de emergencia, ARPHA).
+   * - Si el consultante tiene rol de staff operativo (Gestor en Fascia, Administrador en Console,
+   *   o Gerente Superadmin), se incluye un bloque `operationalData` estrictamente acotado a las
+   *   funciones de su rol/subrol asignado (ej. Gestor de Eventos solo ve logística/asistencia;
+   *   Gestor ARPHA solo ve atención de salud; Administrador ve gestión administrativa; Gerente ve 360°).
+   */
   @Get("public/:identifier")
+  @UseGuards(SessionGuard)
   @Throttle({ default: { ttl: 10000, limit: 20 } })
   async getPublicProfile(
     @Param("identifier") identifier: string,
-    @Req() req: Request,
+    @Req() req: Request & { user?: AuthenticatedRequestUser },
   ) {
+    const requester = req.user;
+    if (!requester || !requester.userId) {
+      throw new UnauthorizedException(
+        "Acceso restringido: Debes estar registrado e iniciar sesión en BSK para consultar perfiles de la comunidad.",
+      );
+    }
+
+    // Verificar si el consultante es staff o usuario común
+    const requesterRole = (requester.role || "").toLowerCase();
+    const isStaff =
+      requesterRole === "superadmin" ||
+      requesterRole === "admin" ||
+      requesterRole === "gestor" ||
+      requesterRole === "road-captain" ||
+      requesterRole === "event-manager" ||
+      Boolean(requester.subrol);
+
+    // Un usuario común debe tener su propio perfil completo antes de poder consultar a otros miembros
+    if (!isStaff) {
+      const requesterDoc = await this.usersService.findById(requester.userId);
+      if (requesterDoc && !requesterDoc.profileCompleted) {
+        throw new ForbiddenException(
+          "Debes completar tu propio perfil y aceptar las políticas de tratamiento de datos antes de consultar perfiles de la comunidad.",
+        );
+      }
+    }
+
     const user = await this.findUserByIdentifier(identifier);
     if (!user) {
       throw new NotFoundException("Perfil no encontrado");
     }
-    if (!user.profileCompleted) {
-      throw new NotFoundException("Perfil no disponible");
-    }
 
-    const requesterUserId = await getUserIdFromSession(req);
     const isOwner =
-      requesterUserId !== null && requesterUserId === user.betterAuthId;
+      String(user._id) === requester.userId ||
+      user.betterAuthId === requester.betterAuthId;
 
-    const privacy = buildPrivacyFlags(user);
-    if (!isOwner && !privacy.profileVisible) {
-      throw new NotFoundException("Perfil no disponible");
+    if (!user.profileCompleted && !isStaff && !isOwner) {
+      throw new NotFoundException(
+        "Perfil no disponible: El miembro aún no ha completado su registro oficial.",
+      );
     }
 
+    const membershipInfo = computeMembershipStatus(user);
+    const privacy = buildPrivacyFlags(user);
     const profile = user.profile ?? {};
     const displayName = deriveDisplayName(profile, user.email);
     const membSection = profile["membresia-ecosistema"] ?? {};
     const memberNumber = str(membSection, "numeroMiembro");
     const personalSection = profile["datos-personales"];
 
+    // Proyectar información privilegiada según el rol asignado
+    const operationalData = isOwner
+      ? null
+      : buildPrivilegedSection(
+          user as unknown as Record<string, unknown>,
+          requester,
+        );
+
     const response: Record<string, unknown> = {
       displayName,
       firstName: personalSection?.primerNombre ?? displayName,
       memberNumber,
       membershipLevel: user.membershipLevel ?? null,
+      membershipStatus: membershipInfo.status,
+      isMembershipValid: membershipInfo.isValid,
+      membershipExpiryFormatted: membershipInfo.expiryFormatted,
       role: isOwner ? user.role : null,
       memberSince: (user as unknown as { createdAt?: Date }).createdAt
         ? new Date(
@@ -91,7 +153,9 @@ export class PublicProfileController {
       profileCompleted: user.profileCompleted,
       isOwner,
       privacy,
+      isProfilePrivate: !privacy.profileVisible,
       ...buildOptionalSections(profile, privacy, isOwner),
+      ...(operationalData ? { operationalData } : {}),
     };
 
     return response;

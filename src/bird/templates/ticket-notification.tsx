@@ -32,8 +32,7 @@ export const TicketNotificationEmail: React.FC<
   coordinatorName,
   panelUrl,
 }) => {
-  const typeLabel =
-    type === "EVENT" ? "Evento BSK" : "Curso / Academia BSK";
+  const typeLabel = type === "EVENT" ? "Evento BSK" : "Curso / Academia BSK";
 
   return (
     <EmailLayout
@@ -49,9 +48,10 @@ export const TicketNotificationEmail: React.FC<
         </Heading>
 
         <Text style={introTextStyle} className="bsk-paragraph">
-          Hola <strong>{recipientName}</strong>, tu lugar en el {typeLabel.toLowerCase()}{" "}
-          <strong>&ldquo;{title}&rdquo;</strong> ha sido validado exitosamente. A
-          continuación encontrarás tu ticket oficial de acceso y asistencia.
+          Hola <strong>{recipientName}</strong>, tu lugar en el{" "}
+          {typeLabel.toLowerCase()} <strong>&ldquo;{title}&rdquo;</strong> ha
+          sido validado exitosamente. A continuación encontrarás tu ticket
+          oficial de acceso y asistencia.
         </Text>
 
         {/* Tarjeta de detalles del evento */}
