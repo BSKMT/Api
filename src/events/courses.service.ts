@@ -21,6 +21,10 @@ import {
   queryAvailableCourses,
   queryCourseBySlug,
 } from "./events-query.helpers";
+import {
+  generateCheckInCode,
+  buildQrTicketPayload,
+} from "./events-checkin.helpers";
 import type { CoursePricing } from "./events.constants";
 import type { CoursePricingInput } from "./events-course-pricing.helpers";
 
@@ -110,10 +114,41 @@ export class CoursesService {
     if (!includeCancelled) {
       filter.status = { $ne: "CANCELLED" };
     }
-    return this.courseEnrollmentModel.find(filter).sort({ createdAt: -1 });
+    const enrollments = await this.courseEnrollmentModel
+      .find(filter)
+      .sort({ createdAt: -1 });
+    for (const enr of enrollments) {
+      if (!enr.checkInCode) {
+        const code = generateCheckInCode("CRS");
+        enr.checkInCode = code;
+        enr.qrCodeData = buildQrTicketPayload("COURSE", {
+          registrationId: String(enr._id),
+          slug: enr.courseSlug,
+          checkInCode: code,
+          userId,
+        });
+        await enr.save();
+      }
+    }
+    return enrollments;
   }
 
   async getEnrollmentByUserAndCourse(userId: string, courseSlug: string) {
-    return this.courseEnrollmentModel.findOne({ userId, courseSlug });
+    const enrollment = await this.courseEnrollmentModel.findOne({
+      userId,
+      courseSlug,
+    });
+    if (enrollment && !enrollment.checkInCode) {
+      const code = generateCheckInCode("CRS");
+      enrollment.checkInCode = code;
+      enrollment.qrCodeData = buildQrTicketPayload("COURSE", {
+        registrationId: String(enrollment._id),
+        slug: courseSlug,
+        checkInCode: code,
+        userId,
+      });
+      await enrollment.save();
+    }
+    return enrollment;
   }
 }

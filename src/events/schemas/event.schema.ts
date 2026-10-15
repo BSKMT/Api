@@ -168,6 +168,15 @@ export class Event {
 
   @Prop({ type: Array, default: [] })
   itinerary!: ItineraryDay[];
+
+  @Prop({ type: String, default: null, index: true })
+  coordinatorId?: string | null;
+
+  @Prop({ type: String, default: null })
+  coordinatorName?: string | null;
+
+  @Prop({ type: String, default: null })
+  coordinatorEmail?: string | null;
 }
 
 export const EventSchema = SchemaFactory.createForClass(Event);
@@ -175,3 +184,4 @@ export const EventSchema = SchemaFactory.createForClass(Event);
 EventSchema.index({ date: 1, status: 1 });
 EventSchema.index({ category: 1, status: 1 });
 EventSchema.index({ featured: 1, status: 1 });
+EventSchema.index({ coordinatorId: 1 });

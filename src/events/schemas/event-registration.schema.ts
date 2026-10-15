@@ -53,9 +53,28 @@ export class EventRegistration {
 
   @Prop({ type: Date, default: null })
   confirmedAt!: Date | null;
+
+  @Prop({ type: String, default: null, index: true, sparse: true })
+  checkInCode?: string | null;
+
+  @Prop({ type: String, default: null })
+  qrCodeData?: string | null;
+
+  @Prop({ default: false, index: true })
+  attendanceConfirmed!: boolean;
+
+  @Prop({ type: Date, default: null })
+  attendedAt!: Date | null;
+
+  @Prop({ type: String, default: null })
+  checkedInBy?: string | null;
+
+  @Prop({ type: String, default: null })
+  checkedInByName?: string | null;
 }
 
 export const EventRegistrationSchema =
   SchemaFactory.createForClass(EventRegistration);
 
 EventRegistrationSchema.index({ userId: 1, eventSlug: 1 }, { unique: true });
+EventRegistrationSchema.index({ eventSlug: 1, attendanceConfirmed: 1 });

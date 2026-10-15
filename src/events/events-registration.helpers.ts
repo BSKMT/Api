@@ -78,6 +78,11 @@ export async function incrementEventRegisteredCount(
   }
 }
 
+import {
+  generateCheckInCode,
+  buildQrTicketPayload,
+} from "./events-checkin.helpers";
+
 export async function updateCancelledRegistration(
   eventModel: Model<EventDocument>,
   existing: EventRegistrationDocument,
@@ -98,6 +103,17 @@ export async function updateCancelledRegistration(
   existing.waiverAcceptedAt = null;
   existing.transactionReference = null;
   existing.companionData = null;
+  existing.attendanceConfirmed = false;
+  existing.attendedAt = null;
+  existing.checkedInBy = null;
+  existing.checkedInByName = null;
+  existing.checkInCode = existing.checkInCode || generateCheckInCode("EVT");
+  existing.qrCodeData = buildQrTicketPayload("EVENT", {
+    registrationId: String(existing._id),
+    slug: dto.eventSlug,
+    checkInCode: existing.checkInCode,
+    userId,
+  });
   await incrementEventRegisteredCount(eventModel, dto.eventSlug, event);
   const saved = await existing.save();
   logger.log(
@@ -116,6 +132,7 @@ export async function createNewRegistration(
   event: EventDocument,
   logger: Logger,
 ): Promise<EventRegistrationDocument> {
+  const checkInCode = generateCheckInCode("EVT");
   const registration = new eventRegistrationModel({
     userId,
     eventSlug: dto.eventSlug,
@@ -124,6 +141,15 @@ export async function createNewRegistration(
     status,
     membershipStatus,
     confirmedAt: status === "CONFIRMED" ? new Date() : null,
+    checkInCode,
+    attendanceConfirmed: false,
+  });
+
+  registration.qrCodeData = buildQrTicketPayload("EVENT", {
+    registrationId: String(registration._id),
+    slug: dto.eventSlug,
+    checkInCode,
+    userId,
   });
 
   const saved = await registration.save();
@@ -134,7 +160,7 @@ export async function createNewRegistration(
     throw err;
   }
   logger.log(
-    `Event registration: user=${userId} event=${dto.eventSlug} status=${status}`,
+    `Event registration: user=${userId} event=${dto.eventSlug} status=${status} checkInCode=${checkInCode}`,
   );
   return saved;
 }
