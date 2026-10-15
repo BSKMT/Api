@@ -30,6 +30,10 @@ import {
   queryEventStats,
 } from "./events-query.helpers";
 import {
+  generateCheckInCode,
+  buildQrTicketPayload,
+} from "./events-checkin.helpers";
+import {
   executeCancelRegistration,
   executeSweepStaleRegistrations,
 } from "./events-sweep.helpers";
@@ -129,11 +133,42 @@ export class EventsService {
   }
 
   async getRegistration(userId: string, eventSlug: string) {
-    return this.eventRegistrationModel.findOne({ userId, eventSlug });
+    const reg = await this.eventRegistrationModel.findOne({
+      userId,
+      eventSlug,
+    });
+    if (reg && !reg.checkInCode) {
+      const code = generateCheckInCode("EVT");
+      reg.checkInCode = code;
+      reg.qrCodeData = buildQrTicketPayload("EVENT", {
+        registrationId: String(reg._id),
+        slug: eventSlug,
+        checkInCode: code,
+        userId,
+      });
+      await reg.save();
+    }
+    return reg;
   }
 
   async getRegistrationsByUser(userId: string) {
-    return this.eventRegistrationModel.find({ userId }).sort({ createdAt: -1 });
+    const regs = await this.eventRegistrationModel
+      .find({ userId })
+      .sort({ createdAt: -1 });
+    for (const reg of regs) {
+      if (!reg.checkInCode) {
+        const code = generateCheckInCode("EVT");
+        reg.checkInCode = code;
+        reg.qrCodeData = buildQrTicketPayload("EVENT", {
+          registrationId: String(reg._id),
+          slug: reg.eventSlug,
+          checkInCode: code,
+          userId,
+        });
+        await reg.save();
+      }
+    }
+    return regs;
   }
 
   async getUpcomingEvents(limit: number = 6) {

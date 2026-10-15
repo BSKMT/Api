@@ -9,6 +9,10 @@ import type { CourseDocument } from "./schemas/course.schema";
 import type { CourseEnrollmentDocument } from "./schemas/course-enrollment.schema";
 import type { CoursePricing } from "./events.constants";
 import { calculateCoursePricing } from "./events-course-pricing.helpers";
+import {
+  generateCheckInCode,
+  buildQrTicketPayload,
+} from "./events-checkin.helpers";
 
 export { calculateCoursePricing };
 
@@ -94,6 +98,17 @@ export async function handleReEnrollment(
   existing.transactionReference = null;
   existing.completedAt = null;
   existing.certificateId = null;
+  existing.attendanceConfirmed = false;
+  existing.attendedAt = null;
+  existing.checkedInBy = null;
+  existing.checkedInByName = null;
+  existing.checkInCode = existing.checkInCode || generateCheckInCode("CRS");
+  existing.qrCodeData = buildQrTicketPayload("COURSE", {
+    registrationId: String(existing._id),
+    slug: courseSlug,
+    checkInCode: existing.checkInCode,
+    userId,
+  });
   try {
     await existing.save();
   } catch (saveErr) {
@@ -119,12 +134,22 @@ export async function handleNewEnrollment(
   pricing: CoursePricing,
   logger: Logger,
 ): Promise<{ enrollment: CourseEnrollmentDocument; pricing: CoursePricing }> {
+  const checkInCode = generateCheckInCode("CRS");
   const enrollment = new courseEnrollmentModel({
     userId,
     courseSlug,
     status: pricing.requiresPayment ? "PENDING" : "ACTIVE",
     progress: 0,
     paymentConfirmed: !pricing.requiresPayment,
+    checkInCode,
+    attendanceConfirmed: false,
+  });
+
+  enrollment.qrCodeData = buildQrTicketPayload("COURSE", {
+    registrationId: String(enrollment._id),
+    slug: courseSlug,
+    checkInCode,
+    userId,
   });
 
   let saved: CourseEnrollmentDocument;

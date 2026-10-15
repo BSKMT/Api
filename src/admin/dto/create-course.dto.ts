@@ -119,4 +119,16 @@ export class CreateCourseDto {
   @IsArray()
   @IsOptional()
   itinerary?: Array<Record<string, unknown>>;
+
+  @IsString()
+  @IsOptional()
+  coordinatorId?: string;
+
+  @IsString()
+  @IsOptional()
+  coordinatorName?: string;
+
+  @IsString()
+  @IsOptional()
+  coordinatorEmail?: string;
 }

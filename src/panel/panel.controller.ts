@@ -93,7 +93,7 @@ export class PanelController {
     ] = await Promise.all([
       this.eventRegistrationModel.countDocuments({
         userId: user.userId,
-        status: "CONFIRMED",
+        attendanceConfirmed: true,
       }),
       this.courseEnrollmentModel.countDocuments({
         userId: user.userId,

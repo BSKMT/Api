@@ -105,6 +105,15 @@ export class Course {
 
   @Prop({ type: Object, default: {} })
   metadata!: Record<string, unknown>;
+
+  @Prop({ type: String, default: null, index: true })
+  coordinatorId?: string | null;
+
+  @Prop({ type: String, default: null })
+  coordinatorName?: string | null;
+
+  @Prop({ type: String, default: null })
+  coordinatorEmail?: string | null;
 }
 
 export const CourseSchema = SchemaFactory.createForClass(Course);
@@ -112,3 +121,4 @@ export const CourseSchema = SchemaFactory.createForClass(Course);
 CourseSchema.index({ level: 1, status: 1 });
 CourseSchema.index({ format: 1, status: 1 });
 CourseSchema.index({ featured: 1, status: 1 });
+CourseSchema.index({ coordinatorId: 1 });

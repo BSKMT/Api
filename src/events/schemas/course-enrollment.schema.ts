@@ -29,6 +29,24 @@ export class CourseEnrollment {
   @Prop({ type: String, default: null })
   certificateId!: string | null;
 
+  @Prop({ type: String, default: null, index: true, sparse: true })
+  checkInCode?: string | null;
+
+  @Prop({ type: String, default: null })
+  qrCodeData?: string | null;
+
+  @Prop({ default: false, index: true })
+  attendanceConfirmed!: boolean;
+
+  @Prop({ type: Date, default: null })
+  attendedAt!: Date | null;
+
+  @Prop({ type: String, default: null })
+  checkedInBy?: string | null;
+
+  @Prop({ type: String, default: null })
+  checkedInByName?: string | null;
+
   createdAt!: Date;
 
   updatedAt!: Date;
@@ -38,3 +56,4 @@ export const CourseEnrollmentSchema =
   SchemaFactory.createForClass(CourseEnrollment);
 
 CourseEnrollmentSchema.index({ userId: 1, courseSlug: 1 }, { unique: true });
+CourseEnrollmentSchema.index({ courseSlug: 1, attendanceConfirmed: 1 });
