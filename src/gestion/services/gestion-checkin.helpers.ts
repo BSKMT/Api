@@ -3,7 +3,9 @@ import { parseCheckInInput } from "../../events/events-checkin.helpers";
 
 const OBJECT_ID_REGEX = /^[0-9a-fA-F]{24}$/;
 
-export function buildCheckInOrClauses(codeOrQr: string): Record<string, unknown>[] {
+export function buildCheckInOrClauses(
+  codeOrQr: string,
+): Record<string, unknown>[] {
   if (!codeOrQr || typeof codeOrQr !== "string") {
     throw new BadRequestException("Código o lectura de QR requerida.");
   }

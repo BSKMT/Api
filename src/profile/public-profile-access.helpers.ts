@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { UsersService } from "../users/users.service";
+import type { UserDocument } from "../users/schemas/user.schema";
 import {
   deriveDisplayName,
   str,
@@ -113,8 +114,23 @@ export async function findUserByIdentifierHelper(
   return null;
 }
 
+export type PublicProfileTargetUser =
+  | UserDocument
+  | {
+      _id: unknown;
+      email: string;
+      profile?: Record<string, Record<string, unknown>>;
+      membershipLevel?: string | null;
+      membershipExpiryDate?: Date | string | null;
+      membershipExpired?: boolean;
+      role?: string | null;
+      createdAt?: Date | string | null;
+      profileCompleted?: boolean;
+      settings?: Record<string, unknown>;
+    };
+
 export function buildPublicProfileResponse(
-  user: any,
+  user: PublicProfileTargetUser,
   requester: AuthenticatedRequestUser,
   isOwner: boolean,
 ): Record<string, unknown> {
@@ -135,11 +151,15 @@ export function buildPublicProfileResponse(
 
   const operationalData = isOwner
     ? null
-    : buildPrivilegedSection(user as unknown as Record<string, unknown>, requester);
+    : buildPrivilegedSection(user, requester);
+
+  const memberSince = user.createdAt
+    ? new Date(user.createdAt).toISOString()
+    : null;
 
   return {
     displayName,
-    firstName: personalSection?.primerNombre ?? displayName,
+    firstName: str(personalSection, "primerNombre") || displayName,
     memberNumber,
     serializedProfileToken,
     secureQrPayload,
@@ -148,10 +168,8 @@ export function buildPublicProfileResponse(
     isMembershipValid: membershipInfo.isValid,
     membershipExpiryFormatted: membershipInfo.expiryFormatted,
     role: isOwner ? user.role : null,
-    memberSince: (user as unknown as { createdAt?: Date }).createdAt
-      ? new Date((user as unknown as { createdAt?: Date }).createdAt!).toISOString()
-      : null,
-    profileCompleted: user.profileCompleted,
+    memberSince,
+    profileCompleted: user.profileCompleted ?? false,
     isOwner,
     privacy,
     isProfilePrivate: !privacy.profileVisible,

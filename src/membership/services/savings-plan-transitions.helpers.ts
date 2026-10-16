@@ -26,7 +26,7 @@ export async function evaluateSavingsPlanTransitions(
   const renewalEndMs = renewalEnd ? new Date(renewalEnd).getTime() : null;
 
   let currentStatus = plan.status;
-  let gracePeriod1ExpiresAt = plan.gracePeriod1ExpiresAt;
+  let gracePeriod1ExpiresAt = plan.gracePeriod1ExpiresAt ?? undefined;
 
   if (
     plan.isRenewal &&
@@ -110,7 +110,9 @@ export function computeSavingsPlanActionFlags(params: PlanActionParams) {
 
   const canRequestExtension =
     (currentStatus === SavingsPlanStatus.GRACE_PERIOD_1 ||
-      (renewalEndMs !== null && nowMs > renewalEndMs && plan.installmentsPaid < 12)) &&
+      (renewalEndMs !== null &&
+        nowMs > renewalEndMs &&
+        plan.installmentsPaid < 12)) &&
     (!plan.extensionRequest ||
       plan.extensionRequest.status === "none" ||
       plan.extensionRequest.status === "rejected") &&

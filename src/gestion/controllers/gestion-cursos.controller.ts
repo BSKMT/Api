@@ -13,7 +13,6 @@ import {
   HttpStatus,
   NotFoundException,
   BadRequestException,
-  ForbiddenException,
 } from "@nestjs/common";
 import type { Request } from "express";
 import { InjectModel } from "@nestjs/mongoose";

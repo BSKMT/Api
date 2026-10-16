@@ -127,9 +127,7 @@ export async function insertNewMongooseUser(
     phoneVerifiedAt: null,
     pendingPhone: null,
     pendingEmail: null,
-    completedSections: parsed.tieneDatosPersonales
-      ? ["datos-personales"]
-      : [],
+    completedSections: parsed.tieneDatosPersonales ? ["datos-personales"] : [],
     profile: parsed.tieneDatosPersonales
       ? {
           "datos-personales": {

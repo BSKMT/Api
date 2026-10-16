@@ -13,7 +13,6 @@ import { sendRejectionNotification } from "./membership-sync.helpers";
 
 import {
   type ParsedMembershipWebhook,
-  parseBoldAmount,
   parseBoldWebhookEvent,
 } from "./membership-webhook-parser.helpers";
 
@@ -21,7 +20,7 @@ export {
   type ParsedMembershipWebhook,
   parseBoldAmount,
   parseBoldWebhookEvent,
-};
+} from "./membership-webhook-parser.helpers";
 
 export function verifyBoldWebhookSignature(
   configService: ConfigService<EnvironmentConfig>,
