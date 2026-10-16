@@ -35,6 +35,9 @@ export type UserDocument = User & Document;
   collection: "users",
 })
 export class User {
+  createdAt?: Date;
+  updatedAt?: Date;
+
   @Prop({ required: true, unique: true, lowercase: true, trim: true })
   email!: string;
 

@@ -43,7 +43,7 @@ export async function processEventScanCheckIn(
     };
   }
 
-  const checkedByName = await applyEventCheckIn(reg, actor);
+  const checkedInByName = await applyEventCheckIn(reg, actor);
   const contactoNombre =
     typeof emergency?.contactoNombre === "string"
       ? emergency.contactoNombre

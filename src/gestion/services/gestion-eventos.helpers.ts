@@ -4,20 +4,14 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Model } from "mongoose";
-import type {
-  Event,
-  EventDocument,
-} from "../../events/schemas/event.schema";
+import type { Event, EventDocument } from "../../events/schemas/event.schema";
 import type { EventRegistrationDocument } from "../../events/schemas/event-registration.schema";
 import {
   UserRole,
   UserSubrole,
   type UserDocument,
 } from "../../users/schemas/user.schema";
-import {
-  deriveGestionAttendee,
-  getGestionActorName,
-} from "./gestion-checkin.helpers";
+import { getGestionActorName } from "./gestion-checkin.helpers";
 import type { GestionActor } from "./gestion-cursos.helpers";
 
 export async function fetchEnrichedEventRegistrations(
@@ -70,8 +64,7 @@ export async function fetchEnrichedEventRegistrations(
   const enrichedRegistrations = registrations.map((r) => {
     const u = userMap.get(String(r.userId));
     const rawProfile = u?.profile as
-      | Record<string, Record<string, string>>
-      | undefined;
+      Record<string, Record<string, string>> | undefined;
     const personal = rawProfile?.["datos-personales"];
     const contact = rawProfile?.["contacto"];
     const vehicle = rawProfile?.["vehiculo"];
@@ -195,4 +188,3 @@ export function authorizeEventCoordinator(
     );
   }
 }
-

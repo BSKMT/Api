@@ -45,7 +45,7 @@ export async function cancelPendingOrdersOlderThan(
       return 0;
     }),
   );
-  return cancellationResults.reduce((acc, curr) => acc + curr, 0);
+  return cancellationResults.reduce<number>((acc, curr) => acc + curr, 0);
 }
 
 export async function executeCreateOrder(
