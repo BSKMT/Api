@@ -20,16 +20,27 @@ import {
   calculateTcoAndMarketValue,
 } from "./garage-health.helpers";
 
+export interface GarageDashboardModels {
+  motorcycleModel: Model<GarageMotorcycleDocument>;
+  maintenanceModel: Model<MaintenanceLogDocument>;
+  odometerModel: Model<OdometerLogDocument>;
+  eventRegistrationModel: Model<EventRegistrationDocument>;
+  orderModel: Model<OrderDocument>;
+}
+
 export async function executeGetDashboard(
-  motorcycleModel: Model<GarageMotorcycleDocument>,
-  maintenanceModel: Model<MaintenanceLogDocument>,
-  odometerModel: Model<OdometerLogDocument>,
-  eventRegistrationModel: Model<EventRegistrationDocument>,
-  orderModel: Model<OrderDocument>,
+  models: GarageDashboardModels,
   usersService: UsersService,
   userId: string,
   targetMotorcycleId?: string,
 ) {
+  const {
+    motorcycleModel,
+    maintenanceModel,
+    odometerModel,
+    eventRegistrationModel,
+    orderModel,
+  } = models;
   const user = await usersService.findById(userId);
   if (!user) {
     throw new NotFoundException("Usuario no encontrado");

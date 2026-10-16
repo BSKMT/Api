@@ -26,24 +26,26 @@ export async function cancelPendingOrdersOlderThan(
   if (userId) filter.userId = userId;
 
   const staleOrders = await orderModel.find(filter);
-  let expiredCount = 0;
-  for (const stale of staleOrders) {
-    const updated = await orderModel.findOneAndUpdate(
-      { _id: stale._id, status: OrderStatus.PENDING },
-      { $set: { status: OrderStatus.CANCELLED } },
-      { new: true },
-    );
-    if (updated && logger) {
-      await restoreOrderStock(
-        productModel,
-        updated,
-        logger,
-        updated.orderNumber,
+  const cancellationResults = await Promise.all(
+    staleOrders.map(async (stale) => {
+      const updated = await orderModel.findOneAndUpdate(
+        { _id: stale._id, status: OrderStatus.PENDING },
+        { $set: { status: OrderStatus.CANCELLED } },
+        { new: true },
       );
-      expiredCount++;
-    }
-  }
-  return expiredCount;
+      if (updated && logger) {
+        await restoreOrderStock(
+          productModel,
+          updated,
+          logger,
+          updated.orderNumber,
+        );
+        return 1;
+      }
+      return 0;
+    }),
+  );
+  return cancellationResults.reduce((acc, curr) => acc + curr, 0);
 }
 
 export async function executeCreateOrder(

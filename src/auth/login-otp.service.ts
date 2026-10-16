@@ -70,13 +70,15 @@ export class LoginOtpService {
     return executeDispatchOtpAndSave(
       this.otpModel,
       this.birdVerifyService,
-      targetEmail,
-      session,
-      this.sessionEncKey,
-      this.EMAIL_INITIATE_WINDOW_MS,
-      this.EMAIL_INITIATE_MAX,
       this.logger,
-      errorMessage,
+      {
+        targetEmail,
+        session,
+        sessionEncKey: this.sessionEncKey,
+        windowMs: this.EMAIL_INITIATE_WINDOW_MS,
+        maxSends: this.EMAIL_INITIATE_MAX,
+        errorMessage,
+      },
     );
   }
 

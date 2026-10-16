@@ -8,6 +8,35 @@ import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { ROLES_KEY, Role } from "../decorators/roles.decorator";
 
+const ADMIN_MODULE_MAP: Record<string, string> = {
+  "/api/admin/users": "users",
+  "/api/admin/staff": "users",
+  "/api/admin/courses": "courses",
+  "/api/admin/events": "events",
+  "/api/admin/shop": "store",
+  "/api/admin/membership": "membership",
+  "/api/admin/arpha": "arpha",
+  "/api/admin/settings": "eliminations",
+  "/api/admin/config": "config",
+};
+
+function checkAdminModulePermissions(permissions: string[], url: string): void {
+  const lowerUrl = url.toLowerCase();
+  for (const [routePrefix, requiredPerm] of Object.entries(ADMIN_MODULE_MAP)) {
+    if (lowerUrl.includes(routePrefix)) {
+      const hasPerm =
+        permissions.includes(requiredPerm) ||
+        (requiredPerm === "arpha" && permissions.includes("events"));
+      if (!hasPerm) {
+        throw new ForbiddenException(
+          `No tienes permisos asignados para el módulo administrativo '${requiredPerm}'. Contacta a un Superadministrador.`,
+        );
+      }
+      break;
+    }
+  }
+}
+
 /**
  * RolesGuard — checks that the authenticated user's role is in the
  * required roles list. The role is already populated on `req.user`
@@ -64,34 +93,10 @@ export class RolesGuard implements CanActivate {
       Array.isArray(user.adminPermissions) &&
       user.adminPermissions.length > 0
     ) {
-      const url = (request.originalUrl || request.url || "").toLowerCase();
-
-      const moduleMap: Record<string, string> = {
-        "/api/admin/users": "users",
-        "/api/admin/staff": "users",
-        "/api/admin/courses": "courses",
-        "/api/admin/events": "events",
-        "/api/admin/shop": "store",
-        "/api/admin/membership": "membership",
-        "/api/admin/arpha": "arpha",
-        "/api/admin/settings": "eliminations",
-        "/api/admin/config": "config",
-      };
-
-      for (const [routePrefix, requiredPerm] of Object.entries(moduleMap)) {
-        if (url.includes(routePrefix)) {
-          const hasPerm =
-            user.adminPermissions.includes(requiredPerm) ||
-            (requiredPerm === "arpha" &&
-              user.adminPermissions.includes("events"));
-          if (!hasPerm) {
-            throw new ForbiddenException(
-              `No tienes permisos asignados para el módulo administrativo '${requiredPerm}'. Contacta a un Superadministrador.`,
-            );
-          }
-          break;
-        }
-      }
+      checkAdminModulePermissions(
+        user.adminPermissions,
+        request.originalUrl || request.url || "",
+      );
     }
 
     return true;

@@ -58,16 +58,21 @@ export async function executeActivateMembership(
   };
 }
 
+export interface ExtendMembershipOptions {
+  unit: string;
+  amount?: number;
+  baseDateStr?: string;
+  actorId?: string;
+}
+
 export async function executeExtendMembership(
   userModel: Model<UserDocument>,
   notificationsService: NotificationsService,
   logger: Logger,
   userId: string,
-  unit: string,
-  amount = 1,
-  baseDateStr?: string,
-  actorId = "",
+  options: ExtendMembershipOptions,
 ) {
+  const { unit, amount = 1, baseDateStr, actorId = "" } = options;
   const user = await userModel.findById(userId);
   if (!user) {
     throw new NotFoundException("Usuario no encontrado");

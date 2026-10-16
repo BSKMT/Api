@@ -20,6 +20,7 @@ import {
   signMemberAuth,
   signChannelAuth,
   processBirdWebhookEvent,
+  assertChannelAuthorized,
 } from "./bird-realtime.helpers";
 
 export { AuthMemberDto, AuthChannelDto };
@@ -131,49 +132,7 @@ export class BirdRealtimeController {
     const userId = (req.user as { userId?: string })?.userId;
 
     // F-12: Channel-level authorization enforcement with strict whitelist
-    let isAuthorized = false;
-
-    if (
-      channelName.startsWith("private-user-") ||
-      channelName.startsWith("presence-user-")
-    ) {
-      const channelOwner = channelName.startsWith("private-user-")
-        ? channelName.slice("private-user-".length)
-        : channelName.slice("presence-user-".length);
-      const isOwner =
-        channelOwner === betterAuthId || (userId && channelOwner === userId);
-      if (isOwner || role === "admin") {
-        isAuthorized = true;
-      } else {
-        throw new ForbiddenException(
-          "No tienes autorización para unirte a este canal personal de usuario",
-        );
-      }
-    } else if (
-      channelName.startsWith("private-admin") ||
-      channelName.startsWith("presence-admin")
-    ) {
-      if (role === "admin") {
-        isAuthorized = true;
-      } else {
-        throw new ForbiddenException(
-          "Acceso denegado a canales de administración",
-        );
-      }
-    } else if (
-      channelName.startsWith("presence-event-") ||
-      channelName === "presence-community" ||
-      channelName === "presence-chat"
-    ) {
-      // Canales de presencia colaborativa para usuarios autenticados
-      isAuthorized = true;
-    }
-
-    if (!isAuthorized) {
-      throw new ForbiddenException(
-        `Canal no reconocido o no autorizado para suscripción: ${channelName}`,
-      );
-    }
+    assertChannelAuthorized(channelName, betterAuthId, userId, role);
 
     return signChannelAuth(
       key,

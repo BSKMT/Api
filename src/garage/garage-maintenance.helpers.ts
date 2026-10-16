@@ -99,7 +99,7 @@ export async function executeRecordAlliedServiceOrder(
     );
   }
 
-  const effectiveWorkshopName = matchedWorkshopName || dto.alliedWorkshopName;
+  const effectiveWorkshopName = matchedWorkshopName ?? dto.alliedWorkshopName;
 
   const moto = await motorcycleModel.findOne({
     _id: dto.motorcycleId,

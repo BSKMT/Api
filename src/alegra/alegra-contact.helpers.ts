@@ -9,6 +9,12 @@ import { maskUserId } from "../common/utils/log-redact.util";
 import type { UsersService } from "../users/users.service";
 import type { KvCacheService } from "../kv/kv-cache.service";
 
+export type AlegraHttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+export type AlegraRequestFn = <T>(
+  method: AlegraHttpMethod,
+  path: string,
+) => Promise<T | null>;
+
 export function buildContactData(user: {
   email: string;
   phone?: string | null;
@@ -59,10 +65,7 @@ export function buildContactData(user: {
 }
 
 export async function findContactByEmail(
-  makeRequest: <T>(
-    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
-    path: string,
-  ) => Promise<T | null>,
+  makeRequest: AlegraRequestFn,
   email: string,
 ): Promise<AlegraContact | null> {
   const contacts = await makeRequest<AlegraContact[]>(
@@ -76,10 +79,7 @@ export async function findContactByEmail(
 }
 
 export async function findContactByIdentification(
-  makeRequest: <T>(
-    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
-    path: string,
-  ) => Promise<T | null>,
+  makeRequest: AlegraRequestFn,
   identification: string,
 ): Promise<AlegraContact | null> {
   const contacts = await makeRequest<AlegraContact[]>(
@@ -160,10 +160,7 @@ export async function resolveOrEnsureContact(
   userId: string,
   usersService: UsersService,
   kvCache: KvCacheService,
-  makeRequest: <T>(
-    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
-    path: string,
-  ) => Promise<T | null>,
+  makeRequest: AlegraRequestFn,
   baseUrl: string,
   authHeader: string,
   logger: Logger,

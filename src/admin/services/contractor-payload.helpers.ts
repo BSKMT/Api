@@ -105,13 +105,18 @@ export function normalizeStaffPayload(
   };
 }
 
+function getDocTypeDescription(docType: string): string {
+  if (docType === "CE") {
+    return "Cédula de Extranjería";
+  }
+  if (docType === "PASSPORT") {
+    return "Pasaporte";
+  }
+  return "Cédula de Ciudadanía";
+}
+
 export function buildStaffProfileUpdate(norm: NormalizedStaffPayload) {
-  const docTypeDesc =
-    norm.docType === "CE"
-      ? "Cédula de Extranjería"
-      : norm.docType === "PASSPORT"
-        ? "Pasaporte"
-        : "Cédula de Ciudadanía";
+  const docTypeDesc = getDocTypeDescription(norm.docType);
 
   return {
     "profile.datos-personales": {

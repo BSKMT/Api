@@ -88,20 +88,22 @@ export async function executeSweepStaleRegistrations(
     })
     .limit(500);
 
-  let eventsCancelled = 0;
-  for (const reg of staleRegs) {
-    const cancelled = await eventRegistrationModel.findOneAndUpdate(
-      { _id: reg._id, status: "PENDING" },
-      { status: "CANCELLED", confirmedAt: null },
-      { new: true },
-    );
-    if (!cancelled) continue;
-    await eventModel.findOneAndUpdate(
-      { slug: reg.eventSlug, registeredCount: { $gt: 0 } },
-      { $inc: { registeredCount: -1 } },
-    );
-    eventsCancelled++;
-  }
+  const eventResults = await Promise.all(
+    staleRegs.map(async (reg) => {
+      const cancelled = await eventRegistrationModel.findOneAndUpdate(
+        { _id: reg._id, status: "PENDING" },
+        { status: "CANCELLED", confirmedAt: null },
+        { new: true },
+      );
+      if (!cancelled) return false;
+      await eventModel.findOneAndUpdate(
+        { slug: reg.eventSlug, registeredCount: { $gt: 0 } },
+        { $inc: { registeredCount: -1 } },
+      );
+      return true;
+    }),
+  );
+  const eventsCancelled = eventResults.filter(Boolean).length;
 
   const staleEnrollments = await courseEnrollmentModel
     .find({
@@ -112,20 +114,22 @@ export async function executeSweepStaleRegistrations(
     })
     .limit(500);
 
-  let coursesCancelled = 0;
-  for (const enr of staleEnrollments) {
-    const cancelled = await courseEnrollmentModel.findOneAndUpdate(
-      { _id: enr._id, status: "PENDING" },
-      { status: "CANCELLED" },
-      { new: true },
-    );
-    if (!cancelled) continue;
-    await courseModel.findOneAndUpdate(
-      { slug: enr.courseSlug, enrolledCount: { $gt: 0 } },
-      { $inc: { enrolledCount: -1 } },
-    );
-    coursesCancelled++;
-  }
+  const courseResults = await Promise.all(
+    staleEnrollments.map(async (enr) => {
+      const cancelled = await courseEnrollmentModel.findOneAndUpdate(
+        { _id: enr._id, status: "PENDING" },
+        { status: "CANCELLED" },
+        { new: true },
+      );
+      if (!cancelled) return false;
+      await courseModel.findOneAndUpdate(
+        { slug: enr.courseSlug, enrolledCount: { $gt: 0 } },
+        { $inc: { enrolledCount: -1 } },
+      );
+      return true;
+    }),
+  );
+  const coursesCancelled = courseResults.filter(Boolean).length;
 
   logger.log(
     `sweepStaleRegistrations: ${eventsCancelled} events, ${coursesCancelled} courses released`,

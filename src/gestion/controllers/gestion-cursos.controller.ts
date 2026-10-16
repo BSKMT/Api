@@ -24,7 +24,6 @@ import { RequireSubroles } from "../../common/decorators/subroles.decorator";
 import {
   User,
   UserDocument,
-  UserRole,
   UserSubrole,
 } from "../../users/schemas/user.schema";
 import { Course, CourseDocument } from "../../events/schemas/course.schema";
@@ -33,39 +32,20 @@ import {
   CourseEnrollmentDocument,
 } from "../../events/schemas/course-enrollment.schema";
 import { ParseObjectIdPipe } from "../../common/pipes/parse-object-id.pipe";
-import { parseCheckInInput } from "../../events/events-checkin.helpers";
 import {
-  IsNumber,
-  Min,
-  Max,
-  IsOptional,
-  IsString,
-  MaxLength,
-} from "class-validator";
+  buildCheckInOrClauses,
+  deriveGestionAttendee,
+} from "../services/gestion-checkin.helpers";
+import {
+  fetchEnrichedCourseRoster,
+  applyCourseCheckIn,
+  authorizeCourseCoordinator,
+  UpdateCourseProgressDto,
+  type GestionActor,
+} from "../services/gestion-cursos.helpers";
 
 interface AuthenticatedGestionRequest extends Request {
-  user: {
-    userId: string;
-    email: string;
-    role: string;
-    subrol?: string | null;
-    contractorInfo?: {
-      nombres: string;
-      apellidos: string;
-    } | null;
-  };
-}
-
-class UpdateCourseProgressDto {
-  @IsNumber()
-  @Min(0)
-  @Max(100)
-  progress!: number;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(50)
-  status?: string;
+  user: GestionActor;
 }
 
 @Controller("gestion/cursos")
@@ -86,31 +66,6 @@ export class GestionCursosController {
     private readonly userModel: Model<UserDocument>,
   ) {}
 
-  private authorizeCourseCoordinator(
-    course: CourseDocument | (Course & { _id: unknown }),
-    user: AuthenticatedGestionRequest["user"],
-  ): void {
-    const isSuper =
-      user.role === (UserRole.ADMIN as string) ||
-      user.role === (UserRole.SUPERADMIN as string) ||
-      (user.subrol as string | null) === (UserSubrole.LIDER_CURSOS as string);
-    if (isSuper) return;
-
-    if (!course.coordinatorId) {
-      throw new BadRequestException(
-        "Este curso aún no tiene un coordinador asignado por la Dirección en Console. Contacte a la Dirección.",
-      );
-    }
-
-    if (String(course.coordinatorId) !== String(user.userId)) {
-      const assignedName =
-        course.coordinatorName || "el gestor asignado por la Dirección";
-      throw new ForbiddenException(
-        `Operación no autorizada: La validación de asistencia en campo o aula para este curso está asignada exclusivamente a ${assignedName}.`,
-      );
-    }
-  }
-
   @Get("courses")
   async listCourses() {
     const courses = await this.courseModel
@@ -125,59 +80,12 @@ export class GestionCursosController {
 
   @Get("roster")
   async listRoster(@Query("courseSlug") courseSlug?: string) {
-    const filter: Record<string, unknown> = {};
-    if (courseSlug) {
-      filter.courseSlug = courseSlug;
-    }
-
-    const enrollments = await this.enrollmentModel
-      .find(filter)
-      .sort({ createdAt: -1 })
-      .lean();
-
-    const userIds = Array.from(
-      new Set(enrollments.map((e) => e.userId).filter(Boolean)),
+    return fetchEnrichedCourseRoster(
+      courseSlug,
+      this.enrollmentModel,
+      this.userModel,
+      this.courseModel,
     );
-    const users = await this.userModel
-      .find({ _id: { $in: userIds } })
-      .select("email profile contractorInfo")
-      .lean();
-    const userMap = new Map(users.map((u) => [String(u._id), u]));
-
-    const enrichedEnrollments = enrollments.map((e) => {
-      const u = userMap.get(String(e.userId));
-      const rawProfile = u?.profile as
-        Record<string, Record<string, string>> | undefined;
-      const personal = rawProfile?.["datos-personales"];
-      const contact = rawProfile?.["contacto"];
-      const primerNombre =
-        typeof personal?.primerNombre === "string" ? personal.primerNombre : "";
-      const primerApellido =
-        typeof personal?.primerApellido === "string"
-          ? personal.primerApellido
-          : "";
-      const fullName = `${primerNombre} ${primerApellido}`.trim();
-      const studentName = fullName || u?.email || "Estudiante BSKMT";
-
-      return {
-        ...e,
-        userName: studentName,
-        userEmail: u?.email,
-        userPhone: typeof contact?.celular === "string" ? contact.celular : "",
-      };
-    });
-
-    let course = null;
-    if (courseSlug) {
-      course = await this.courseModel
-        .findOne({ slug: courseSlug })
-        .select(
-          "_id slug title level format date coordinatorId coordinatorName coordinatorEmail",
-        )
-        .lean();
-    }
-
-    return { course, enrollments: enrichedEnrollments };
   }
 
   @Post("scan-checkin")
@@ -186,29 +94,7 @@ export class GestionCursosController {
     @Req() req: AuthenticatedGestionRequest,
     @Body() dto: { courseSlug?: string; codeOrQr: string },
   ) {
-    if (!dto.codeOrQr || typeof dto.codeOrQr !== "string") {
-      throw new BadRequestException("Código o lectura de QR requerida.");
-    }
-
-    const parsed = parseCheckInInput(dto.codeOrQr);
-    const candidateCode = parsed.checkInCode;
-    const candidateRegId = parsed.registrationId;
-
-    const orClauses: Record<string, unknown>[] = [];
-    if (candidateCode) {
-      orClauses.push({ checkInCode: candidateCode });
-    }
-    if (candidateRegId && candidateRegId.match(/^[0-9a-fA-F]{24}$/)) {
-      orClauses.push({ _id: candidateRegId });
-    }
-    if (candidateCode && candidateCode.match(/^[0-9a-fA-F]{24}$/)) {
-      orClauses.push({ _id: candidateCode });
-    }
-
-    if (orClauses.length === 0) {
-      throw new BadRequestException("Formato de código o QR no válido.");
-    }
-
+    const orClauses = buildCheckInOrClauses(dto.codeOrQr);
     const enrollment = await this.enrollmentModel.findOne({ $or: orClauses });
     if (!enrollment) {
       throw new NotFoundException(
@@ -231,8 +117,7 @@ export class GestionCursosController {
       );
     }
 
-    // EXCLUSIVIDAD DE COORDINADOR ASIGNADO
-    this.authorizeCourseCoordinator(course, req.user);
+    authorizeCourseCoordinator(course, req.user);
 
     if (
       course.nonMemberPrice &&
@@ -248,18 +133,10 @@ export class GestionCursosController {
       .findById(enrollment.userId)
       .select("email profile contractorInfo")
       .lean();
-    const rawProfile = u?.profile as
-      Record<string, Record<string, string>> | undefined;
-    const personal = rawProfile?.["datos-personales"];
-    const contact = rawProfile?.["contacto"];
-    const primerNombre =
-      typeof personal?.primerNombre === "string" ? personal.primerNombre : "";
-    const primerApellido =
-      typeof personal?.primerApellido === "string"
-        ? personal.primerApellido
-        : "";
-    const studentName =
-      `${primerNombre} ${primerApellido}`.trim() || u?.email || "Estudiante";
+    const attendee = deriveGestionAttendee(
+      u as unknown as Record<string, unknown>,
+      "Estudiante",
+    );
 
     if (enrollment.attendanceConfirmed) {
       return {
@@ -274,12 +151,9 @@ export class GestionCursosController {
             : "en campo"
         }).`,
         attendee: {
-          name: studentName,
-          email: u?.email,
-          phone:
-            typeof contact?.celular === "string"
-              ? contact.celular
-              : "No registrado",
+          name: attendee.name,
+          email: attendee.email,
+          phone: attendee.phone,
           checkInCode: enrollment.checkInCode,
           attendedAt: enrollment.attendedAt,
           checkedInByName: enrollment.checkedInByName,
@@ -288,30 +162,16 @@ export class GestionCursosController {
       };
     }
 
-    const checkedByName = req.user.contractorInfo
-      ? `${req.user.contractorInfo.nombres} ${req.user.contractorInfo.apellidos}`
-      : req.user.email || req.user.userId;
-
-    enrollment.attendanceConfirmed = true;
-    enrollment.attendedAt = new Date();
-    enrollment.checkedInBy = req.user.userId;
-    enrollment.checkedInByName = checkedByName;
-    if (enrollment.status === "PENDING") {
-      enrollment.status = "ACTIVE";
-    }
-    await enrollment.save();
+    const checkedByName = await applyCourseCheckIn(enrollment, req.user);
 
     return {
       success: true,
       alreadyCheckedIn: false,
-      message: `¡Asistencia confirmada para ${studentName}!`,
+      message: `¡Asistencia confirmada para ${attendee.name}!`,
       attendee: {
-        name: studentName,
-        email: u?.email,
-        phone:
-          typeof contact?.celular === "string"
-            ? contact.celular
-            : "No registrado",
+        name: attendee.name,
+        email: attendee.email,
+        phone: attendee.phone,
         checkInCode: enrollment.checkInCode,
         attendedAt: enrollment.attendedAt,
         checkedInByName: checkedByName,
@@ -340,21 +200,8 @@ export class GestionCursosController {
       throw new NotFoundException("Curso asociado no encontrado");
     }
 
-    // EXCLUSIVIDAD DE COORDINADOR ASIGNADO
-    this.authorizeCourseCoordinator(course, req.user);
-
-    const checkedByName = req.user.contractorInfo
-      ? `${req.user.contractorInfo.nombres} ${req.user.contractorInfo.apellidos}`
-      : req.user.email || req.user.userId;
-
-    enrollment.attendanceConfirmed = true;
-    enrollment.attendedAt = new Date();
-    enrollment.checkedInBy = req.user.userId;
-    enrollment.checkedInByName = checkedByName;
-    if (enrollment.status === "PENDING") {
-      enrollment.status = "ACTIVE";
-    }
-    await enrollment.save();
+    authorizeCourseCoordinator(course, req.user);
+    await applyCourseCheckIn(enrollment, req.user);
 
     return {
       success: true,

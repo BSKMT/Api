@@ -1,38 +1,37 @@
-import { Logger, NotFoundException } from "@nestjs/common";
+import { randomInt } from "node:crypto";
+import { NotFoundException, Logger } from "@nestjs/common";
 import { Model } from "mongoose";
 import { ProductDocument, ProductStatus } from "./schemas/product.schema";
 import { OrderDocument } from "./schemas/order.schema";
 
-export const LEGEND_LEVELS = new Set([
-  "Legend",
-  "Friend",
-  "Rider",
-  "Expert",
-  "Master",
-]);
-
 export function isShopMember(membershipLevel: string | null): boolean {
-  return membershipLevel !== null && LEGEND_LEVELS.has(membershipLevel);
+  if (!membershipLevel) return false;
+  const lvl = membershipLevel.toLowerCase();
+  return (
+    lvl === "active" ||
+    lvl === "member" ||
+    lvl === "vip" ||
+    lvl === "pro" ||
+    lvl.startsWith("tier")
+  );
 }
 
 export function generateOrderNumber(): string {
-  return `BSK-${Date.now().toString(36)}`;
+  const ts = Date.now().toString(36).toUpperCase();
+  const rand = randomInt(0x1000, 0xffff).toString(16).toUpperCase();
+  return `ORD-${ts}-${rand}`;
 }
 
 export function calculateItemPricing(
   publicPrice: number,
-  qty: number,
-  memberDiscountPercent = 15,
-  isMember = false,
+  quantity: number,
+  memberDiscountPercent: number,
+  isMember: boolean,
 ) {
-  const publicSubtotal = publicPrice * qty;
-  let unitPrice = publicPrice;
-
-  if (isMember) {
-    unitPrice = Math.round(publicPrice * (1 - memberDiscountPercent / 100));
-  }
-
-  const subtotal = unitPrice * qty;
+  const discountRate = isMember ? memberDiscountPercent / 100 : 0;
+  const unitPrice = Math.round(publicPrice * (1 - discountRate));
+  const subtotal = unitPrice * quantity;
+  const publicSubtotal = publicPrice * quantity;
   const itemDiscount = publicSubtotal - subtotal;
 
   return {
@@ -47,12 +46,14 @@ export async function rollbackStock(
   productModel: Model<ProductDocument>,
   items: { productSlug: string; quantity: number }[],
 ): Promise<void> {
-  for (const item of items) {
-    await productModel.updateOne(
-      { slug: item.productSlug },
-      { $inc: { stock: item.quantity } },
-    );
-  }
+  await Promise.all(
+    items.map((item) =>
+      productModel.updateOne(
+        { slug: item.productSlug },
+        { $inc: { stock: item.quantity } },
+      ),
+    ),
+  );
 }
 
 export async function processOrderItems(
@@ -60,6 +61,34 @@ export async function processOrderItems(
   items: { productSlug: string; quantity: number }[],
   isMember: boolean,
 ) {
+  const reservations = await Promise.all(
+    items.map(async (item) => {
+      const product = await productModel.findOneAndUpdate(
+        {
+          slug: item.productSlug,
+          status: ProductStatus.PUBLISHED,
+          stock: { $gte: item.quantity },
+        },
+        { $inc: { stock: -item.quantity } },
+        { new: true },
+      );
+      return { item, product };
+    }),
+  );
+
+  const failed = reservations.find((r) => !r.product);
+  if (failed) {
+    const successfulReservations = reservations.flatMap((r) =>
+      r.product
+        ? [{ productSlug: r.item.productSlug, quantity: r.item.quantity }]
+        : [],
+    );
+    await rollbackStock(productModel, successfulReservations);
+    throw new NotFoundException(
+      `Producto no encontrado o stock insuficiente: ${failed.item.productSlug}`,
+    );
+  }
+
   let total = 0;
   let publicTotal = 0;
   let memberDiscount = 0;
@@ -71,28 +100,11 @@ export async function processOrderItems(
     subtotal: number;
   }> = [];
 
-  for (const item of items) {
-    const qty = item.quantity;
-    const product = await productModel.findOneAndUpdate(
-      {
-        slug: item.productSlug,
-        status: ProductStatus.PUBLISHED,
-        stock: { $gte: qty },
-      },
-      { $inc: { stock: -qty } },
-      { new: true },
-    );
-
-    if (!product) {
-      await rollbackStock(productModel, orderItems);
-      throw new NotFoundException(
-        `Producto no encontrado o stock insuficiente: ${item.productSlug}`,
-      );
-    }
-
+  for (const { item, product } of reservations) {
+    if (!product) continue;
     const pricing = calculateItemPricing(
       product.publicPrice,
-      qty,
+      item.quantity,
       product.memberDiscountPercent ?? 15,
       isMember,
     );
@@ -105,7 +117,7 @@ export async function processOrderItems(
       productSlug: product.slug,
       productName: product.name,
       unitPrice: pricing.unitPrice,
-      quantity: qty,
+      quantity: item.quantity,
       subtotal: pricing.subtotal,
     });
   }
@@ -119,15 +131,17 @@ export async function restoreOrderStock(
   logger: Logger,
   orderNumber: string,
 ): Promise<void> {
-  for (const item of order.items) {
-    const restoreResult = await productModel.updateOne(
-      { slug: item.productSlug },
-      { $inc: { stock: item.quantity } },
-    );
-    if (restoreResult.modifiedCount === 0) {
-      logger.error(
-        `Stock restore failed for ${item.productSlug} (qty ${item.quantity}) on cancelled order ${orderNumber} — manual reconciliation needed`,
+  await Promise.all(
+    order.items.map(async (item) => {
+      const restoreResult = await productModel.updateOne(
+        { slug: item.productSlug },
+        { $inc: { stock: item.quantity } },
       );
-    }
-  }
+      if (restoreResult.modifiedCount === 0) {
+        logger.error(
+          `Stock restore failed for ${item.productSlug} (qty ${item.quantity}) on cancelled order ${orderNumber} — manual reconciliation needed`,
+        );
+      }
+    }),
+  );
 }

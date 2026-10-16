@@ -30,17 +30,16 @@ import {
   queryEventStats,
 } from "./events-query.helpers";
 import {
-  generateCheckInCode,
-  buildQrTicketPayload,
-} from "./events-checkin.helpers";
-import {
   executeCancelRegistration,
   executeSweepStaleRegistrations,
 } from "./events-sweep.helpers";
 import { ConfigService } from "@nestjs/config";
 import { User, UserDocument } from "../users/schemas/user.schema";
 import { BirdEmailService } from "../bird/bird-email.service";
-import { dispatchConfirmedEventTicketNotification } from "./events-ticket-notification.helper";
+import {
+  dispatchEventTicketIfEligible,
+  ensureRegistrationCheckInCode,
+} from "./events-ticket-dispatch.helper";
 import type { CoursePricing } from "./events.constants";
 import type { CoursePricingInput } from "./events-course-pricing.helpers";
 
@@ -83,27 +82,15 @@ export class EventsService {
       this.logger,
     );
 
-    if (
-      registration.status === "CONFIRMED" &&
-      (registration.paymentConfirmed ||
-        registration.membershipStatus === "active-member" ||
-        registration.membershipStatus === "non-member-free")
-    ) {
-      const event = await this.eventModel.findOne({ slug: dto.eventSlug });
-      if (event) {
-        const panelUrl =
-          this.configService.get<string>("PANEL_URL") ??
-          "https://panel.bskmt.com";
-        void dispatchConfirmedEventTicketNotification(
-          registration,
-          event,
-          this.userModel,
-          this.birdEmailService,
-          panelUrl,
-          this.logger,
-        );
-      }
-    }
+    dispatchEventTicketIfEligible(
+      registration,
+      this.eventModel,
+      this.userModel,
+      this.birdEmailService,
+      this.configService,
+      this.logger,
+      dto.eventSlug,
+    );
 
     return registration;
   }
@@ -120,27 +107,15 @@ export class EventsService {
       this.logger,
     );
 
-    if (
-      registration.status === "CONFIRMED" &&
-      (registration.paymentConfirmed ||
-        registration.membershipStatus === "active-member" ||
-        registration.membershipStatus === "non-member-free")
-    ) {
-      const event = await this.eventModel.findOne({ slug: eventSlug });
-      if (event) {
-        const panelUrl =
-          this.configService.get<string>("PANEL_URL") ??
-          "https://panel.bskmt.com";
-        void dispatchConfirmedEventTicketNotification(
-          registration,
-          event,
-          this.userModel,
-          this.birdEmailService,
-          panelUrl,
-          this.logger,
-        );
-      }
-    }
+    dispatchEventTicketIfEligible(
+      registration,
+      this.eventModel,
+      this.userModel,
+      this.birdEmailService,
+      this.configService,
+      this.logger,
+      eventSlug,
+    );
 
     return registration;
   }
@@ -188,20 +163,15 @@ export class EventsService {
     );
 
     if (registration.paymentConfirmed) {
-      const event = await this.eventModel.findOne({ slug: eventSlug });
-      if (event) {
-        const panelUrl =
-          this.configService.get<string>("PANEL_URL") ??
-          "https://panel.bskmt.com";
-        void dispatchConfirmedEventTicketNotification(
-          registration,
-          event,
-          this.userModel,
-          this.birdEmailService,
-          panelUrl,
-          this.logger,
-        );
-      }
+      dispatchEventTicketIfEligible(
+        registration,
+        this.eventModel,
+        this.userModel,
+        this.birdEmailService,
+        this.configService,
+        this.logger,
+        eventSlug,
+      );
     }
 
     return registration;
@@ -212,15 +182,7 @@ export class EventsService {
       userId,
       eventSlug,
     });
-    if (reg && !reg.checkInCode) {
-      const code = generateCheckInCode("EVT");
-      reg.checkInCode = code;
-      reg.qrCodeData = buildQrTicketPayload("EVENT", {
-        registrationId: String(reg._id),
-        slug: eventSlug,
-        checkInCode: code,
-        userId,
-      });
+    if (reg && ensureRegistrationCheckInCode(reg, eventSlug, userId)) {
       await reg.save();
     }
     return reg;
@@ -230,18 +192,15 @@ export class EventsService {
     const regs = await this.eventRegistrationModel
       .find({ userId })
       .sort({ createdAt: -1 });
-    for (const reg of regs) {
-      if (!reg.checkInCode) {
-        const code = generateCheckInCode("EVT");
-        reg.checkInCode = code;
-        reg.qrCodeData = buildQrTicketPayload("EVENT", {
-          registrationId: String(reg._id),
-          slug: reg.eventSlug,
-          checkInCode: code,
-          userId,
-        });
-        await reg.save();
-      }
+
+    const pendingSaves = regs
+      .filter((reg) =>
+        ensureRegistrationCheckInCode(reg, reg.eventSlug, userId),
+      )
+      .map((reg) => reg.save());
+
+    if (pendingSaves.length > 0) {
+      await Promise.all(pendingSaves);
     }
     return regs;
   }

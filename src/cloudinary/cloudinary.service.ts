@@ -128,7 +128,7 @@ export class CloudinaryService {
     file: Express.Multer.File,
     options: UploadOptions = {},
   ): Promise<CloudinaryUploadResult> {
-    if (!file || !file.buffer) {
+    if (!file?.buffer) {
       throw new BadRequestException(
         "No se ha proporcionado un archivo válido.",
       );

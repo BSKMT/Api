@@ -83,16 +83,21 @@ import {
   buildQrTicketPayload,
 } from "./events-checkin.helpers";
 
+export interface EventRegistrationState {
+  dto: RegisterEventDto;
+  status: string;
+  membershipStatus: string;
+  userId: string;
+  event: EventDocument;
+}
+
 export async function updateCancelledRegistration(
   eventModel: Model<EventDocument>,
   existing: EventRegistrationDocument,
-  dto: RegisterEventDto,
-  status: string,
-  membershipStatus: string,
-  userId: string,
-  event: EventDocument,
+  state: EventRegistrationState,
   logger: Logger,
 ): Promise<EventRegistrationDocument> {
+  const { dto, status, membershipStatus, userId, event } = state;
   existing.registrationType = dto.registrationType;
   existing.attendanceMode = dto.attendanceMode;
   existing.status = status;
@@ -125,13 +130,10 @@ export async function updateCancelledRegistration(
 export async function createNewRegistration(
   eventModel: Model<EventDocument>,
   eventRegistrationModel: Model<EventRegistrationDocument>,
-  userId: string,
-  dto: RegisterEventDto,
-  status: string,
-  membershipStatus: string,
-  event: EventDocument,
+  state: EventRegistrationState,
   logger: Logger,
 ): Promise<EventRegistrationDocument> {
+  const { dto, status, membershipStatus, userId, event } = state;
   const checkInCode = generateCheckInCode("EVT");
   const registration = new eventRegistrationModel({
     userId,

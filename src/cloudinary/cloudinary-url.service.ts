@@ -38,7 +38,7 @@ export class CloudinaryUrlService {
       );
     }
 
-    const timestamp = Math.round(new Date().getTime() / 1000);
+    const timestamp = Math.round(Date.now() / 1000);
     const signature = this.cloudinary.utils.api_sign_request(
       { ...paramsToSign, timestamp },
       apiSecret,
@@ -66,8 +66,8 @@ export class CloudinaryUrlService {
     }
 
     let publicId = publicIdOrUrl;
-    const uploadMatch = publicIdOrUrl.match(
-      /\/upload\/(?:v\d+\/)?(.+?)(?:\.[a-zA-Z0-9]+)?$/,
+    const uploadMatch = /\/upload\/(?:v\d+\/)?(.+?)(?:\.[a-zA-Z0-9]+)?$/.exec(
+      publicIdOrUrl,
     );
     if (uploadMatch) {
       publicId = uploadMatch[1];

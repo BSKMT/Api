@@ -147,8 +147,8 @@ export class CloudinaryController {
     }
 
     const optimizedUrl = this.cloudinaryService.getOptimizedUrl(url, {
-      width: width ? parseInt(width, 10) : undefined,
-      height: height ? parseInt(height, 10) : undefined,
+      width: width ? Number.parseInt(width, 10) : undefined,
+      height: height ? Number.parseInt(height, 10) : undefined,
       crop: crop || undefined,
       quality: quality || "auto",
       format: format || "auto",

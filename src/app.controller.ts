@@ -27,11 +27,7 @@ export class AppController {
   @Public()
   @Get("api")
   getApiRoot() {
-    return {
-      status: "ok",
-      name: "BSKMT API",
-      timestamp: new Date().toISOString(),
-    };
+    return this.getRoot();
   }
 
   @Public()

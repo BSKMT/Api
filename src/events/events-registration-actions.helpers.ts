@@ -41,15 +41,19 @@ export async function executeRegisterForEvent(
   const membershipStatus = determineMembershipStatus(isMember, dto, event);
   const status = determineInitialStatus(membershipStatus, dto);
 
+  const registrationState = {
+    dto,
+    status,
+    membershipStatus,
+    userId,
+    event,
+  };
+
   if (existing) {
     return updateCancelledRegistration(
       eventModel,
       existing,
-      dto,
-      status,
-      membershipStatus,
-      userId,
-      event,
+      registrationState,
       logger,
     );
   }
@@ -57,11 +61,7 @@ export async function executeRegisterForEvent(
   return createNewRegistration(
     eventModel,
     eventRegistrationModel,
-    userId,
-    dto,
-    status,
-    membershipStatus,
-    event,
+    registrationState,
     logger,
   );
 }

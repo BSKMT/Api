@@ -17,8 +17,11 @@ import {
   parseBoldWebhookEvent,
 } from "./membership-webhook-parser.helpers";
 
-export type { ParsedMembershipWebhook };
-export { parseBoldAmount, parseBoldWebhookEvent };
+export {
+  type ParsedMembershipWebhook,
+  parseBoldAmount,
+  parseBoldWebhookEvent,
+};
 
 export function verifyBoldWebhookSignature(
   configService: ConfigService<EnvironmentConfig>,
