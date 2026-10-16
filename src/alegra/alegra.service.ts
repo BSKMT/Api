@@ -148,10 +148,12 @@ export class AlegraService {
 
     await executeApprovedPaymentFlow(
       context,
-      (uid) => this.ensureContact(uid),
-      (ctx, cid) => this.createInvoice(ctx, cid),
-      (iid, amt) => this.createPayment(iid, amt),
-      (iid) => this.emailInvoice(iid),
+      {
+        ensureContactFn: (uid) => this.ensureContact(uid),
+        createInvoiceFn: (ctx, cid) => this.createInvoice(ctx, cid),
+        createPaymentFn: (iid, amt) => this.createPayment(iid, amt),
+        emailInvoiceFn: (iid) => this.emailInvoice(iid),
+      },
       this.invoiceModel,
       this.notificationsService,
       this.logger,

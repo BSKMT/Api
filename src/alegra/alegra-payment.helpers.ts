@@ -12,16 +12,21 @@ import {
 } from "../notifications/schemas/notification.schema";
 import { maskReference } from "../common/utils/log-redact.util";
 
+export interface SaveApprovedInvoiceParams {
+  context: AlegraBillingContext;
+  invoiceData: CreatedInvoiceData;
+  contactId: string;
+  paymentId: string | null;
+  emailed: boolean;
+}
+
 export async function saveApprovedInvoice(
   invoiceModel: Model<AlegraInvoiceDocument>,
   notificationsService: NotificationsService,
-  context: AlegraBillingContext,
-  invoiceData: CreatedInvoiceData,
-  contactId: string,
-  paymentId: string | null,
-  emailed: boolean,
   logger: Logger,
+  params: SaveApprovedInvoiceParams,
 ): Promise<void> {
+  const { context, invoiceData, contactId, paymentId, emailed } = params;
   await invoiceModel.findOneAndUpdate(
     {
       transactionReference: context.transactionReference,
@@ -122,22 +127,28 @@ export async function recordFailedInvoice(
   }
 }
 
-export async function executeApprovedPaymentFlow(
-  context: AlegraBillingContext,
-  ensureContactFn: (userId: string) => Promise<string | null>,
+export interface ApprovedPaymentFlowOperations {
+  ensureContactFn: (userId: string) => Promise<string | null>;
   createInvoiceFn: (
     context: AlegraBillingContext,
     contactId: string,
-  ) => Promise<CreatedInvoiceData | null>,
+  ) => Promise<CreatedInvoiceData | null>;
   createPaymentFn: (
     invoiceId: string,
     amount: number,
-  ) => Promise<string | null>,
-  emailInvoiceFn: (invoiceId: string) => Promise<boolean>,
+  ) => Promise<string | null>;
+  emailInvoiceFn: (invoiceId: string) => Promise<boolean>;
+}
+
+export async function executeApprovedPaymentFlow(
+  context: AlegraBillingContext,
+  ops: ApprovedPaymentFlowOperations,
   invoiceModel: Model<AlegraInvoiceDocument>,
   notificationsService: NotificationsService,
   logger: Logger,
 ): Promise<void> {
+  const { ensureContactFn, createInvoiceFn, createPaymentFn, emailInvoiceFn } =
+    ops;
   try {
     const contactId = await ensureContactFn(context.userId);
     if (!contactId) {
@@ -169,16 +180,13 @@ export async function executeApprovedPaymentFlow(
     }
 
     const emailed = await emailInvoiceFn(invoiceData.invoiceId);
-    await saveApprovedInvoice(
-      invoiceModel,
-      notificationsService,
+    await saveApprovedInvoice(invoiceModel, notificationsService, logger, {
       context,
       invoiceData,
       contactId,
       paymentId,
       emailed,
-      logger,
-    );
+    });
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
     logger.error(
@@ -205,7 +213,7 @@ export async function executeRetryFailedInvoice(
     transactionReference,
     purpose,
   });
-  if (!existing || existing.status !== "FAILED") {
+  if (existing?.status !== "FAILED") {
     return false;
   }
 

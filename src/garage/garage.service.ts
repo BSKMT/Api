@@ -60,11 +60,13 @@ export class GarageService {
 
   async getDashboard(userId: string, targetMotorcycleId?: string) {
     return executeGetDashboard(
-      this.motorcycleModel,
-      this.maintenanceModel,
-      this.odometerModel,
-      this.eventRegistrationModel,
-      this.orderModel,
+      {
+        motorcycleModel: this.motorcycleModel,
+        maintenanceModel: this.maintenanceModel,
+        odometerModel: this.odometerModel,
+        eventRegistrationModel: this.eventRegistrationModel,
+        orderModel: this.orderModel,
+      },
       this.usersService,
       userId,
       targetMotorcycleId,

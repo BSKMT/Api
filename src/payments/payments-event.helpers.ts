@@ -12,6 +12,90 @@ import {
 } from "./payments-creation.helpers";
 import type { EventCoursePaymentDeps } from "./payments-event-course.helpers";
 
+function validateEventRegistrationAndTier(
+  registration: {
+    registrationType?: string;
+    paymentConfirmed?: boolean;
+  } | null,
+  tier: string,
+) {
+  if (!registration) {
+    throw new BadRequestException(
+      "Debes registrarte previamente en el evento antes de iniciar el pago.",
+    );
+  }
+  if (registration.paymentConfirmed) {
+    throw new BadRequestException(
+      "La inscripción para este evento ya se encuentra pagada y confirmada.",
+    );
+  }
+
+  const isWithCompanionReg = registration.registrationType === "with-companion";
+  const isCompanionTier = COMPANION_TIERS.has(tier);
+
+  if (isWithCompanionReg && !isCompanionTier) {
+    throw new BadRequestException(
+      "Tu inscripción incluye acompañante. El tier de pago seleccionado debe ser con acompañante.",
+    );
+  }
+  if (!isWithCompanionReg && isCompanionTier) {
+    throw new BadRequestException(
+      "Tu inscripción es individual. No puedes seleccionar un tier con acompañante.",
+    );
+  }
+}
+
+function calculateEventTierAmountAndDescription(
+  event: {
+    title: string;
+    membersFree?: boolean;
+    nonMemberPrice?: number | null;
+    companionPrice?: number | null;
+  },
+  tier: string,
+): { amount: number; description: string } {
+  const isNonMemberTier = !MEMBER_TIERS.has(tier);
+  const requiresPrice = isNonMemberTier || tier === "member-companion";
+  const basePrice = event.nonMemberPrice ?? null;
+  if (requiresPrice && (basePrice === null || basePrice <= 0)) {
+    throw new BadRequestException(
+      "El evento no tiene un precio configurado. Contacta al administrador.",
+    );
+  }
+  const safeBasePrice = basePrice ?? 0;
+  const companionPrice =
+    event.companionPrice ?? Math.round(safeBasePrice * 0.5);
+
+  switch (tier) {
+    case "member-solo": {
+      const isFree = Boolean(event.membersFree);
+      return {
+        amount: isFree ? 0 : safeBasePrice,
+        description: `Inscripción ${event.title} - Miembro (Solo)${isFree ? "" : " (Evento pago)"}`,
+      };
+    }
+    case "member-companion":
+      return {
+        amount: event.membersFree
+          ? companionPrice
+          : safeBasePrice + companionPrice,
+        description: `Inscripción ${event.title} - Miembro (Con acompañante)`,
+      };
+    case "non-member-solo":
+      return {
+        amount: safeBasePrice,
+        description: `Inscripción ${event.title} - No Miembro (Solo)`,
+      };
+    case "non-member-companion":
+      return {
+        amount: safeBasePrice + companionPrice,
+        description: `Inscripción ${event.title} - No Miembro (Con acompañante)`,
+      };
+    default:
+      throw new BadRequestException("Tier de pago inválido para evento");
+  }
+}
+
 export async function createEventPaymentHelper(
   deps: EventCoursePaymentDeps,
   userId: string,
@@ -32,68 +116,12 @@ export async function createEventPaymentHelper(
     userId,
     dto.eventSlug,
   );
-  if (!registration) {
-    throw new BadRequestException(
-      "Debes registrarte previamente en el evento antes de iniciar el pago.",
-    );
-  }
-  if (registration.paymentConfirmed) {
-    throw new BadRequestException(
-      "La inscripción para este evento ya se encuentra pagada y confirmada.",
-    );
-  }
+  validateEventRegistrationAndTier(registration, dto.tier);
 
-  const isWithCompanionReg = registration.registrationType === "with-companion";
-  const isCompanionTier = COMPANION_TIERS.has(dto.tier);
-
-  if (isWithCompanionReg && !isCompanionTier) {
-    throw new BadRequestException(
-      "Tu inscripción incluye acompañante. El tier de pago seleccionado debe ser con acompañante.",
-    );
-  }
-  if (!isWithCompanionReg && isCompanionTier) {
-    throw new BadRequestException(
-      "Tu inscripción es individual. No puedes seleccionar un tier con acompañante.",
-    );
-  }
-
-  const isNonMemberTier = !MEMBER_TIERS.has(dto.tier);
-  const requiresPrice = isNonMemberTier || dto.tier === "member-companion";
-  const basePrice = event.nonMemberPrice ?? null;
-  if (requiresPrice && (basePrice === null || basePrice <= 0)) {
-    throw new BadRequestException(
-      "El evento no tiene un precio configurado. Contacta al administrador.",
-    );
-  }
-  const safeBasePrice = basePrice ?? 0;
-  const companionPrice =
-    event.companionPrice ?? Math.round(safeBasePrice * 0.5);
-
-  let amount: number;
-  let description: string;
-
-  switch (dto.tier) {
-    case "member-solo":
-      amount = event.membersFree ? 0 : safeBasePrice;
-      description = `Inscripción ${event.title} - Miembro (Solo)${event.membersFree ? "" : " (Evento pago)"}`;
-      break;
-    case "member-companion":
-      amount = event.membersFree
-        ? companionPrice
-        : safeBasePrice + companionPrice;
-      description = `Inscripción ${event.title} - Miembro (Con acompañante)`;
-      break;
-    case "non-member-solo":
-      amount = safeBasePrice;
-      description = `Inscripción ${event.title} - No Miembro (Solo)`;
-      break;
-    case "non-member-companion":
-      amount = safeBasePrice + companionPrice;
-      description = `Inscripción ${event.title} - No Miembro (Con acompañante)`;
-      break;
-    default:
-      throw new BadRequestException("Tier de pago inválido para evento");
-  }
+  const { amount, description } = calculateEventTierAmountAndDescription(
+    event,
+    dto.tier,
+  );
 
   const hasCompanion = COMPANION_TIERS.has(dto.tier);
   const timestamp = Date.now();

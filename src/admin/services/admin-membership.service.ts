@@ -124,10 +124,7 @@ export class AdminMembershipService {
       this.notificationsService,
       this.logger,
       userId,
-      unit,
-      amount,
-      baseDateStr,
-      actorId,
+      { unit, amount, baseDateStr, actorId },
     );
   }
 

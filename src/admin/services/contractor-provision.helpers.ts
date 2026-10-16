@@ -49,16 +49,29 @@ export async function generateUniqueUsername(
   );
 }
 
+export interface CreateBetterAuthAccountParams {
+  email: string;
+  password: string;
+  fullName: string;
+  primerNombre: string;
+  segundoNombre?: string;
+  primerApellido: string;
+  segundoApellido?: string;
+}
+
 export async function createBetterAuthAccount(
-  email: string,
-  password: string,
-  fullName: string,
-  primerNombre: string,
-  segundoNombre: string | undefined,
-  primerApellido: string,
-  segundoApellido: string | undefined,
+  params: CreateBetterAuthAccountParams,
   logger: Logger,
 ): Promise<string> {
+  const {
+    email,
+    password,
+    fullName,
+    primerNombre,
+    segundoNombre,
+    primerApellido,
+    segundoApellido,
+  } = params;
   const auth = await getAuth();
   let betterAuthId = "";
 
@@ -129,13 +142,15 @@ export async function provisionStaffUser(options: ProvisionStaffOptions) {
   const fullName =
     `${norm.primerNombre} ${norm.segundoNombre ? norm.segundoNombre + " " : ""}${norm.primerApellido} ${norm.segundoApellido || ""}`.trim();
   const betterAuthId = await createBetterAuthAccount(
-    norm.email,
-    norm.password,
-    fullName,
-    norm.primerNombre,
-    norm.segundoNombre,
-    norm.primerApellido,
-    norm.segundoApellido,
+    {
+      email: norm.email,
+      password: norm.password,
+      fullName,
+      primerNombre: norm.primerNombre,
+      segundoNombre: norm.segundoNombre,
+      primerApellido: norm.primerApellido,
+      segundoApellido: norm.segundoApellido,
+    },
     logger,
   );
 

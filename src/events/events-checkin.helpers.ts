@@ -1,4 +1,4 @@
-import { randomBytes } from "crypto";
+import { randomBytes } from "node:crypto";
 
 export function generateCheckInCode(prefix: "EVT" | "CRS"): string {
   const part1 = randomBytes(2).toString("hex").toUpperCase();

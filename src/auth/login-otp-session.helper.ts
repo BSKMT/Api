@@ -125,17 +125,29 @@ export async function authenticateAndExtractSession(
   });
 }
 
+export interface DispatchOtpParams {
+  targetEmail: string;
+  session: { sessionCookies: string[]; betterAuthId: string };
+  sessionEncKey: Buffer;
+  windowMs: number;
+  maxSends: number;
+  errorMessage: string;
+}
+
 export async function executeDispatchOtpAndSave(
   otpModel: Model<LoginOtpDocument>,
   birdVerifyService: BirdVerifyService,
-  targetEmail: string,
-  session: { sessionCookies: string[]; betterAuthId: string },
-  sessionEncKey: Buffer,
-  windowMs: number,
-  maxSends: number,
   logger: Logger,
-  errorMessage: string,
+  params: DispatchOtpParams,
 ): Promise<{ requestId: string }> {
+  const {
+    targetEmail,
+    session,
+    sessionEncKey,
+    windowMs,
+    maxSends,
+    errorMessage,
+  } = params;
   await assertEmailThrottle(otpModel, targetEmail, windowMs, maxSends, logger);
 
   if (!birdVerifyService.isConfigured()) {

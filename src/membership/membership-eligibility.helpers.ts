@@ -36,6 +36,56 @@ export function validateNewMembershipEligibility(
   }
 }
 
+function validateRenewalWindow(
+  rawStart: string | undefined,
+  rawEnd: string | undefined,
+  nowMs: number,
+  year: number,
+): void {
+  if (rawStart && nowMs < new Date(rawStart).getTime()) {
+    const startFmt = new Date(rawStart).toLocaleDateString("es-CO", {
+      timeZone: "America/Bogota",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+    throw new BadRequestException(
+      `Las inscripciones de renovación preferencial para miembros de la temporada ${year} aún no han abierto. Fecha de apertura oficial: ${startFmt}.`,
+    );
+  }
+
+  if (rawEnd && nowMs > new Date(rawEnd).getTime()) {
+    throw new BadRequestException(
+      `El periodo de renovaciones para la temporada ${year} ha finalizado.`,
+    );
+  }
+}
+
+function validateNewMemberWindow(
+  rawStart: string | undefined,
+  rawEnd: string | undefined,
+  nowMs: number,
+  year: number,
+): void {
+  if (rawStart && nowMs < new Date(rawStart).getTime()) {
+    const startFmt = new Date(rawStart).toLocaleDateString("es-CO", {
+      timeZone: "America/Bogota",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+    throw new BadRequestException(
+      `Las inscripciones para nuevos ingresos de la temporada ${year} aún no han abierto. Fecha de apertura general: ${startFmt}. Actualmente se encuentra activa la fase de renovación exclusiva para miembros antiguos.`,
+    );
+  }
+
+  if (rawEnd && nowMs > new Date(rawEnd).getTime()) {
+    throw new BadRequestException(
+      `El periodo de inscripciones oficiales para la temporada ${year} ha finalizado.`,
+    );
+  }
+}
+
 export function validateCampaignEnrollmentEligibility(
   campaignConfig?: {
     startDate?: string;
@@ -65,58 +115,12 @@ export function validateCampaignEnrollmentEligibility(
     const rawStart =
       campaignConfig.renewalStartDate || campaignConfig.startDate;
     const rawEnd = campaignConfig.renewalEndDate || campaignConfig.endDate;
-
-    if (rawStart) {
-      const startMs = new Date(rawStart).getTime();
-      if (nowMs < startMs) {
-        const startFmt = new Date(rawStart).toLocaleDateString("es-CO", {
-          timeZone: "America/Bogota",
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-        });
-        throw new BadRequestException(
-          `Las inscripciones de renovación preferencial para miembros de la temporada ${year} aún no han abierto. Fecha de apertura oficial: ${startFmt}.`,
-        );
-      }
-    }
-
-    if (rawEnd) {
-      const endMs = new Date(rawEnd).getTime();
-      if (nowMs > endMs) {
-        throw new BadRequestException(
-          `El periodo de renovaciones para la temporada ${year} ha finalizado.`,
-        );
-      }
-    }
+    validateRenewalWindow(rawStart, rawEnd, nowMs, year);
   } else {
     const rawStart =
       campaignConfig.newMemberStartDate || campaignConfig.startDate;
     const rawEnd = campaignConfig.endDate;
-
-    if (rawStart) {
-      const startMs = new Date(rawStart).getTime();
-      if (nowMs < startMs) {
-        const startFmt = new Date(rawStart).toLocaleDateString("es-CO", {
-          timeZone: "America/Bogota",
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-        });
-        throw new BadRequestException(
-          `Las inscripciones para nuevos ingresos de la temporada ${year} aún no han abierto. Fecha de apertura general: ${startFmt}. Actualmente se encuentra activa la fase de renovación exclusiva para miembros antiguos.`,
-        );
-      }
-    }
-
-    if (rawEnd) {
-      const endMs = new Date(rawEnd).getTime();
-      if (nowMs > endMs) {
-        throw new BadRequestException(
-          `El periodo de inscripciones oficiales para la temporada ${year} ha finalizado.`,
-        );
-      }
-    }
+    validateNewMemberWindow(rawStart, rawEnd, nowMs, year);
   }
 }
 

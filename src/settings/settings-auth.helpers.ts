@@ -30,6 +30,7 @@ export async function discardOrphanSessionFromAuthResponse(
 ): Promise<void> {
   try {
     const setCookies = authResponse.headers.getSetCookie?.() ?? [];
+    const tokensToDelete: string[] = [];
     for (const sc of setCookies) {
       const semi = sc.indexOf(";");
       const pair = (semi === -1 ? sc : sc.slice(0, semi)).trim();
@@ -41,19 +42,23 @@ export async function discardOrphanSessionFromAuthResponse(
         name === "better-auth.session_token" ||
         name === "__Secure-better-auth.session_token"
       ) {
-        const rawToken = decodeURIComponent(value).split(".")[0];
-        const userFilters: (string | ObjectId)[] = [user.betterAuthId];
-        if (ObjectId.isValid(user.betterAuthId)) {
-          userFilters.push(new ObjectId(user.betterAuthId));
-        }
-        const db = getMongoDb();
-        await db
-          .collection("session")
-          .deleteOne({ userId: { $in: userFilters }, token: rawToken });
-        logger?.log(
-          `Discarded orphan session after re-auth for user ${user.betterAuthId}`,
-        );
+        tokensToDelete.push(decodeURIComponent(value).split(".")[0]);
       }
+    }
+
+    if (tokensToDelete.length > 0) {
+      const userFilters: (string | ObjectId)[] = [user.betterAuthId];
+      if (ObjectId.isValid(user.betterAuthId)) {
+        userFilters.push(new ObjectId(user.betterAuthId));
+      }
+      const db = getMongoDb();
+      await db.collection("session").deleteMany({
+        userId: { $in: userFilters },
+        token: { $in: tokensToDelete },
+      });
+      logger?.log(
+        `Discarded orphan session after re-auth for user ${user.betterAuthId}`,
+      );
     }
   } catch (err: unknown) {
     logger?.warn(

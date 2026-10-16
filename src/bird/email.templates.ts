@@ -172,14 +172,23 @@ export function ticketNotificationTemplate(data: {
   const safeUrl = escapeHtml(data.panelUrl);
   const typeLabel = data.type === "EVENT" ? "Evento" : "Curso";
 
+  const headingText = `¡Tu registro en ${safeTitle} está confirmado!`;
+  const headingHtml = HEADING(headingText);
+  const paragraphText = `Hola ${safeName}, tu cupo para el ${typeLabel.toLowerCase()} <strong>${safeTitle}</strong> ha sido confirmado exitosamente.`;
+  const paragraphHtml = PARAGRAPH(paragraphText);
+  const timeSnippet = data.timeText ? ` · ${escapeHtml(data.timeText)}` : "";
+  const coordinatorHtml = data.coordinatorName
+    ? `<p style="margin:0;font-size:13px;color:#1e293b;"><strong>Coordinador:</strong> ${escapeHtml(data.coordinatorName)}</p>`
+    : "";
+
   return SHELL(
     `Confirmación de Registro y Ticket - ${safeTitle}`,
-    `${HEADING(`¡Tu registro en ${safeTitle} está confirmado!`)}
-    ${PARAGRAPH(`Hola ${safeName}, tu cupo para el ${typeLabel.toLowerCase()} <strong>${safeTitle}</strong> ha sido confirmado exitosamente.`)}
+    `${headingHtml}
+    ${paragraphHtml}
     <div style="background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin:16px 0;">
-      <p style="margin:0 0 8px;font-size:13px;color:#1e293b;"><strong>Fecha:</strong> ${safeDate} ${data.timeText ? `· ${escapeHtml(data.timeText)}` : ""}</p>
+      <p style="margin:0 0 8px;font-size:13px;color:#1e293b;"><strong>Fecha:</strong> ${safeDate}${timeSnippet}</p>
       <p style="margin:0 0 8px;font-size:13px;color:#1e293b;"><strong>Lugar / Encuentro:</strong> ${safeLoc}</p>
-      ${data.coordinatorName ? `<p style="margin:0;font-size:13px;color:#1e293b;"><strong>Coordinador:</strong> ${escapeHtml(data.coordinatorName)}</p>` : ""}
+      ${coordinatorHtml}
     </div>
     <div style="background-color:#ffffff;border:2px dashed #cbd5e1;border-radius:16px;padding:20px;text-align:center;margin:20px 0;">
       <p style="margin:0 0 12px;color:#dc2626;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">PASE DIGITAL DE ASISTENCIA</p>

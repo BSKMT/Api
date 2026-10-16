@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import { NotFoundException } from "@nestjs/common";
 import { Model } from "mongoose";
 import {
@@ -44,7 +45,7 @@ export async function executeReviewRefundFinance(
   const now = new Date();
   const docRadicado =
     dto.radicadoDocument ||
-    `DOC-FIN-${now.getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
+    `DOC-FIN-${now.getFullYear()}-${randomInt(10000, 100000)}`;
 
   if (dto.approved) {
     req.status = SavingsRefundStatus.APPROVED;
@@ -147,7 +148,7 @@ export async function executeReviewLegalEscalation(
   const now = new Date();
   const legalRadicado =
     dto.committeeRadicado ||
-    `RES-LEG-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    `RES-LEG-${now.getFullYear()}-${randomInt(1000, 10000)}`;
 
   if (dto.approved) {
     req.status = SavingsRefundStatus.LEGAL_RESOLVED_APPROVED;

@@ -54,9 +54,11 @@ export class MembershipExpirationService {
     const gracePeriodEnd = new Date(now);
     gracePeriodEnd.setMonth(gracePeriodEnd.getMonth() + 1);
 
-    for (const member of expiredMembers) {
-      await this.startGracePeriodFor(member, now, gracePeriodEnd);
-    }
+    await Promise.all(
+      expiredMembers.map((member) =>
+        this.startGracePeriodFor(member, now, gracePeriodEnd),
+      ),
+    );
   }
 
   /** Inicia el periodo de gracia de un miembro concreto (con guarda atomica M-8). */
@@ -118,9 +120,9 @@ export class MembershipExpirationService {
       `Found ${gracePeriodExpired.length} members with expired grace period. Reverting to user role...`,
     );
 
-    for (const member of gracePeriodExpired) {
-      await this.revokeExpiredMember(member, now);
-    }
+    await Promise.all(
+      gracePeriodExpired.map((member) => this.revokeExpiredMember(member, now)),
+    );
   }
 
   /** Revoca un miembro con periodo de gracia expirado, con o sin cuotas parciales. */

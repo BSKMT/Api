@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { Model } from "mongoose";
 import {
@@ -50,7 +51,7 @@ export async function executeRequestRefund(
   }
 
   const now = new Date();
-  const radicadoSeq = Math.floor(1000 + Math.random() * 9000);
+  const radicadoSeq = randomInt(1000, 10000);
   const radicadoNumber = `RAD-BSK-FIN-${plan.seasonYear}-${radicadoSeq}`;
 
   const totalSavedAmount = plan.totalAmountSaved;

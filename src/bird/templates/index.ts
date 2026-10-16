@@ -55,9 +55,9 @@ function htmlToPlainText(html: string): string {
       "$2 ($1)",
     )
     .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&bull;/g, "•")
-    .replace(/&copy;/g, "©")
+    .replaceAll("&nbsp;", " ")
+    .replaceAll("&bull;", "•")
+    .replaceAll("&copy;", "©")
     .replace(/&[a-z0-9]+;/gi, " ")
     .replace(/\n\s*\n\s*\n/g, "\n\n")
     .trim();
@@ -117,7 +117,9 @@ export function renderContactInternal(
  * Renderiza el correo de confirmación de registro y ticket de asistencia con React Email.
  */
 export function renderTicketNotification(
-  props: import("./ticket-notification").TicketNotificationEmailProps,
+  props: import("./ticket-notification").TicketNotificationEmailProps & {
+    slug?: string;
+  },
 ): Promise<RenderedEmailResult> {
   return renderReactEmail(React.createElement(TicketNotificationEmail, props));
 }

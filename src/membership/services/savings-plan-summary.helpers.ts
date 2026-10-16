@@ -15,6 +15,10 @@ import {
   INSTALLMENTS_TOTAL,
   INSTALLMENT_AMOUNT,
 } from "../membership.constants";
+import {
+  evaluateSavingsPlanTransitions,
+  computeSavingsPlanActionFlags,
+} from "./savings-plan-transitions.helpers";
 
 export async function getOrCreateUserSavingsPlan(
   savingsPlanModel: Model<SavingsPlanDocument>,
@@ -75,45 +79,14 @@ export async function computeSavingsPlanSummary(
   const renewalStart = campaign?.renewalStartDate || campaign?.startDate;
   const renewalStartMs = renewalStart ? new Date(renewalStart).getTime() : null;
 
-  let currentStatus = plan.status;
-  let gracePeriod1ExpiresAt = plan.gracePeriod1ExpiresAt;
-
-  if (
-    plan.isRenewal &&
-    renewalEndMs &&
-    nowMs > renewalEndMs &&
-    plan.installmentsPaid < plan.targetInstallments &&
-    currentStatus === SavingsPlanStatus.ACTIVE
-  ) {
-    const g1 = new Date(renewalEndMs + 30 * 24 * 60 * 60 * 1000);
-    plan.gracePeriod1ExpiresAt = g1;
-    gracePeriod1ExpiresAt = g1;
-
-    if (nowMs <= g1.getTime()) {
-      plan.status = SavingsPlanStatus.GRACE_PERIOD_1;
-      currentStatus = SavingsPlanStatus.GRACE_PERIOD_1;
-    } else if (!plan.gracePeriod2ExpiresAt) {
-      plan.status = SavingsPlanStatus.LAPSED_TEMPORARY;
-      currentStatus = SavingsPlanStatus.LAPSED_TEMPORARY;
-    }
-    await plan.save();
-  }
-
-  if (
-    currentStatus === SavingsPlanStatus.GRACE_PERIOD_2 &&
-    plan.gracePeriod2ExpiresAt &&
-    nowMs > new Date(plan.gracePeriod2ExpiresAt).getTime() &&
-    plan.installmentsPaid < plan.targetInstallments
-  ) {
-    plan.status = SavingsPlanStatus.LAPSED_TEMPORARY;
-    currentStatus = SavingsPlanStatus.LAPSED_TEMPORARY;
-    await plan.save();
-
-    await userModel.updateOne(
-      { _id: userId, role: UserRole.MEMBER },
-      { $set: { role: UserRole.USER } },
+  const { currentStatus, gracePeriod1ExpiresAt } =
+    await evaluateSavingsPlanTransitions(
+      plan,
+      campaign,
+      userModel,
+      userId,
+      nowMs,
     );
-  }
 
   const remainingInstallments = Math.max(
     0,
@@ -124,31 +97,6 @@ export async function computeSavingsPlanSummary(
     100,
     Math.round((plan.installmentsPaid / plan.targetInstallments) * 100),
   );
-
-  const isInGrace1 =
-    currentStatus === SavingsPlanStatus.GRACE_PERIOD_1 &&
-    !!gracePeriod1ExpiresAt &&
-    nowMs <= new Date(gracePeriod1ExpiresAt).getTime();
-
-  const isInGrace2 =
-    currentStatus === SavingsPlanStatus.GRACE_PERIOD_2 &&
-    !!plan.gracePeriod2ExpiresAt &&
-    nowMs <= new Date(plan.gracePeriod2ExpiresAt).getTime();
-
-  const isInGrace = isInGrace1 || isInGrace2;
-  const canPaySingleInstallment =
-    currentStatus === SavingsPlanStatus.ACTIVE && !isInGrace;
-  const canCompleteBalance =
-    (currentStatus === SavingsPlanStatus.ACTIVE || isInGrace) &&
-    remainingInstallments > 0;
-
-  const canRequestExtension =
-    (currentStatus === SavingsPlanStatus.GRACE_PERIOD_1 ||
-      (renewalEndMs && nowMs > renewalEndMs && plan.installmentsPaid < 12)) &&
-    (!plan.extensionRequest ||
-      plan.extensionRequest.status === "none" ||
-      plan.extensionRequest.status === "rejected") &&
-    currentStatus !== SavingsPlanStatus.GRACE_PERIOD_2;
 
   const activeRefund = await refundRequestModel
     .findOne({
@@ -162,26 +110,16 @@ export async function computeSavingsPlanSummary(
     })
     .sort({ createdAt: -1 });
 
-  const canRequestRefund =
-    (currentStatus === SavingsPlanStatus.LAPSED_TEMPORARY ||
-      currentStatus === SavingsPlanStatus.GRACE_PERIOD_1 ||
-      currentStatus === SavingsPlanStatus.GRACE_PERIOD_2) &&
-    plan.totalAmountSaved > 0 &&
-    !activeRefund;
-
-  const isRenewalWindowOpen = Boolean(
-    renewalStartMs &&
-    renewalEndMs &&
-    nowMs >= renewalStartMs &&
-    nowMs <= renewalEndMs,
-  );
-
-  const canReinstate = Boolean(
-    (currentStatus === SavingsPlanStatus.LAPSED_TEMPORARY ||
-      currentStatus === SavingsPlanStatus.ACTIVE) &&
-    plan.installmentsPaid >= 12 &&
-    isRenewalWindowOpen,
-  );
+  const actions = computeSavingsPlanActionFlags({
+    plan,
+    currentStatus,
+    gracePeriod1ExpiresAt,
+    renewalStartMs,
+    renewalEndMs,
+    nowMs,
+    remainingInstallments,
+    hasActiveRefund: Boolean(activeRefund),
+  });
 
   return {
     seasonYear: plan.seasonYear,
@@ -195,15 +133,15 @@ export async function computeSavingsPlanSummary(
     progressPercent,
     status: currentStatus,
     excessInstallments: plan.excessInstallments,
-    isInGracePeriod: isInGrace,
+    isInGracePeriod: actions.isInGrace,
     gracePeriod1ExpiresAt: plan.gracePeriod1ExpiresAt,
     gracePeriod2ExpiresAt: plan.gracePeriod2ExpiresAt,
-    canPaySingleInstallment,
-    canCompleteBalance,
-    canRequestExtension,
-    canRequestRefund,
-    canReinstate,
-    isRenewalWindowOpen,
+    canPaySingleInstallment: actions.canPaySingleInstallment,
+    canCompleteBalance: actions.canCompleteBalance,
+    canRequestExtension: actions.canRequestExtension,
+    canRequestRefund: actions.canRequestRefund,
+    canReinstate: actions.canReinstate,
+    isRenewalWindowOpen: actions.isRenewalWindowOpen,
     extensionRequest: plan.extensionRequest,
     activeRefund,
   };

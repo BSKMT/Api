@@ -166,6 +166,7 @@ export class CoursesService {
     const enrollments = await this.courseEnrollmentModel
       .find(filter)
       .sort({ createdAt: -1 });
+    const pendingSaves: Promise<unknown>[] = [];
     for (const enr of enrollments) {
       if (!enr.checkInCode) {
         const code = generateCheckInCode("CRS");
@@ -176,8 +177,11 @@ export class CoursesService {
           checkInCode: code,
           userId,
         });
-        await enr.save();
+        pendingSaves.push(enr.save());
       }
+    }
+    if (pendingSaves.length > 0) {
+      await Promise.all(pendingSaves);
     }
     return enrollments;
   }
