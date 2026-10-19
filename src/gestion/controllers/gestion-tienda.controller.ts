@@ -11,6 +11,7 @@ import {
   HttpCode,
   HttpStatus,
   NotFoundException,
+  BadRequestException,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
@@ -25,6 +26,7 @@ import {
   OrderStatus,
 } from "../../shop/schemas/order.schema";
 import { ParseObjectIdPipe } from "../../common/pipes/parse-object-id.pipe";
+import { ensureString } from "../../common/utils/sanitize-query.util";
 
 class DispatchOrderDto {
   @IsString()
@@ -43,10 +45,11 @@ export class GestionTiendaController {
   ) {}
 
   @Get("orders")
-  async listOrders(@Query("status") status?: string) {
+  async listOrders(@Query("status") status?: unknown) {
     const filter: Record<string, unknown> = {};
-    if (status && typeof status === "string") {
-      const cleanStatus = status.trim().toUpperCase();
+    const statusStr = ensureString(status);
+    if (statusStr) {
+      const cleanStatus = statusStr.trim().toUpperCase();
       if (Object.values(OrderStatus).includes(cleanStatus as OrderStatus)) {
         filter.status = cleanStatus;
       }
@@ -74,6 +77,12 @@ export class GestionTiendaController {
       throw new NotFoundException("Orden no encontrada");
     }
 
+    if (order.status !== OrderStatus.PAID) {
+      throw new BadRequestException(
+        `Solo se pueden despachar órdenes en estado PAID (estado actual: ${order.status}).`,
+      );
+    }
+
     order.status = OrderStatus.SHIPPED;
     order.trackingNumber = dto.trackingNumber;
     await order.save();
@@ -93,6 +102,12 @@ export class GestionTiendaController {
     const order = await this.orderModel.findById(id);
     if (!order) {
       throw new NotFoundException("Orden no encontrada");
+    }
+
+    if (order.status !== OrderStatus.SHIPPED) {
+      throw new BadRequestException(
+        `Solo se pueden marcar como entregadas órdenes en estado SHIPPED (estado actual: ${order.status}).`,
+      );
     }
 
     order.status = OrderStatus.DELIVERED;

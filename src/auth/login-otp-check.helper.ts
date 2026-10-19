@@ -10,11 +10,59 @@ import {
   BirdVerifyService,
   type BirdCheckResult,
 } from "../bird-verify/bird-verify.service";
+import { getMongoDb } from "./better-auth";
 import {
   decryptSessionCookies,
   extractCookiesFromHeaders,
+  extractSessionTokenFromCookies,
 } from "./login-otp-crypto.helper";
 import { maskEmail } from "../common/utils/log-redact.util";
+
+const FULL_SESSION_TTL_MS = 60 * 24 * 60 * 60 * 1000;
+
+export async function revokeEncryptedOtpSession(
+  otpRecord: LoginOtpDocument,
+  sessionEncKey: Buffer,
+  logger?: Logger,
+): Promise<void> {
+  try {
+    const rawCookies = decryptSessionCookies(
+      otpRecord.sessionCookies,
+      sessionEncKey,
+      logger,
+    );
+    const token = extractSessionTokenFromCookies(rawCookies);
+    if (!token) return;
+    const db = getMongoDb();
+    await db.collection("session").deleteOne({ token });
+  } catch {
+    // Best-effort cleanup
+  }
+}
+
+async function promoteBetterAuthSessionOnOtpSuccess(
+  rawCookies: string[],
+): Promise<void> {
+  const token = extractSessionTokenFromCookies(rawCookies);
+  if (!token) return;
+  try {
+    const db = getMongoDb();
+    await db.collection("session").updateOne(
+      { token },
+      {
+        $set: {
+          expiresAt: new Date(Date.now() + FULL_SESSION_TTL_MS),
+        },
+        $unset: {
+          otpPending: "",
+          rememberMe: "",
+        },
+      },
+    );
+  } catch {
+    // Non-fatal
+  }
+}
 
 export async function dispatchBirdVerification(
   birdVerifyService: BirdVerifyService,
@@ -60,12 +108,16 @@ export async function handleBirdCheckError(
   otpRecord: LoginOtpDocument,
   requestId: string,
   logger: Logger,
+  sessionEncKey?: Buffer,
 ): Promise<never> {
   const errMsg = err instanceof Error ? err.message : String(err);
 
   if (/404|not found|no verification/i.test(errMsg)) {
     otpRecord.status = "expired";
     await otpRecord.save();
+    if (sessionEncKey) {
+      await revokeEncryptedOtpSession(otpRecord, sessionEncKey, logger);
+    }
     logger.warn(
       `Bird check returned 404 (resolved/expired) for requestId=${requestId} birdId=${otpRecord.birdVerificationId ?? "n/a"}`,
     );
@@ -101,6 +153,7 @@ export async function assertNotTerminalOrThrow(
   requestId: string,
   birdResult: BirdCheckResult,
   logger: Logger,
+  sessionEncKey?: Buffer,
 ): Promise<void> {
   const reason = birdResult.reason;
   const status = birdResult.status;
@@ -116,6 +169,9 @@ export async function assertNotTerminalOrThrow(
 
   otpRecord.status = "expired";
   await otpRecord.save();
+  if (sessionEncKey) {
+    await revokeEncryptedOtpSession(otpRecord, sessionEncKey, logger);
+  }
   logger.warn(
     `Bird verification resolved terminally: requestId=${requestId} reason=${reason} status=${status}`,
   );
@@ -150,6 +206,9 @@ export async function processBirdCheckResult(
         "El código de verificación ha expirado. Solicita uno nuevo.",
       );
     }
+
+    await promoteBetterAuthSessionOnOtpSuccess(rawCookies);
+
     const isProd = process.env.NODE_ENV === "production";
     const setCookieHeaders = rawCookies.map((sc) => {
       if (sc.includes(";")) return sc;
@@ -160,7 +219,13 @@ export async function processBirdCheckResult(
   }
 
   otpRecord.attempts += 1;
-  await assertNotTerminalOrThrow(otpRecord, requestId, birdResult, logger);
+  await assertNotTerminalOrThrow(
+    otpRecord,
+    requestId,
+    birdResult,
+    logger,
+    sessionEncKey,
+  );
 
   await otpRecord.save();
   const remaining = birdResult.attemptsRemaining;

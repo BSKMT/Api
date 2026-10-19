@@ -30,6 +30,12 @@ export async function executeInitiatePhoneVerification(
     );
   }
 
+  if (!smsService.isAllowedCountryPrefix(phone)) {
+    throw new BadRequestException(
+      "Solo se permiten numeros telefonicos de paises autorizados (+57).",
+    );
+  }
+
   const user = await userModel.findById(userId);
   if (!user) {
     throw new BadRequestException("Usuario no encontrado");
@@ -49,6 +55,7 @@ export async function executeInitiatePhoneVerification(
   }
 
   await phoneThrottle.enforce(phone, logger);
+  await phoneThrottle.enforce(`user:${userId}`, logger);
 
   try {
     await birdVerifyService.createPhoneVerification(phone, {
@@ -64,13 +71,15 @@ export async function executeInitiatePhoneVerification(
     throw new BadRequestException(
       "No se pudo enviar el codigo SMS. Verifica el numero e intenta de nuevo.",
     );
+  } finally {
+    await phoneThrottle.record(phone);
+    await phoneThrottle.record(`user:${userId}`);
   }
 
   user.pendingPhone = phone;
   user.phoneVerified = false;
   await user.save();
 
-  await phoneThrottle.record(phone);
   logger.log(`Phone OTP sent to ${maskPhone(phone)} for user ${userId}`);
 }
 

@@ -155,6 +155,9 @@ export const configValidationSchema = Joi.object({
 
   OBSERVE_APP_KEY: Joi.string().allow("").default(""),
   OBSERVE_APP_SECRET: Joi.string().allow("").default(""),
+
+  CF_ORIGIN_SECRET: Joi.string().allow("").default(""),
+  ALLOWED_SMS_PREFIXES: Joi.string().allow("").default("+57"),
 });
 
 export function validateConfig(

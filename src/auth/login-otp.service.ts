@@ -1,4 +1,9 @@
-import { Injectable, Logger, GoneException } from "@nestjs/common";
+import {
+  Injectable,
+  Logger,
+  GoneException,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { LoginOtp, LoginOtpDocument } from "./schemas/login-otp.schema";
@@ -11,16 +16,19 @@ import { deriveSessionEncryptionKey } from "./login-otp-crypto.helper";
 import {
   handleBirdCheckError,
   processBirdCheckResult,
+  revokeEncryptedOtpSession,
 } from "./login-otp-check.helper";
 import {
   authenticateAndExtractSession,
   executeDispatchOtpAndSave,
+  revokeBetterAuthSessionByCookies,
 } from "./login-otp-session.helper";
 import {
   findAndValidateFasciaUser,
   findAndValidateConsoleUser,
   findAndValidateSuperAdminUser,
 } from "./login-otp-portals.helper";
+import { verifyTurnstileToken } from "../common/utils/turnstile.util";
 
 @Injectable()
 export class LoginOtpService {
@@ -48,15 +56,27 @@ export class LoginOtpService {
     this.sessionEncKey = deriveSessionEncryptionKey(secret);
   }
 
-  private async authenticateAndDispatch(
-    authEmail: string,
-    targetEmail: string,
-    password: string,
-    remember: boolean,
-    clientIp?: string,
-    userAgent?: string,
-    errorMessage: string = LoginOtpService.GENERIC_AUTH_ERROR,
-  ): Promise<{ requestId: string }> {
+  private async authenticateAndDispatch(params: {
+    authEmail: string;
+    targetEmail: string;
+    password: string;
+    remember: boolean;
+    clientIp?: string;
+    userAgent?: string;
+    errorMessage?: string;
+    isEligible?: boolean;
+  }): Promise<{ requestId: string }> {
+    const {
+      authEmail,
+      targetEmail,
+      password,
+      remember,
+      clientIp,
+      userAgent,
+      errorMessage = LoginOtpService.GENERIC_AUTH_ERROR,
+      isEligible = true,
+    } = params;
+
     const session = await authenticateAndExtractSession(
       authEmail,
       password,
@@ -66,6 +86,14 @@ export class LoginOtpService {
       errorMessage,
       this.logger,
     );
+
+    if (!isEligible) {
+      await revokeBetterAuthSessionByCookies(session.sessionCookies);
+      this.logger.warn(
+        `Login OTP bloqueado tras verificar contraseña: cuenta no elegible o sin rol requerido para el portal (${targetEmail}).`,
+      );
+      throw new UnauthorizedException(errorMessage);
+    }
 
     return executeDispatchOtpAndSave(
       this.otpModel,
@@ -78,6 +106,7 @@ export class LoginOtpService {
         windowMs: this.EMAIL_INITIATE_WINDOW_MS,
         maxSends: this.EMAIL_INITIATE_MAX,
         errorMessage,
+        remember,
       },
     );
   }
@@ -88,7 +117,9 @@ export class LoginOtpService {
     rememberMe?: boolean,
     clientIp?: string,
     userAgent?: string,
+    turnstileToken?: string,
   ): Promise<{ requestId: string }> {
+    await verifyTurnstileToken(turnstileToken, clientIp, this.logger);
     const normalizedEmail = (email ?? "").toLowerCase().trim();
     const user = await this.userModel
       .findOne({
@@ -101,14 +132,20 @@ export class LoginOtpService {
       .lean();
 
     const authEmail = user?.email || normalizedEmail;
-    return this.authenticateAndDispatch(
+    const isEligible =
+      !user ||
+      (user.isActive !== false && user.accountDeletionRequested !== true);
+
+    return this.authenticateAndDispatch({
       authEmail,
-      normalizedEmail,
+      targetEmail: normalizedEmail,
       password,
-      rememberMe === true,
+      remember: rememberMe === true,
       clientIp,
       userAgent,
-    );
+      errorMessage: LoginOtpService.GENERIC_AUTH_ERROR,
+      isEligible,
+    });
   }
 
   async initiateFasciaLogin(
@@ -117,22 +154,23 @@ export class LoginOtpService {
     rememberMe?: boolean,
     clientIp?: string,
     userAgent?: string,
+    turnstileToken?: string,
   ): Promise<{ requestId: string }> {
-    const { authEmail, targetEmail } = await findAndValidateFasciaUser(
-      this.userModel,
-      username,
-      this.logger,
-    );
+    await verifyTurnstileToken(turnstileToken, clientIp, this.logger);
+    const { authEmail, targetEmail, isEligible } =
+      await findAndValidateFasciaUser(this.userModel, username, this.logger);
 
-    return this.authenticateAndDispatch(
+    return this.authenticateAndDispatch({
       authEmail,
       targetEmail,
       password,
-      rememberMe === true,
+      remember: rememberMe === true,
       clientIp,
       userAgent,
-      "Error al iniciar sesión en Fascia. Verifica tus credenciales.",
-    );
+      errorMessage:
+        "Error al iniciar sesión en Fascia. Verifica tus credenciales.",
+      isEligible,
+    });
   }
 
   async initiateConsoleLogin(
@@ -142,23 +180,27 @@ export class LoginOtpService {
     rememberMe?: boolean,
     clientIp?: string,
     userAgent?: string,
+    turnstileToken?: string,
   ): Promise<{ requestId: string }> {
-    const { authEmail, targetEmail } = await findAndValidateConsoleUser(
-      this.userModel,
-      email,
-      username,
-      this.logger,
-    );
+    await verifyTurnstileToken(turnstileToken, clientIp, this.logger);
+    const { authEmail, targetEmail, isEligible } =
+      await findAndValidateConsoleUser(
+        this.userModel,
+        email,
+        username,
+        this.logger,
+      );
 
-    return this.authenticateAndDispatch(
+    return this.authenticateAndDispatch({
       authEmail,
       targetEmail,
       password,
-      rememberMe === true,
+      remember: rememberMe === true,
       clientIp,
       userAgent,
-      "Error al iniciar sesión en la Consola Administrativa.",
-    );
+      errorMessage: "Error al iniciar sesión en la Consola Administrativa.",
+      isEligible,
+    });
   }
 
   async initiateSuperAdminLogin(
@@ -168,23 +210,27 @@ export class LoginOtpService {
     rememberMe?: boolean,
     clientIp?: string,
     userAgent?: string,
+    turnstileToken?: string,
   ): Promise<{ requestId: string }> {
-    const { authEmail, targetEmail } = await findAndValidateSuperAdminUser(
-      this.userModel,
-      email,
-      username,
-      this.logger,
-    );
+    await verifyTurnstileToken(turnstileToken, clientIp, this.logger);
+    const { authEmail, targetEmail, isEligible } =
+      await findAndValidateSuperAdminUser(
+        this.userModel,
+        email,
+        username,
+        this.logger,
+      );
 
-    return this.authenticateAndDispatch(
+    return this.authenticateAndDispatch({
       authEmail,
       targetEmail,
       password,
-      rememberMe === true,
+      remember: rememberMe === true,
       clientIp,
       userAgent,
-      "Error al iniciar sesión como Superadministrador.",
-    );
+      errorMessage: "Error al iniciar sesión como Superadministrador.",
+      isEligible,
+    });
   }
 
   async verifyOtp(
@@ -205,6 +251,11 @@ export class LoginOtpService {
     if (otpRecord.attempts >= 5) {
       otpRecord.status = "expired";
       await otpRecord.save();
+      await revokeEncryptedOtpSession(
+        otpRecord,
+        this.sessionEncKey,
+        this.logger,
+      );
       throw new GoneException(
         "Has superado el máximo de intentos permitidos. Solicita un nuevo código.",
       );
@@ -217,7 +268,13 @@ export class LoginOtpService {
         code,
       );
     } catch (err) {
-      return await handleBirdCheckError(err, otpRecord, requestId, this.logger);
+      return await handleBirdCheckError(
+        err,
+        otpRecord,
+        requestId,
+        this.logger,
+        this.sessionEncKey,
+      );
     }
 
     return await processBirdCheckResult(
@@ -230,8 +287,18 @@ export class LoginOtpService {
   }
 
   async invalidatePending(email: string): Promise<void> {
+    const normalized = email.toLowerCase();
+    const pendingRecords = await this.otpModel.find({
+      email: normalized,
+      status: "pending",
+    });
+    await Promise.all(
+      pendingRecords.map((rec) =>
+        revokeEncryptedOtpSession(rec, this.sessionEncKey, this.logger),
+      ),
+    );
     await this.otpModel.updateMany(
-      { email: email.toLowerCase(), status: "pending" },
+      { email: normalized, status: "pending" },
       { status: "expired" },
     );
   }

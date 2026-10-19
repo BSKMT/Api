@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, BadRequestException } from "@nestjs/common";
 import { BirdService } from "../bird/bird.service";
 import type {
   BirdVerificationStatus,
@@ -7,6 +7,21 @@ import type {
   BirdVerificationResponse,
   BirdVerificationCheckResult,
 } from "../bird/bird.service";
+
+const E164_PATTERN = /^\+[1-9]\d{5,14}$/;
+
+function isAllowedVerifyPhonePrefix(phone: string): boolean {
+  const raw = process.env.ALLOWED_SMS_PREFIXES ?? "+57";
+  const prefixes = raw
+    .split(",")
+    .map((p) => p.trim())
+    .filter((p) => p.startsWith("+"));
+  const activePrefixes = prefixes.length > 0 ? prefixes : ["+57"];
+  return (
+    E164_PATTERN.test(phone) &&
+    activePrefixes.some((prefix) => phone.startsWith(prefix))
+  );
+}
 
 /**
  * BirdVerifyService — Wrapper around Bird Verify for sending and
@@ -114,6 +129,11 @@ export class BirdVerifyService {
     phone: string,
     metadata?: Record<string, unknown>,
   ): Promise<BirdCreateResult> {
+    if (!isAllowedVerifyPhonePrefix(phone)) {
+      throw new BadRequestException(
+        "Solo se permiten numeros telefonicos en formato E.164 de paises autorizados (+57).",
+      );
+    }
     const client = await this.birdService.getClient();
     const params: BirdVerifyCreateParams = {
       to: { phone_number: phone },

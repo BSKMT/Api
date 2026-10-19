@@ -15,6 +15,7 @@ import type { EventCoursePaymentDeps } from "./payments-event-course.helpers";
 function validateEventRegistrationAndTier(
   registration: {
     registrationType?: string;
+    attendanceMode?: string;
     paymentConfirmed?: boolean;
   } | null,
   tier: string,
@@ -30,7 +31,9 @@ function validateEventRegistrationAndTier(
     );
   }
 
-  const isWithCompanionReg = registration.registrationType === "with-companion";
+  const isWithCompanionReg =
+    registration.attendanceMode === "with-companion" ||
+    registration.registrationType === "with-companion";
   const isCompanionTier = COMPANION_TIERS.has(tier);
 
   if (isWithCompanionReg && !isCompanionTier) {

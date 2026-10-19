@@ -185,3 +185,23 @@ export class User {
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
+
+UserSchema.set("toJSON", {
+  transform: (_doc, ret) => {
+    const obj = ret as unknown as Record<string, unknown>;
+    delete obj["betterAuthId"];
+    delete obj["pendingPhone"];
+    delete obj["pendingEmail"];
+    if (
+      obj["identityVerification"] &&
+      typeof obj["identityVerification"] === "object"
+    ) {
+      const iv = {
+        ...(obj["identityVerification"] as Record<string, unknown>),
+      };
+      delete iv["verifikId"];
+      obj["identityVerification"] = iv;
+    }
+    return obj;
+  },
+});

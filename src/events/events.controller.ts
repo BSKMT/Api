@@ -89,7 +89,14 @@ export class EventsController {
   ) {
     const { userId } = req.user;
     const fullUser = await this.usersService.findById(userId);
-    const membershipLevel = fullUser?.membershipLevel ?? null;
+    const isActiveMember =
+      fullUser?.role === "member" &&
+      !fullUser?.membershipExpired &&
+      (!fullUser?.membershipExpiryDate ||
+        new Date(fullUser.membershipExpiryDate) > new Date());
+    const membershipLevel = isActiveMember
+      ? (fullUser?.membershipLevel ?? null)
+      : null;
     const registration = await this.eventsService.registerForEvent(
       userId,
       dto,

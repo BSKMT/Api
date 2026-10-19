@@ -31,7 +31,8 @@ export function determineMembershipStatus(
   if (isMember) {
     return event.membersFree ? "active-member" : "member-paid";
   }
-  if (dto.registrationType === "managed") {
+  const hasNonMemberPrice = (event.nonMemberPrice ?? 0) > 0;
+  if (hasNonMemberPrice || dto.registrationType === "managed") {
     return "non-member-paid";
   }
   return "non-member-free";

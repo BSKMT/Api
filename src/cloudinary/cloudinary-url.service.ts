@@ -38,9 +38,26 @@ export class CloudinaryUrlService {
       );
     }
 
+    const safeParams: Record<string, unknown> = {};
+    if (
+      typeof paramsToSign.folder === "string" &&
+      /^[a-zA-Z0-9/_-]+$/.test(paramsToSign.folder) &&
+      !paramsToSign.folder.includes("..")
+    ) {
+      safeParams.folder = paramsToSign.folder.startsWith("bskmt/")
+        ? paramsToSign.folder
+        : `bskmt/${paramsToSign.folder}`;
+    } else {
+      safeParams.folder = "bskmt/general";
+    }
+    if (typeof paramsToSign.tags === "string") {
+      safeParams.tags = paramsToSign.tags;
+    }
+    safeParams.overwrite = "false";
+
     const timestamp = Math.round(Date.now() / 1000);
     const signature = this.cloudinary.utils.api_sign_request(
-      { ...paramsToSign, timestamp },
+      { ...safeParams, timestamp },
       apiSecret,
     );
 

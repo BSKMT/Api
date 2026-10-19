@@ -76,6 +76,12 @@ export class SessionGuard {
       );
     }
 
+    if (session.session?.otpPending === true) {
+      throw new UnauthorizedException(
+        "No autorizado — verificación de segundo factor (OTP) pendiente",
+      );
+    }
+
     const betterAuthUserId: string = session.user.id;
 
     const cacheKey = `user:ba:${betterAuthUserId}`;
@@ -83,6 +89,7 @@ export class SessionGuard {
       _id: string;
       role: string;
       subrol?: string | null;
+      adminPermissions?: string[];
       isActive: boolean;
       accountDeletionRequested: boolean;
     }>(cacheKey, true);
@@ -104,6 +111,7 @@ export class SessionGuard {
             _id: String(mongooseUser._id),
             role: mongooseUser.role,
             subrol: mongooseUser.subrol ?? null,
+            adminPermissions: mongooseUser.adminPermissions ?? [],
             isActive: mongooseUser.isActive,
             accountDeletionRequested:
               mongooseUser.accountDeletionRequested ?? false,

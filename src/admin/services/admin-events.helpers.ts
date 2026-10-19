@@ -15,7 +15,7 @@ export function sanitizeRegistrationsForActor<T>(
   items: T[],
   actorRole?: string,
 ): T[] {
-  const isAdmin = actorRole === "admin";
+  const isAdmin = actorRole === "admin" || actorRole === "superadmin";
   if (isAdmin) return items;
 
   return items.map((r) => {
@@ -35,7 +35,7 @@ export function sanitizeRegistrationsForActor<T>(
       delete redacted["phone"];
       delete redacted["email"];
       copy["companionData"] =
-        Object.keys(redacted).length > 0 ? redacted : copy["companionData"];
+        Object.keys(redacted).length > 0 ? redacted : null;
       return copy as unknown as T;
     }
     return r;

@@ -37,6 +37,7 @@ export async function linkPaymentByPurposeHelper(
         transaction.userId,
         transaction.eventSlug,
         transaction.reference,
+        transaction.amount,
       );
       deps.logger.log(
         `ARPHA payment linked: user=${transaction.userId} request=${transaction.eventSlug}`,

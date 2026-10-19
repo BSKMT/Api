@@ -46,7 +46,8 @@ export class LoginOtpController {
     @Body() dto: LoginOtpInitiateDto,
     @Req() req: Request,
   ): Promise<{ requestId: string }> {
-    const clientIp = req.ip ?? "";
+    const clientIp =
+      (req.headers["cf-connecting-ip"] as string | undefined) || req.ip || "";
     const userAgent = req.headers["user-agent"] ?? "";
     return this.loginOtpService.initiateLogin(
       dto.email,
@@ -54,6 +55,7 @@ export class LoginOtpController {
       dto.rememberMe,
       clientIp,
       userAgent,
+      dto.turnstileToken,
     );
   }
 
@@ -65,7 +67,8 @@ export class LoginOtpController {
     @Body() dto: LoginOtpFasciaInitiateDto,
     @Req() req: Request,
   ): Promise<{ requestId: string }> {
-    const clientIp = req.ip ?? "";
+    const clientIp =
+      (req.headers["cf-connecting-ip"] as string | undefined) || req.ip || "";
     const userAgent = req.headers["user-agent"] ?? "";
     return this.loginOtpService.initiateFasciaLogin(
       dto.username,
@@ -73,6 +76,7 @@ export class LoginOtpController {
       dto.rememberMe,
       clientIp,
       userAgent,
+      dto.turnstileToken,
     );
   }
 
@@ -84,7 +88,8 @@ export class LoginOtpController {
     @Body() dto: LoginOtpConsoleInitiateDto,
     @Req() req: Request,
   ): Promise<{ requestId: string }> {
-    const clientIp = req.ip ?? "";
+    const clientIp =
+      (req.headers["cf-connecting-ip"] as string | undefined) || req.ip || "";
     const userAgent = req.headers["user-agent"] ?? "";
     return this.loginOtpService.initiateConsoleLogin(
       dto.email,
@@ -93,6 +98,7 @@ export class LoginOtpController {
       dto.rememberMe,
       clientIp,
       userAgent,
+      dto.turnstileToken,
     );
   }
 
@@ -104,7 +110,8 @@ export class LoginOtpController {
     @Body() dto: LoginOtpSuperAdminInitiateDto,
     @Req() req: Request,
   ): Promise<{ requestId: string }> {
-    const clientIp = req.ip ?? "";
+    const clientIp =
+      (req.headers["cf-connecting-ip"] as string | undefined) || req.ip || "";
     const userAgent = req.headers["user-agent"] ?? "";
     return this.loginOtpService.initiateSuperAdminLogin(
       dto.email,
@@ -113,6 +120,7 @@ export class LoginOtpController {
       dto.rememberMe,
       clientIp,
       userAgent,
+      dto.turnstileToken,
     );
   }
 

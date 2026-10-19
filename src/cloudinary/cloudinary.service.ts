@@ -146,6 +146,17 @@ export class CloudinaryService {
       );
     }
 
+    if (
+      typeof base64Data !== "string" ||
+      !/^data:(image\/(jpeg|png|webp|gif)|application\/pdf);base64,[A-Za-z0-9+/=]+$/.test(
+        base64Data,
+      )
+    ) {
+      throw new BadRequestException(
+        "Formato inválido: solo se aceptan cadenas Data URI base64 de imágenes (JPEG, PNG, WebP, GIF) o PDF.",
+      );
+    }
+
     const folderName = options.folder
       ? `bskmt/${options.folder}`
       : "bskmt/general";

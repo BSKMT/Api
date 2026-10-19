@@ -56,12 +56,19 @@ export class AdminSettingsService {
     };
   }
 
-  async approveDeletion(userId: string, actorId: string) {
-    const user = await this.userModel.findById(userId).lean();
-    if (!user) throw new NotFoundException("Usuario no encontrado");
+  private async assertDeletionAllowed(user: {
+    role?: string;
+    accountDeletionRequested?: boolean;
+  }): Promise<void> {
     if (!user.accountDeletionRequested) {
       throw new BadRequestException(
         "Este usuario no ha solicitado eliminacion",
+      );
+    }
+
+    if ((user.role as UserRole) === UserRole.SUPERADMIN) {
+      throw new BadRequestException(
+        "No se puede eliminar una cuenta de Superadministrador desde este módulo.",
       );
     }
 
@@ -76,18 +83,21 @@ export class AdminSettingsService {
         );
       }
     }
+  }
 
+  private async deleteBetterAuthUserRecords(
+    betterAuthId?: string,
+  ): Promise<void> {
     const db = getMongoDb();
-
     try {
-      const userFilters: (string | ObjectId)[] = [user.betterAuthId];
-      if (user.betterAuthId && ObjectId.isValid(user.betterAuthId)) {
-        userFilters.push(new ObjectId(user.betterAuthId));
+      const userFilters: (string | ObjectId)[] = [betterAuthId ?? ""];
+      if (betterAuthId && ObjectId.isValid(betterAuthId)) {
+        userFilters.push(new ObjectId(betterAuthId));
       }
 
-      const idFilters: Record<string, unknown>[] = [{ id: user.betterAuthId }];
-      if (user.betterAuthId && ObjectId.isValid(user.betterAuthId)) {
-        idFilters.push({ _id: new ObjectId(user.betterAuthId) });
+      const idFilters: Record<string, unknown>[] = [{ id: betterAuthId }];
+      if (betterAuthId && ObjectId.isValid(betterAuthId)) {
+        idFilters.push({ _id: new ObjectId(betterAuthId) });
       }
 
       await db.collection("user").deleteOne({ $or: idFilters });
@@ -105,6 +115,16 @@ export class AdminSettingsService {
         "No se pudo eliminar completamente la cuenta de autenticación. Intenta de nuevo.",
       );
     }
+  }
+
+  async approveDeletion(userId: string, actorId: string) {
+    const user = await this.userModel.findById(userId).lean();
+    if (!user) throw new NotFoundException("Usuario no encontrado");
+
+    await this.assertDeletionAllowed(user);
+    await this.deleteBetterAuthUserRecords(user.betterAuthId);
+
+    const db = getMongoDb();
 
     // M-3: the previous implementation only dropped the Better Auth
     // user + session; the user's PII persisted in every business

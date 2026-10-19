@@ -45,7 +45,14 @@ export class ArphaController {
   ) {
     const { userId } = req.user;
     const fullUser = await this.usersService.findById(userId);
-    const membershipLevel = fullUser?.membershipLevel ?? null;
+    const isActiveMember =
+      fullUser?.role === "member" &&
+      !fullUser?.membershipExpired &&
+      (!fullUser?.membershipExpiryDate ||
+        new Date(fullUser.membershipExpiryDate) > new Date());
+    const membershipLevel = isActiveMember
+      ? (fullUser?.membershipLevel ?? null)
+      : null;
     return this.arphaService.createRequest(userId, dto, membershipLevel);
   }
 
@@ -85,7 +92,14 @@ export class ArphaController {
   async getPricing(@Req() req: AuthenticatedRequest) {
     const { userId } = req.user;
     const fullUser = await this.usersService.findById(userId);
-    const membershipLevel = fullUser?.membershipLevel ?? null;
+    const isActiveMember =
+      fullUser?.role === "member" &&
+      !fullUser?.membershipExpired &&
+      (!fullUser?.membershipExpiryDate ||
+        new Date(fullUser.membershipExpiryDate) > new Date());
+    const membershipLevel = isActiveMember
+      ? (fullUser?.membershipLevel ?? null)
+      : null;
     return this.arphaService.getPricingInfo("tecnica", membershipLevel);
   }
 }

@@ -151,13 +151,23 @@ export class SystemPricingConfigService {
    */
   async getConfig(seasonYear?: number): Promise<SystemPricingConfig> {
     const now = Date.now();
-    if (this.cachedConfig && this.cacheExpiresAt > now && !seasonYear) {
+    if (
+      this.cachedConfig &&
+      this.cacheExpiresAt > now &&
+      (!seasonYear || this.cachedConfig.seasonYear === seasonYear)
+    ) {
       return this.cachedConfig;
     }
 
     try {
       const query = seasonYear ? { seasonYear } : { isCurrentSeason: true };
       let doc = await this.configModel.findOne(query).lean().exec();
+
+      if (!doc && seasonYear) {
+        return (
+          this.cachedConfig ?? (DEFAULT_PRICING_CONFIG as SystemPricingConfig)
+        );
+      }
 
       if (!doc && !seasonYear) {
         // Fallback al registro más reciente o inicializar con defaults

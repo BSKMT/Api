@@ -207,11 +207,47 @@ export class ArphaService {
     });
   }
 
+  async findPendingRequestForUser(
+    requestId: string,
+    userId: string,
+  ): Promise<ArphaRequestDocument | null> {
+    if (!requestId || !/^[a-f\d]{24}$/i.test(requestId)) {
+      return null;
+    }
+    return this.arphaRequestModel.findOne({
+      _id: requestId,
+      userId,
+      status: { $in: ACTIVE_ARPHA_STATUSES },
+      paymentConfirmed: { $ne: true },
+    });
+  }
+
   async linkArphaPayment(
     userId: string,
     requestId: string,
     transactionReference: string,
+    paidAmount?: number,
   ): Promise<ArphaRequestDocument> {
+    const existing = await this.arphaRequestModel.findOne({
+      _id: requestId,
+      userId,
+    });
+    if (!existing) {
+      throw new NotFoundException("Solicitud no encontrada");
+    }
+    if (
+      typeof paidAmount === "number" &&
+      existing.amount > 0 &&
+      paidAmount < existing.amount
+    ) {
+      this.logger.error(
+        `ARPHA payment amount mismatch: id=${requestId} expected=${existing.amount} paid=${paidAmount} ref=${transactionReference}`,
+      );
+      throw new BadRequestException(
+        "El monto pagado no corresponde al valor de la solicitud ARPHA",
+      );
+    }
+
     const request = await this.arphaRequestModel.findOneAndUpdate(
       { _id: requestId, userId },
       {

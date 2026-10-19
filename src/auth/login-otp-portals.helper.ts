@@ -6,11 +6,24 @@ import {
 import { Model } from "mongoose";
 import { UserDocument, UserRole } from "../users/schemas/user.schema";
 
+export interface PortalUserCandidate {
+  authEmail: string;
+  targetEmail: string;
+  isEligible: boolean;
+}
+
+const GENERIC_FASCIA_ERROR =
+  "Error al iniciar sesión en Fascia. Verifica tus credenciales.";
+const GENERIC_CONSOLE_ERROR =
+  "Error al iniciar sesión en la Consola Administrativa.";
+const GENERIC_SUPERADMIN_ERROR =
+  "Error al iniciar sesión como Superadministrador.";
+
 export async function findAndValidateFasciaUser(
   userModel: Model<UserDocument>,
   username: string,
   logger: Logger,
-): Promise<{ authEmail: string; targetEmail: string }> {
+): Promise<PortalUserCandidate> {
   const normalizedUsername = (username ?? "").toLowerCase().trim();
   if (!normalizedUsername) {
     throw new BadRequestException("El nombre de usuario es obligatorio.");
@@ -21,21 +34,7 @@ export async function findAndValidateFasciaUser(
     logger.warn(
       `Fascia login fallido: usuario "${normalizedUsername}" no encontrado.`,
     );
-    throw new UnauthorizedException(
-      "Credenciales inválidas. Verifica tu usuario y contraseña.",
-    );
-  }
-
-  if (user.isActive === false) {
-    throw new UnauthorizedException(
-      "Tu cuenta de colaborador se encuentra inactiva. Contacta al área de talento humano.",
-    );
-  }
-
-  if (user.accountDeletionRequested === true) {
-    throw new UnauthorizedException(
-      "Esta cuenta está en proceso de eliminación.",
-    );
+    throw new UnauthorizedException(GENERIC_FASCIA_ERROR);
   }
 
   const isGestor =
@@ -43,13 +42,14 @@ export async function findAndValidateFasciaUser(
   const isAdminOrSuper =
     user.role === (UserRole.ADMIN as string) ||
     user.role === (UserRole.SUPERADMIN as string);
+  const isEligible =
+    user.isActive !== false &&
+    user.accountDeletionRequested !== true &&
+    (isGestor || isAdminOrSuper);
 
-  if (!isGestor && !isAdminOrSuper) {
+  if (!isEligible) {
     logger.warn(
-      `Fascia login bloqueado: usuario "${normalizedUsername}" (${user.email}) no tiene rol de gestor.`,
-    );
-    throw new UnauthorizedException(
-      "Acceso restringido: Esta cuenta no posee rol de Gestor (Campo u Oficina) asignado para panel.bskmt.com.",
+      `Fascia login candidato no elegible (se verificará contraseña primero): usuario "${normalizedUsername}"`,
     );
   }
 
@@ -57,7 +57,7 @@ export async function findAndValidateFasciaUser(
     user.contractorInfo?.correoInstitucional || user.email
   ).toLowerCase();
 
-  return { authEmail: user.email, targetEmail };
+  return { authEmail: user.email, targetEmail, isEligible };
 }
 
 export async function findAndValidateConsoleUser(
@@ -65,7 +65,7 @@ export async function findAndValidateConsoleUser(
   email: string,
   username: string,
   logger: Logger,
-): Promise<{ authEmail: string; targetEmail: string }> {
+): Promise<PortalUserCandidate> {
   const normalizedEmail = (email ?? "").toLowerCase().trim();
   const normalizedUsername = (username ?? "").toLowerCase().trim();
 
@@ -90,36 +90,22 @@ export async function findAndValidateConsoleUser(
     logger.warn(
       `Console login fallido: no coincide email "${normalizedEmail}" con usuario "${normalizedUsername}".`,
     );
-    throw new UnauthorizedException(
-      "Credenciales administrativas inválidas. Verifica tu correo, usuario y contraseña.",
-    );
+    throw new UnauthorizedException(GENERIC_CONSOLE_ERROR);
   }
 
-  if (user.isActive === false) {
-    throw new UnauthorizedException(
-      "Cuenta administrativa inactiva. Contacta a un Superadministrador.",
-    );
-  }
+  const isEligible =
+    user.isActive !== false &&
+    user.accountDeletionRequested !== true &&
+    (user.role === (UserRole.ADMIN as string) ||
+      user.role === (UserRole.SUPERADMIN as string));
 
-  if (user.accountDeletionRequested === true) {
-    throw new UnauthorizedException(
-      "Esta cuenta está en proceso de eliminación.",
-    );
-  }
-
-  if (
-    user.role !== (UserRole.ADMIN as string) &&
-    user.role !== (UserRole.SUPERADMIN as string)
-  ) {
+  if (!isEligible) {
     logger.warn(
-      `Console login bloqueado: usuario "${normalizedUsername}" tiene rol "${user.role}" (requiere admin o superadmin).`,
-    );
-    throw new UnauthorizedException(
-      "Acceso restringido: Esta cuenta no posee privilegios administrativos ejecutivos.",
+      `Console login candidato no elegible (se verificará contraseña primero): usuario "${normalizedUsername}"`,
     );
   }
 
-  return { authEmail: user.email, targetEmail: normalizedEmail };
+  return { authEmail: user.email, targetEmail: normalizedEmail, isEligible };
 }
 
 export async function findAndValidateSuperAdminUser(
@@ -127,7 +113,7 @@ export async function findAndValidateSuperAdminUser(
   email: string,
   username: string,
   logger: Logger,
-): Promise<{ authEmail: string; targetEmail: string }> {
+): Promise<PortalUserCandidate> {
   const normalizedEmail = (email ?? "").toLowerCase().trim();
   const normalizedUsername = (username ?? "").toLowerCase().trim();
 
@@ -152,23 +138,19 @@ export async function findAndValidateSuperAdminUser(
     logger.warn(
       `Superadmin login fallido: credenciales no coinciden para "${normalizedEmail}".`,
     );
-    throw new UnauthorizedException(
-      "Credenciales de superadministrador inválidas.",
-    );
+    throw new UnauthorizedException(GENERIC_SUPERADMIN_ERROR);
   }
 
-  if (user.isActive === false) {
-    throw new UnauthorizedException("Cuenta de superadministrador inactiva.");
-  }
+  const isEligible =
+    user.isActive !== false &&
+    user.accountDeletionRequested !== true &&
+    user.role === (UserRole.SUPERADMIN as string);
 
-  if (user.role !== (UserRole.SUPERADMIN as string)) {
+  if (!isEligible) {
     logger.warn(
-      `Superadmin login denegado: usuario "${normalizedUsername}" no tiene rol 'superadmin'.`,
-    );
-    throw new UnauthorizedException(
-      "Acceso denegado: Esta cuenta no posee privilegios de Superadministrador (Owner).",
+      `Superadmin login candidato no elegible (se verificará contraseña primero): usuario "${normalizedUsername}"`,
     );
   }
 
-  return { authEmail: user.email, targetEmail: normalizedEmail };
+  return { authEmail: user.email, targetEmail: normalizedEmail, isEligible };
 }

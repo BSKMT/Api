@@ -70,6 +70,7 @@ export class PaymentsService {
         {
           transactionModel: this.transactionModel,
           configService: this.configService,
+          arphaService: this.arphaService,
           logger: this.logger,
         },
         userId,

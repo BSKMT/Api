@@ -20,6 +20,14 @@ import {
   EscalateSavingsLegalDto,
 } from "../dto/savings-plan.dto";
 
+const ALLOWED_REFUND_PLAN_STATUSES = new Set<SavingsPlanStatus>([
+  SavingsPlanStatus.ACTIVE,
+  SavingsPlanStatus.GRACE_PERIOD_1,
+  SavingsPlanStatus.EXTENSION_REQUESTED,
+  SavingsPlanStatus.GRACE_PERIOD_2,
+  SavingsPlanStatus.LAPSED_TEMPORARY,
+]);
+
 export async function executeRequestRefund(
   plan: SavingsPlanDocument,
   refundRequestModel: Model<SavingsRefundRequestDocument>,
@@ -27,6 +35,14 @@ export async function executeRequestRefund(
   userId: string,
   dto: RequestSavingsRefundDto,
 ) {
+  if (
+    !ALLOWED_REFUND_PLAN_STATUSES.has(plan.status) ||
+    plan.installmentsPaid >= 12
+  ) {
+    throw new BadRequestException(
+      "No es posible solicitar reembolso sobre un plan completado, ya reembolsado o no elegible.",
+    );
+  }
   if (plan.totalAmountSaved <= 0) {
     throw new BadRequestException(
       "No tienes saldo ahorrado para solicitar reembolso.",

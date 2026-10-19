@@ -49,6 +49,15 @@ export const USER_ADDITIONAL_FIELDS = {
   },
 } as const;
 
+export const SESSION_ADDITIONAL_FIELDS = {
+  otpPending: {
+    type: "boolean",
+    defaultValue: false,
+    input: false,
+    required: false,
+  },
+} as const;
+
 export function getTrustedOrigins(): string[] {
   if (process.env.NODE_ENV === "production") {
     return [

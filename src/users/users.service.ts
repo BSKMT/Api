@@ -1,9 +1,14 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import {
   User,
   UserDocument,
+  UserRole,
   UserSubrole,
   CreditType,
   PartialPaymentCredit,
@@ -226,6 +231,11 @@ export class UsersService {
     const user = await this.userModel.findById(userId);
     if (!user) {
       throw new NotFoundException("Usuario no encontrado");
+    }
+    if ((user.role as UserRole) === UserRole.SUPERADMIN) {
+      throw new ForbiddenException(
+        "No se puede modificar el subrol de una cuenta de Superadministrador.",
+      );
     }
     user.subrol = subrol ?? null;
     const saved = await user.save();

@@ -13,6 +13,7 @@ import {
   HttpCode,
   HttpStatus,
 } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import type { Request } from "express";
 import { SessionGuard } from "../auth/session.guard";
 import { Public } from "../common/decorators";
@@ -93,6 +94,7 @@ export class GarageController {
 
   @Post("motorcycles/:id/verify-runt")
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
   async verifyRunt(
     @Req() req: AuthenticatedRequest,
     @Param("id", ParseObjectIdPipe) id: string,
@@ -108,6 +110,7 @@ export class GarageController {
   @Public()
   @Post("allied/service-order")
   @HttpCode(HttpStatus.CREATED)
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   async recordAlliedServiceOrder(@Body() dto: AlliedServiceOrderDto) {
     return this.garageService.recordAlliedServiceOrder(dto);
   }

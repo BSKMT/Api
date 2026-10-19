@@ -87,16 +87,17 @@ export class RolesGuard implements CanActivate {
       );
     }
 
-    // Validación granular de permisos por módulo para administradores
-    if (
-      userRole === Role.ADMIN &&
-      Array.isArray(user.adminPermissions) &&
-      user.adminPermissions.length > 0
-    ) {
-      checkAdminModulePermissions(
-        user.adminPermissions,
-        request.originalUrl || request.url || "",
-      );
+    // Validación granular de permisos por módulo para administradores (fail-closed)
+    if (userRole === Role.ADMIN) {
+      const perms = Array.isArray(user.adminPermissions)
+        ? user.adminPermissions
+        : [];
+      if (!perms.includes("*")) {
+        checkAdminModulePermissions(
+          perms,
+          request.originalUrl || request.url || "",
+        );
+      }
     }
 
     return true;

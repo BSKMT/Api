@@ -5,8 +5,10 @@ import {
   HttpCode,
   HttpStatus,
   Get,
+  Req,
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
+import type { Request } from "express";
 import { ContactService } from "./contact.service";
 import { ContactDto } from "./dto/contact.dto";
 import { Public } from "../common/decorators";
@@ -36,7 +38,9 @@ export class ContactController {
   @Throttle({ medium: { ttl: 60000, limit: 5 } })
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async submit(@Body() dto: ContactDto) {
-    return this.contactService.handleContact(dto);
+  async submit(@Body() dto: ContactDto, @Req() req: Request) {
+    const clientIp =
+      (req.headers["cf-connecting-ip"] as string | undefined) || req.ip || "";
+    return this.contactService.handleContact(dto, clientIp);
   }
 }

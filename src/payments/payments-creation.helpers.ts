@@ -10,6 +10,7 @@ import { Model } from "mongoose";
 import { TransactionDocument } from "./schemas/transaction.schema";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
 import { ARPHA_PRICING } from "../arpha/schemas/arpha-request.schema";
+import { ArphaService } from "../arpha/arpha.service";
 import { UsersService } from "../users/users.service";
 import { UserRole } from "../users/schemas/user.schema";
 import { ShopService } from "../shop/shop.service";
@@ -124,12 +125,32 @@ export interface CreatePaymentBaseDeps {
 }
 
 export async function createArphaPaymentHelper(
-  deps: CreatePaymentBaseDeps,
+  deps: CreatePaymentBaseDeps & { arphaService: ArphaService },
   userId: string,
   dto: CreatePaymentDto,
 ) {
   const requestId = dto.eventSlug;
-  const amount = ARPHA_PRICING[dto.tier.replace("arpha-", "")] ?? 15000;
+  const arphaRequest = await deps.arphaService.findPendingRequestForUser(
+    requestId,
+    userId,
+  );
+  if (!arphaRequest) {
+    throw new NotFoundException(
+      "Solicitud ARPHA no encontrada, no te pertenece o ya fue pagada",
+    );
+  }
+
+  const expectedTier = `arpha-${arphaRequest.requestType}`;
+  if (dto.tier !== expectedTier) {
+    throw new BadRequestException(
+      `El tier de pago (${dto.tier}) no coincide con el tipo de solicitud ARPHA (${expectedTier})`,
+    );
+  }
+
+  const amount =
+    arphaRequest.amount > 0
+      ? arphaRequest.amount
+      : (ARPHA_PRICING[arphaRequest.requestType] ?? 15000);
   const label = ARPHA_TIER_LABEL[dto.tier] ?? "Asistencia ARPHA";
 
   const timestamp = Date.now();

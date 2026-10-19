@@ -25,7 +25,13 @@ export function enforceAuthRateLimit(
   res: Response,
   path: string,
 ): boolean {
-  const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
+  const cfIp = req.headers["cf-connecting-ip"];
+  const realIp = Array.isArray(cfIp) ? cfIp[0] : cfIp;
+  const ip =
+    (typeof realIp === "string" && realIp.trim()) ||
+    req.ip ||
+    req.socket.remoteAddress ||
+    "unknown";
   const key = `${ip}:${path}`;
   const now = Date.now();
   const windowMs = 60000;
@@ -58,8 +64,9 @@ export async function createBetterAuthMiddleware(auth: AuthInstance) {
   const authHandler = toNodeHandler(auth);
 
   return (req: Request, res: Response, next: NextFunction) => {
-    const path = req.path.replace(/\/{2,}/g, "/");
-    if (shouldSkipAuthRoute(path)) {
+    const rawPath = req.path.replace(/\/{2,}/g, "/");
+    const path = rawPath.length > 1 ? rawPath.replace(/\/+$/, "") : rawPath;
+    if (shouldSkipAuthRoute(rawPath)) {
       return next();
     }
     if (path === "/sign-in/email") {

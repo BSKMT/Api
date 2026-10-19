@@ -3,9 +3,10 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
 import { APP_GUARD } from "@nestjs/core";
 import { MongooseModule } from "@nestjs/mongoose";
 import { ScheduleModule } from "@nestjs/schedule";
-import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
+import { ThrottlerModule } from "@nestjs/throttler";
 import { AuthModule } from "./auth/auth.module";
 import { SessionGuard } from "./auth/session.guard";
+import { CloudflareThrottlerGuard } from "./common/guards/cloudflare-throttler.guard";
 import { B2bModule } from "./b2b/b2b.module";
 import { validateConfig } from "./config/config.validation";
 import type { EnvironmentConfig } from "./config/config.interface";
@@ -97,7 +98,7 @@ import { ObserveModule } from "./observe";
   providers: [
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: CloudflareThrottlerGuard,
     },
     /**
      * M-12: SessionGuard runs as a global guard so any future controller

@@ -8,14 +8,53 @@ import {
 import { randomBytes } from "node:crypto";
 import { Model } from "mongoose";
 import { LoginOtpDocument } from "./schemas/login-otp.schema";
-import { getAuth } from "./better-auth";
+import { getAuth, getMongoDb } from "./better-auth";
 import { maskEmail } from "../common/utils/log-redact.util";
 import {
   extractCookiesFromHeaders,
   encryptSessionCookies,
+  extractSessionTokenFromCookies,
 } from "./login-otp-crypto.helper";
 import { dispatchBirdVerification } from "./login-otp-check.helper";
 import { BirdVerifyService } from "../bird-verify/bird-verify.service";
+
+const OTP_PENDING_SESSION_TTL_MS = 10 * 60 * 1000;
+
+export async function markBetterAuthSessionOtpPending(
+  cookies: string[],
+  remember: boolean,
+): Promise<void> {
+  const token = extractSessionTokenFromCookies(cookies);
+  if (!token) return;
+  try {
+    const db = getMongoDb();
+    await db.collection("session").updateOne(
+      { token },
+      {
+        $set: {
+          otpPending: true,
+          rememberMe: remember,
+          expiresAt: new Date(Date.now() + OTP_PENDING_SESSION_TTL_MS),
+        },
+      },
+    );
+  } catch {
+    // Non-fatal: session will still be gated by encrypted cookies
+  }
+}
+
+export async function revokeBetterAuthSessionByCookies(
+  cookies: string[],
+): Promise<void> {
+  const token = extractSessionTokenFromCookies(cookies);
+  if (!token) return;
+  try {
+    const db = getMongoDb();
+    await db.collection("session").deleteOne({ token });
+  } catch {
+    // Best-effort cleanup
+  }
+}
 
 export async function assertEmailThrottle(
   otpModel: Model<LoginOtpDocument>,
@@ -49,7 +88,9 @@ export async function extractSessionFromAuthResponse(
   betterAuthId: string;
   userEmail: string;
 }> {
-  const setCookieHeaders = authResponse.headers.getSetCookie();
+  const setCookieHeaders = authResponse.headers
+    .getSetCookie()
+    .filter((cookie) => !cookie.includes("better-auth.session_data="));
   const sessionCookies =
     setCookieHeaders.length > 0
       ? setCookieHeaders
@@ -132,6 +173,7 @@ export interface DispatchOtpParams {
   windowMs: number;
   maxSends: number;
   errorMessage: string;
+  remember?: boolean;
 }
 
 export async function executeDispatchOtpAndSave(
@@ -147,14 +189,29 @@ export async function executeDispatchOtpAndSave(
     windowMs,
     maxSends,
     errorMessage,
+    remember = false,
   } = params;
-  await assertEmailThrottle(otpModel, targetEmail, windowMs, maxSends, logger);
 
-  if (!birdVerifyService.isConfigured()) {
-    logger.error("Bird Verify no configurado — initiate bloqueado");
-    throw new UnauthorizedException(errorMessage, {
-      cause: "Bird Verify not configured",
-    });
+  await markBetterAuthSessionOtpPending(session.sessionCookies, remember);
+
+  try {
+    await assertEmailThrottle(
+      otpModel,
+      targetEmail,
+      windowMs,
+      maxSends,
+      logger,
+    );
+
+    if (!birdVerifyService.isConfigured()) {
+      logger.error("Bird Verify no configurado — initiate bloqueado");
+      throw new UnauthorizedException(errorMessage, {
+        cause: "Bird Verify not configured",
+      });
+    }
+  } catch (err) {
+    await revokeBetterAuthSessionByCookies(session.sessionCookies);
+    throw err;
   }
 
   const requestId = randomBytes(16).toString("hex");
@@ -174,15 +231,20 @@ export async function executeDispatchOtpAndSave(
     expiresAt,
   });
 
-  await dispatchBirdVerification(
-    birdVerifyService,
-    otpRecord,
-    targetEmail,
-    requestId,
-    session.betterAuthId,
-    logger,
-    errorMessage,
-  );
+  try {
+    await dispatchBirdVerification(
+      birdVerifyService,
+      otpRecord,
+      targetEmail,
+      requestId,
+      session.betterAuthId,
+      logger,
+      errorMessage,
+    );
+  } catch (err) {
+    await revokeBetterAuthSessionByCookies(session.sessionCookies);
+    throw err;
+  }
 
   return { requestId };
 }

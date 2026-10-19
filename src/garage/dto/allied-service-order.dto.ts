@@ -6,6 +6,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
   Min,
 } from "class-validator";
@@ -32,6 +33,7 @@ export class AlliedServiceOrderDto {
 
   @IsInt()
   @Min(0)
+  @Max(500000)
   odometerKm!: number;
 
   @IsEnum(MaintenanceType)
@@ -48,6 +50,7 @@ export class AlliedServiceOrderDto {
 
   @IsNumber()
   @Min(0)
+  @Max(100000000)
   cost!: number;
 
   @IsOptional()

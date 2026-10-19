@@ -23,16 +23,35 @@ export class BirdSmsService {
   /** Sender ID alfanumerico o numero E.164 (env BIRD_SMS_SENDER). */
   private readonly sender: string;
 
+  /** Prefijos internacionales permitidos (env ALLOWED_SMS_PREFIXES, default +57). */
+  private readonly allowedPrefixes: string[];
+
   /** Patron E.164: + seguido de 6-15 digitos. */
   private static readonly E164_PATTERN = /^\+[1-9]\d{5,14}$/;
 
   constructor(private readonly birdService: BirdService) {
     this.sender = process.env.BIRD_SMS_SENDER ?? "BSKMT";
+    const rawPrefixes = process.env.ALLOWED_SMS_PREFIXES ?? "+57";
+    this.allowedPrefixes = rawPrefixes
+      .split(",")
+      .map((p) => p.trim())
+      .filter((p) => p.startsWith("+"));
+    if (this.allowedPrefixes.length === 0) {
+      this.allowedPrefixes = ["+57"];
+    }
   }
 
   /** Valida que un numero este en formato E.164. */
   isValidE164(phone: string): boolean {
     return BirdSmsService.E164_PATTERN.test(phone);
+  }
+
+  /** Valida que el numero tenga un prefijo de pais autorizado (anti-SMS pumping). */
+  isAllowedCountryPrefix(phone: string): boolean {
+    return (
+      this.isValidE164(phone) &&
+      this.allowedPrefixes.some((prefix) => phone.startsWith(prefix))
+    );
   }
 
   /**
@@ -51,8 +70,10 @@ export class BirdSmsService {
   }): Promise<boolean> {
     if (!this.birdService.isConfigured()) return false;
 
-    if (!this.isValidE164(data.to)) {
-      this.logger.warn(`Numero SMS invalido (no E.164): ${maskPhone(data.to)}`);
+    if (!this.isValidE164(data.to) || !this.isAllowedCountryPrefix(data.to)) {
+      this.logger.warn(
+        `Numero SMS invalido o prefijo no permitido: ${maskPhone(data.to)}`,
+      );
       return false;
     }
 

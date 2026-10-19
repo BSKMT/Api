@@ -1,7 +1,17 @@
+import { timingSafeEqual } from "node:crypto";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import type { ConfigService } from "@nestjs/config";
 import type { Request, Response, NextFunction } from "express";
 import type { EnvironmentConfig } from "../config/config.interface";
+
+function isConstantTimeMatch(provided: string, expected: string): boolean {
+  const bufA = Buffer.from(provided, "utf8");
+  const bufB = Buffer.from(expected, "utf8");
+  if (bufA.length !== bufB.length) {
+    return false;
+  }
+  return timingSafeEqual(bufA, bufB);
+}
 
 export function setupSecurityMiddleware(
   app: NestExpressApplication,
@@ -10,6 +20,61 @@ export function setupSecurityMiddleware(
   landingPageUrl: string,
 ) {
   app.set("trust proxy", 2);
+
+  const cfOriginSecret =
+    configService.get<string>("CF_ORIGIN_SECRET", { infer: true })?.trim() ??
+    "";
+
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    // 1. Aislar el origen de Vercel exigiendo X-CF-Origin-Secret cuando está configurado (VULN-17)
+    if (cfOriginSecret) {
+      const normalizedPath = (req.path || "").replace(/\/+$/, "");
+      const isVercelInternalCronOrHealth =
+        normalizedPath === "/api/health" ||
+        normalizedPath.startsWith("/api/internal/cron/") ||
+        normalizedPath === "/api/membership/internal/cron/sweep-pending" ||
+        normalizedPath ===
+          "/api/events/internal/cron/sweep-stale-registrations" ||
+        normalizedPath === "/api/shop/internal/cron/expire-pending";
+
+      if (!isVercelInternalCronOrHealth) {
+        const headerVal = req.headers["x-cf-origin-secret"];
+        const providedSecret = Array.isArray(headerVal)
+          ? headerVal[0]
+          : headerVal;
+        if (
+          typeof providedSecret !== "string" ||
+          !isConstantTimeMatch(providedSecret, cfOriginSecret)
+        ) {
+          return res
+            .status(403)
+            .json({ message: "Direct origin access is not allowed" });
+        }
+      }
+    }
+
+    // 2. Fijar la IP real desde cf-connecting-ip para evitar spoofing de X-Forwarded-For
+    const cfConnectingIp = req.headers["cf-connecting-ip"];
+    const realClientIp = Array.isArray(cfConnectingIp)
+      ? cfConnectingIp[0]
+      : cfConnectingIp;
+    if (typeof realClientIp === "string" && realClientIp.trim().length > 0) {
+      req.headers["x-forwarded-for"] = realClientIp.trim();
+    }
+
+    res.setHeader(
+      "Permissions-Policy",
+      "camera=(), microphone=(), geolocation=(), payment=()",
+    );
+    res.setHeader(
+      "Cache-Control",
+      "no-store, no-cache, must-revalidate, proxy-revalidate",
+    );
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
+    next();
+  });
 
   app.useSecurityHeaders({
     crossOriginOpenerPolicy: { policy: "same-origin" },
@@ -29,21 +94,6 @@ export function setupSecurityMiddleware(
         frameAncestors: ["'none'"],
       },
     },
-  });
-
-  app.use((_req: Request, res: Response, next: NextFunction) => {
-    res.setHeader(
-      "Permissions-Policy",
-      "camera=(), microphone=(), geolocation=(), payment=()",
-    );
-    res.setHeader(
-      "Cache-Control",
-      "no-store, no-cache, must-revalidate, proxy-revalidate",
-    );
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
-    res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
-    next();
   });
 
   const rawCorsOrigin =

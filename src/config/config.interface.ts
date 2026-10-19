@@ -157,4 +157,15 @@ export interface EnvironmentConfig {
   CLOUDINARY_API_SECRET?: string;
   CLOUDINARY_URL?: string;
   CLOUDINARY_UPLOAD_PRESET?: string;
+
+  /**
+   * VULN-17: Shared secret injected by Cloudflare Transform Rules (`X-CF-Origin-Secret`)
+   * to prevent direct access to the Vercel serverless origin bypassing Cloudflare WAF.
+   */
+  CF_ORIGIN_SECRET?: string;
+
+  /**
+   * VULN-08: Comma-separated list of E.164 country prefixes allowed for SMS dispatches (default: "+57").
+   */
+  ALLOWED_SMS_PREFIXES?: string;
 }

@@ -15,6 +15,7 @@ import {
 } from "./better-auth-email.helpers";
 import {
   USER_ADDITIONAL_FIELDS,
+  SESSION_ADDITIONAL_FIELDS,
   getTrustedOrigins,
   getPasskeyOrigins,
 } from "./better-auth-config.helpers";
@@ -144,6 +145,7 @@ async function initAuth(): Promise<AuthInstance> {
     },
 
     session: {
+      additionalFields: SESSION_ADDITIONAL_FIELDS,
       expiresIn: 60 * 24 * 60 * 60,
       updateAge: 24 * 60 * 60,
       cookieCache: { enabled: true, maxAge: 5 * 60 },
@@ -152,7 +154,11 @@ async function initAuth(): Promise<AuthInstance> {
     advanced: {
       useSecureCookies: process.env.NODE_ENV === "production",
       defaultCookieAttributes: {
-        sameSite: "lax",
+        path: "/",
+        sameSite:
+          process.env.COOKIE_SAME_SITE?.toLowerCase() === "strict"
+            ? "strict"
+            : "lax",
         secure: process.env.NODE_ENV === "production",
         httpOnly: true,
         ...(process.env.NODE_ENV === "production"

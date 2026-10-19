@@ -1,8 +1,8 @@
 import {
   createCipheriv,
   createDecipheriv,
-  createHmac,
   createHash,
+  randomBytes,
 } from "node:crypto";
 
 const TOKEN_PREFIX = "bsk_sec_";
@@ -10,18 +10,25 @@ const QR_PROTOCOL_PREFIX = "BSKMT_SECURE_QR:v1:";
 
 function getProfileKey(): Buffer {
   const secret =
-    process.env.PROFILE_TOKEN_SECRET ||
-    process.env.BETTER_AUTH_SECRET ||
-    "bskmt-default-secure-profile-encryption-key-32chars";
+    process.env.PROFILE_TOKEN_SECRET || process.env.BETTER_AUTH_SECRET;
+  if (!secret || secret.length < 32) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "BETTER_AUTH_SECRET o PROFILE_TOKEN_SECRET (>=32 chars) es requerido en producción",
+      );
+    }
+  }
+  const effectiveSecret =
+    secret || "bskmt-default-secure-profile-encryption-key-32chars";
   return createHash("sha256")
-    .update(`${secret}:bskmt-profile-token-v1`)
+    .update(`${effectiveSecret}:bskmt-profile-token-v1`)
     .digest();
 }
 
 /**
  * Encrypts a member identifier into a tamper-proof, non-enumerable, URL-safe token.
- * Uses AES-256-GCM with a synthetic IV derived from HMAC-SHA256 of the input identifier,
- * guaranteeing deterministic shareable URLs without leaking sequential numbers or patterns.
+ * Uses AES-256-GCM with a unique 12-byte random IV per encryption call,
+ * preventing AES-GCM nonce reuse attacks while keeping tokens authenticated.
  */
 export function serializeProfileIdentifier(
   memberNumber: string,
@@ -36,11 +43,7 @@ export function serializeProfileIdentifier(
     t: Date.now(),
   });
 
-  // Deterministic 12-byte IV based on cleanMemberNumber and secret key
-  const iv = createHmac("sha256", key)
-    .update(`bskmt-iv:${cleanMemberNumber}`)
-    .digest()
-    .subarray(0, 12);
+  const iv = randomBytes(12);
 
   const cipher = createCipheriv("aes-256-gcm", key, iv);
   const ciphertext = Buffer.concat([

@@ -55,7 +55,26 @@ export class ChannelThrottleStore {
   async record(key: string): Promise<void> {
     const now = Date.now();
     const cutoff = now - this.windowMs;
-    const timestamps = (this.store.get(key) ?? []).filter((t) => t > cutoff);
+    let timestamps = (this.store.get(key) ?? []).filter((t) => t > cutoff);
+
+    if (this.kvCache?.isAvailable()) {
+      try {
+        const cached = await this.kvCache.get<number[]>(
+          `throttle:${key}`,
+          true,
+        );
+        if (Array.isArray(cached)) {
+          const merged = new Set<number>([
+            ...timestamps,
+            ...cached.filter((t) => typeof t === "number" && t > cutoff),
+          ]);
+          timestamps = Array.from(merged).sort((a, b) => a - b);
+        }
+      } catch {
+        // Fallback local si falla la lectura previa de KV
+      }
+    }
+
     timestamps.push(now);
     this.store.set(key, timestamps);
 

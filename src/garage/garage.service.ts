@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, Logger } from "@nestjs/common";
+import {
+  Injectable,
+  NotFoundException,
+  Logger,
+  HttpException,
+  HttpStatus,
+} from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import {
@@ -26,6 +32,7 @@ import { CreateMaintenanceDto } from "./dto/create-maintenance.dto";
 import { AlliedServiceOrderDto } from "./dto/allied-service-order.dto";
 import { VerifyRuntDto } from "./dto/verify-runt.dto";
 import { VerifikService } from "../verifik/verifik.service";
+import { KvCacheService } from "../kv/kv-cache.service";
 import { ALLIED_WORKSHOPS } from "./garage.constants";
 import { executeGetDashboard } from "./garage-dashboard.helpers";
 import {
@@ -42,6 +49,9 @@ import { executeVerifyMotorcycleWithRunt } from "./garage-runt.helpers";
 @Injectable()
 export class GarageService {
   private readonly logger = new Logger(GarageService.name);
+  private readonly runtWindowMs = 10 * 60 * 1000;
+  private readonly runtMaxAttempts = 3;
+  private readonly runtLocalAttempts = new Map<string, number[]>();
 
   constructor(
     @InjectModel(GarageMotorcycle.name)
@@ -56,7 +66,87 @@ export class GarageService {
     private readonly orderModel: Model<OrderDocument>,
     private readonly usersService: UsersService,
     private readonly verifikService: VerifikService,
+    private readonly kvCache: KvCacheService,
   ) {}
+
+  private async enforceRuntUserThrottle(userId: string): Promise<void> {
+    const now = Date.now();
+    const cutoff = now - this.runtWindowMs;
+    let timestamps = (this.runtLocalAttempts.get(userId) ?? []).filter(
+      (t) => t > cutoff,
+    );
+
+    if (this.kvCache?.isAvailable()) {
+      try {
+        const cached = await this.kvCache.get<number[]>(
+          `throttle:runt:${userId}`,
+          true,
+        );
+        if (Array.isArray(cached)) {
+          const merged = new Set<number>([
+            ...timestamps,
+            ...cached.filter((t) => typeof t === "number" && t > cutoff),
+          ]);
+          timestamps = Array.from(merged);
+        }
+      } catch {
+        // Fallback local
+      }
+    }
+
+    if (timestamps.length >= this.runtMaxAttempts) {
+      this.logger.warn(
+        `RUNT verification throttle: user ${userId} exceeded ${this.runtMaxAttempts} attempts in 10 min`,
+      );
+      throw new HttpException(
+        "Has superado el límite de consultas RUNT. Espera 10 minutos e intenta de nuevo.",
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
+  private async recordRuntUserAttempt(userId: string): Promise<void> {
+    const now = Date.now();
+    const cutoff = now - this.runtWindowMs;
+    let timestamps = (this.runtLocalAttempts.get(userId) ?? []).filter(
+      (t) => t > cutoff,
+    );
+
+    if (this.kvCache?.isAvailable()) {
+      try {
+        const cached = await this.kvCache.get<number[]>(
+          `throttle:runt:${userId}`,
+          true,
+        );
+        if (Array.isArray(cached)) {
+          const merged = new Set<number>([
+            ...timestamps,
+            ...cached.filter((t) => typeof t === "number" && t > cutoff),
+          ]);
+          timestamps = Array.from(merged).sort((a, b) => a - b);
+        }
+      } catch {
+        // Fallback local
+      }
+    }
+
+    timestamps.push(now);
+    this.runtLocalAttempts.set(userId, timestamps);
+
+    if (this.kvCache?.isAvailable()) {
+      try {
+        const ttlSec = Math.ceil(this.runtWindowMs / 1000);
+        await this.kvCache.set(
+          `throttle:runt:${userId}`,
+          timestamps,
+          ttlSec,
+          true,
+        );
+      } catch {
+        // Fallback local
+      }
+    }
+  }
 
   async getDashboard(userId: string, targetMotorcycleId?: string) {
     return executeGetDashboard(
@@ -179,13 +269,18 @@ export class GarageService {
       throw new NotFoundException("Motocicleta no encontrada");
     }
 
-    return executeVerifyMotorcycleWithRunt(
-      this.verifikService,
-      user,
-      moto,
-      dto,
-      userId,
-      this.logger,
-    );
+    await this.enforceRuntUserThrottle(userId);
+    try {
+      return await executeVerifyMotorcycleWithRunt(
+        this.verifikService,
+        user,
+        moto,
+        dto,
+        userId,
+        this.logger,
+      );
+    } finally {
+      await this.recordRuntUserAttempt(userId);
+    }
   }
 }

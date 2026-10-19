@@ -17,7 +17,9 @@ import { PaymentsService } from "./payments.service";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
 import { SubmitCompanionDto } from "./dto/submit-companion.dto";
 import { SessionGuard } from "../auth/session.guard";
+import { IdentityVerifiedGuard } from "../common/guards/identity-verified.guard";
 import { Public } from "../common/decorators";
+import { ensureString } from "../common/utils/sanitize-query.util";
 
 interface AuthenticatedRequest extends Request {
   user: { userId: string };
@@ -27,7 +29,7 @@ interface AuthenticatedRequest extends Request {
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
-  @UseGuards(SessionGuard)
+  @UseGuards(SessionGuard, IdentityVerifiedGuard)
   @Post("create")
   @HttpCode(HttpStatus.CREATED)
   async createPayment(
@@ -118,7 +120,11 @@ export class PaymentsController {
     @Query("purpose") purpose?: string,
   ) {
     const { userId } = req.user;
-    return this.paymentsService.getInvoicePdfUrl(userId, reference, purpose);
+    return this.paymentsService.getInvoicePdfUrl(
+      userId,
+      reference,
+      ensureString(purpose),
+    );
   }
 
   @UseGuards(SessionGuard)
@@ -129,10 +135,14 @@ export class PaymentsController {
     @Query("eventSlug") eventSlug?: string,
   ) {
     const { userId } = req.user;
+    const safePurpose = ensureString(purpose);
+    if (!safePurpose) {
+      throw new BadRequestException("Parámetro purpose inválido");
+    }
     return this.paymentsService.checkPendingForPurpose(
       userId,
-      purpose,
-      eventSlug,
+      safePurpose,
+      ensureString(eventSlug),
     );
   }
 }

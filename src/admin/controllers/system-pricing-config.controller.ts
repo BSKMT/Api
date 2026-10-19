@@ -10,6 +10,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  BadRequestException,
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import type { Request, Response } from "express";
@@ -18,9 +19,22 @@ import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles, Role, Public } from "../../common/decorators";
 import { SystemPricingConfigService } from "../services/system-pricing-config.service";
 import { UpdateSystemPricingConfigDto } from "../dto/system-pricing-config.dto";
+import { ensureString } from "../../common/utils/sanitize-query.util";
 
 interface AuthenticatedRequest extends Request {
   user: { userId: string; email?: string; role?: string };
+}
+
+function parseAndValidateSeasonYear(raw?: unknown): number | undefined {
+  const str = ensureString(raw);
+  if (!str?.trim()) return undefined;
+  const parsed = Number.parseInt(str.trim(), 10);
+  if (!Number.isInteger(parsed) || parsed < 2024 || parsed > 2035) {
+    throw new BadRequestException(
+      "El año de temporada (seasonYear) debe estar entre 2024 y 2035.",
+    );
+  }
+  return parsed;
 }
 
 /**
@@ -37,7 +51,7 @@ export class PublicPricingConfigController {
   @Get("pricing")
   @Throttle({ default: { ttl: 60000, limit: 120 } })
   async getPublicPricing(
-    @Query("seasonYear") seasonYearStr?: string,
+    @Query("seasonYear") seasonYearStr?: unknown,
     @Res({ passthrough: true }) res?: Response,
   ) {
     if (res) {
@@ -46,9 +60,7 @@ export class PublicPricingConfigController {
         "public, max-age=60, s-maxage=300, stale-while-revalidate=600",
       );
     }
-    const seasonYear = seasonYearStr
-      ? Number.parseInt(seasonYearStr, 10)
-      : undefined;
+    const seasonYear = parseAndValidateSeasonYear(seasonYearStr);
     return this.pricingConfigService.getConfig(seasonYear);
   }
 }
@@ -66,10 +78,8 @@ export class AdminPricingConfigController {
   ) {}
 
   @Get()
-  async getAdminPricing(@Query("seasonYear") seasonYearStr?: string) {
-    const seasonYear = seasonYearStr
-      ? Number.parseInt(seasonYearStr, 10)
-      : undefined;
+  async getAdminPricing(@Query("seasonYear") seasonYearStr?: unknown) {
+    const seasonYear = parseAndValidateSeasonYear(seasonYearStr);
     return this.pricingConfigService.getConfig(seasonYear);
   }
 

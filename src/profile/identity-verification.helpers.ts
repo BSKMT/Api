@@ -66,9 +66,28 @@ export class IdentityAttemptThrottle {
   async record(userId: string): Promise<void> {
     const now = Date.now();
     const cutoff = now - this.windowMs;
-    const timestamps = (this.attempts.get(userId) ?? []).filter(
+    let timestamps = (this.attempts.get(userId) ?? []).filter(
       (t) => t > cutoff,
     );
+
+    if (this.kvCache?.isAvailable()) {
+      try {
+        const cached = await this.kvCache.get<number[]>(
+          `throttle:id:${userId}`,
+          true,
+        );
+        if (Array.isArray(cached)) {
+          const merged = new Set<number>([
+            ...timestamps,
+            ...cached.filter((t) => typeof t === "number" && t > cutoff),
+          ]);
+          timestamps = Array.from(merged).sort((a, b) => a - b);
+        }
+      } catch {
+        // Fallback local si falla la lectura previa de KV
+      }
+    }
+
     timestamps.push(now);
     this.attempts.set(userId, timestamps);
 

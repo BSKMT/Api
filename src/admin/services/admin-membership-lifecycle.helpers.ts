@@ -1,4 +1,9 @@
-import { Logger, NotFoundException, BadRequestException } from "@nestjs/common";
+import {
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from "@nestjs/common";
 import { Model } from "mongoose";
 import { UserDocument, UserRole } from "../../users/schemas/user.schema";
 import { NotificationsService } from "../../notifications/notifications.service";
@@ -11,6 +16,11 @@ import {
   calculateExtensionExpiry,
 } from "./admin-membership.helpers";
 
+const PROTECTED_STAFF_ROLES = new Set<string>([
+  UserRole.SUPERADMIN,
+  UserRole.ADMIN,
+]);
+
 export async function executeActivateMembership(
   userModel: Model<UserDocument>,
   notificationsService: NotificationsService,
@@ -21,6 +31,11 @@ export async function executeActivateMembership(
   const user = await userModel.findById(userId);
   if (!user) {
     throw new NotFoundException("Usuario no encontrado");
+  }
+  if (PROTECTED_STAFF_ROLES.has(String(user.role))) {
+    throw new ForbiddenException(
+      "No se puede alterar el rol ni estado de membresía de una cuenta administrativa o de Superadministrador.",
+    );
   }
 
   const { baseDate, expiry } = calculateActivationExpiry(
@@ -120,6 +135,11 @@ export async function executeRevokeMembership(
   const user = await userModel.findById(userId);
   if (!user) {
     throw new NotFoundException("Usuario no encontrado");
+  }
+  if (PROTECTED_STAFF_ROLES.has(String(user.role))) {
+    throw new ForbiddenException(
+      "No se puede revocar ni degradar el rol de una cuenta administrativa o de Superadministrador.",
+    );
   }
 
   user.role = UserRole.USER;

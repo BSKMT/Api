@@ -27,7 +27,54 @@ export interface TicketPdfData {
   issuedAt?: Date;
 }
 
-export async function generateTicketPdf(data: TicketPdfData): Promise<Buffer> {
+function sanitizePdfText(value: string | undefined, maxLen = 140): string {
+  if (!value || typeof value !== "string") return "";
+  return value
+    .replace(/\p{Cc}+/gu, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim()
+    .slice(0, maxLen);
+}
+
+function sanitizeTicketData(raw: TicketPdfData): TicketPdfData {
+  return {
+    ...raw,
+    title: sanitizePdfText(raw.title, 120),
+    categoryOrLevel: raw.categoryOrLevel
+      ? sanitizePdfText(raw.categoryOrLevel, 60)
+      : undefined,
+    format: raw.format ? sanitizePdfText(raw.format, 60) : undefined,
+    recipientName: sanitizePdfText(raw.recipientName, 100),
+    recipientEmail: raw.recipientEmail
+      ? sanitizePdfText(raw.recipientEmail, 100)
+      : undefined,
+    recipientPhone: raw.recipientPhone
+      ? sanitizePdfText(raw.recipientPhone, 30)
+      : undefined,
+    vehiclePlate: raw.vehiclePlate
+      ? sanitizePdfText(raw.vehiclePlate, 20)
+      : undefined,
+    companionName: raw.companionName
+      ? sanitizePdfText(raw.companionName, 100)
+      : undefined,
+    checkInCode: sanitizePdfText(raw.checkInCode, 40),
+    qrPayload: sanitizePdfText(raw.qrPayload, 512),
+    dateText: sanitizePdfText(raw.dateText, 80),
+    timeText: raw.timeText ? sanitizePdfText(raw.timeText, 60) : undefined,
+    locationText: raw.locationText
+      ? sanitizePdfText(raw.locationText, 140)
+      : undefined,
+    meetingPointText: raw.meetingPointText
+      ? sanitizePdfText(raw.meetingPointText, 140)
+      : undefined,
+    coordinatorName: raw.coordinatorName
+      ? sanitizePdfText(raw.coordinatorName, 100)
+      : undefined,
+  };
+}
+
+export async function generateTicketPdf(raw: TicketPdfData): Promise<Buffer> {
+  const data = sanitizeTicketData(raw);
   const qrPngBuffer = await QRCode.toBuffer(data.qrPayload, {
     width: 280,
     margin: 1,

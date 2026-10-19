@@ -161,7 +161,7 @@ function buildAdminSection(
   adminPermissions: string[],
 ): OperationalSection {
   const hasArphaPerm =
-    adminPermissions.length === 0 ||
+    adminPermissions.includes("*") ||
     adminPermissions.includes("arpha") ||
     adminPermissions.includes("events");
 

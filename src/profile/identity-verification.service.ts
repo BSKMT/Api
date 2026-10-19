@@ -127,14 +127,17 @@ export class IdentityVerificationService {
 
     await this.throttle.enforce(userId);
 
-    const lookup = await callVerifikService(
-      this.verifikService,
-      verifikType,
-      documentNumber,
-      verifikExpeditionDate,
-    );
-
-    await this.throttle.record(userId);
+    let lookup: Awaited<ReturnType<typeof callVerifikService>>;
+    try {
+      lookup = await callVerifikService(
+        this.verifikService,
+        verifikType,
+        documentNumber,
+        verifikExpeditionDate,
+      );
+    } finally {
+      await this.throttle.record(userId);
+    }
 
     if (!lookup.ok) {
       handleLookupFailure(lookup, userId, documentNumber, this.logger);

@@ -3,10 +3,12 @@ import {
   Post,
   Get,
   Body,
+  Query,
   Req,
   UseGuards,
   HttpCode,
   HttpStatus,
+  BadRequestException,
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import type { Request } from "express";
@@ -19,9 +21,21 @@ import {
   AppealSavingsRefundDto,
   EscalateSavingsLegalDto,
 } from "./dto/savings-plan.dto";
+import { ensureString } from "../common/utils/sanitize-query.util";
 
 interface AuthenticatedRequest extends Request {
   user: { userId: string };
+}
+
+function validateOptionalYearQuery(raw?: unknown): void {
+  const str = ensureString(raw);
+  if (!str?.trim()) return;
+  const parsed = Number.parseInt(str.trim(), 10);
+  if (!Number.isInteger(parsed) || parsed < 2024 || parsed > 2035) {
+    throw new BadRequestException(
+      "El parámetro de año (year) debe estar entre 2024 y 2035.",
+    );
+  }
 }
 
 @Controller("membership/savings-plan")
@@ -30,13 +44,21 @@ export class SavingsPlanController {
 
   @UseGuards(SessionGuard)
   @Get()
-  async getSavingsPlan(@Req() req: AuthenticatedRequest) {
+  async getSavingsPlan(
+    @Req() req: AuthenticatedRequest,
+    @Query("year") year?: unknown,
+  ) {
+    validateOptionalYearQuery(year);
     return this.savingsPlanService.getSavingsPlanSummary(req.user.userId);
   }
 
   @UseGuards(SessionGuard)
   @Get("complete-balance")
-  async getCompleteBalanceContext(@Req() req: AuthenticatedRequest) {
+  async getCompleteBalanceContext(
+    @Req() req: AuthenticatedRequest,
+    @Query("year") year?: unknown,
+  ) {
+    validateOptionalYearQuery(year);
     return this.savingsPlanService.getCompleteBalanceContext(req.user.userId);
   }
 

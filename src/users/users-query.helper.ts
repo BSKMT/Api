@@ -43,7 +43,9 @@ export async function executeListUsers(
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .select("-settings")
+      .select(
+        "-settings -betterAuthId -pendingPhone -pendingEmail -identityVerification.verifikId",
+      )
       .lean(),
     userModel.countDocuments(filter),
   ]);

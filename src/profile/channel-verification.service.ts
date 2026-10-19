@@ -106,6 +106,7 @@ export class ChannelVerificationService {
     }
 
     await this.emailThrottle.enforce(normalizedEmail, this.logger);
+    await this.emailThrottle.enforce(`user:${userId}`, this.logger);
 
     try {
       await this.birdVerifyService.createEmailVerification(normalizedEmail, {
@@ -121,6 +122,9 @@ export class ChannelVerificationService {
       throw new BadRequestException(
         "No se pudo enviar el codigo de verificacion. Intenta de nuevo.",
       );
+    } finally {
+      await this.emailThrottle.record(normalizedEmail);
+      await this.emailThrottle.record(`user:${userId}`);
     }
 
     user.pendingEmail = normalizedEmail;
@@ -133,7 +137,6 @@ export class ChannelVerificationService {
       this.logger,
     );
 
-    await this.emailThrottle.record(normalizedEmail);
     this.logger.log(
       `Email change OTP sent to ${maskEmail(normalizedEmail)} for user ${userId}`,
     );
