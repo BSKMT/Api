@@ -121,4 +121,3 @@ export const CourseSchema = SchemaFactory.createForClass(Course);
 CourseSchema.index({ level: 1, status: 1 });
 CourseSchema.index({ format: 1, status: 1 });
 CourseSchema.index({ featured: 1, status: 1 });
-CourseSchema.index({ coordinatorId: 1 });

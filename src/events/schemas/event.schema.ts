@@ -184,4 +184,3 @@ export const EventSchema = SchemaFactory.createForClass(Event);
 EventSchema.index({ date: 1, status: 1 });
 EventSchema.index({ category: 1, status: 1 });
 EventSchema.index({ featured: 1, status: 1 });
-EventSchema.index({ coordinatorId: 1 });

@@ -152,6 +152,9 @@ async function initAuth(): Promise<AuthInstance> {
     },
 
     advanced: {
+      ipAddress: {
+        ipAddressHeaders: ["cf-connecting-ip", "x-forwarded-for"],
+      },
       useSecureCookies: process.env.NODE_ENV === "production",
       defaultCookieAttributes: {
         path: "/",

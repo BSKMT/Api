@@ -119,7 +119,11 @@ export class LoginOtpService {
     userAgent?: string,
     turnstileToken?: string,
   ): Promise<{ requestId: string }> {
-    await verifyTurnstileToken(turnstileToken, clientIp, this.logger);
+    const isPreValidatedByPanelProxy =
+      !turnstileToken && Boolean(userAgent?.includes("BSK-Panel/"));
+    if (!isPreValidatedByPanelProxy) {
+      await verifyTurnstileToken(turnstileToken, clientIp, this.logger);
+    }
     const normalizedEmail = (email ?? "").toLowerCase().trim();
     const user = await this.userModel
       .findOne({

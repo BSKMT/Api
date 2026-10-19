@@ -42,6 +42,7 @@ import { ObserveModule } from "./observe";
     }),
     ConfigModule.forRoot({
       isGlobal: true,
+      ignoreEnvFile: process.env.NODE_ENV === "production",
       validate: validateConfig,
     }),
     MongooseModule.forRootAsync({

@@ -36,9 +36,18 @@ export async function ensureBetterAuthIndexesAndMigrations(
     await mongoDb
       .collection("session")
       .createIndex({ userId: 1 }, { background: true });
+    await mongoDb
+      .collection("verification")
+      .createIndex(
+        { expiresAt: 1 },
+        { expireAfterSeconds: 0, background: true },
+      );
+    await mongoDb
+      .collection("verification")
+      .createIndex({ identifier: 1 }, { background: true });
   } catch (indexErr) {
     logger.warn(
-      `Failed to ensure indexes on session collection: ${indexErr instanceof Error ? indexErr.message : String(indexErr)}`,
+      `Failed to ensure indexes on session/verification collections: ${indexErr instanceof Error ? indexErr.message : String(indexErr)}`,
     );
   }
 }

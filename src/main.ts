@@ -1,3 +1,4 @@
+process.env.DOTENV_CONFIG_QUIET ??= "true";
 import "dotenv/config";
 import url from "node:url";
 
