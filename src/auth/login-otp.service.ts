@@ -119,9 +119,7 @@ export class LoginOtpService {
     userAgent?: string,
     turnstileToken?: string,
   ): Promise<{ requestId: string }> {
-    const isPreValidatedByPanelProxy =
-      !turnstileToken && Boolean(userAgent?.includes("BSK-Panel/"));
-    if (!isPreValidatedByPanelProxy) {
+    if (turnstileToken) {
       await verifyTurnstileToken(turnstileToken, clientIp, this.logger);
     }
     const normalizedEmail = (email ?? "").toLowerCase().trim();
