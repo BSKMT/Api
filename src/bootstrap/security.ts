@@ -55,7 +55,8 @@ function isOriginAllowed(
 const NATIVE_UA_SUBSTRINGS = ["BSK", "Expo", "okhttp", "CFNetwork"];
 
 function isNativeAppClient(req: Request): boolean {
-  if (req.headers["x-device-platform"] !== "android") return false;
+  const platform = req.headers["x-device-platform"];
+  if (platform !== "android" && platform !== "ios") return false;
   const userAgent = (req.headers["user-agent"] as string) ?? "";
   return NATIVE_UA_SUBSTRINGS.some((s) => userAgent.includes(s));
 }
@@ -207,6 +208,9 @@ export function setupSecurityMiddleware(
       "X-CSRF-Token",
       "X-Device-Platform",
       "X-App-Version",
+      "X-Request-Id",
+      "X-CF-Origin-Secret",
+      "Accept",
     ],
     maxAge: 86400,
   });
