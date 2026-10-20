@@ -76,8 +76,33 @@ export class CloudinaryService {
       ? `bskmt/${options.folder}`
       : "bskmt/general";
     const metadataString = this.buildMetadataString(options);
+    const timeoutMs =
+      this.configService.get<number>("CLOUDINARY_TIMEOUT_MS") ?? 30000;
 
     return new Promise((resolve, reject) => {
+      let isSettled = false;
+
+      // NIST CSF 2.0 PR.IR-04 & GV.SC-07: Resiliencia ante fallos/stalling de terceros
+      const timer = setTimeout(() => {
+        if (isSettled) return;
+        isSettled = true;
+        try {
+          uploadStream.destroy(
+            new Error("Timeout en Cloudinary upload_stream"),
+          );
+        } catch {
+          // Ignore stream destruction errors
+        }
+        this.logger.error(
+          `Timeout de comunicación con Cloudinary (${timeoutMs}ms) al subir buffer`,
+        );
+        reject(
+          new ServiceUnavailableException(
+            "Tiempo de espera agotado al comunicar con el servicio de almacenamiento multimedia (Cloudinary).",
+          ),
+        );
+      }, timeoutMs);
+
       const uploadStream = this.cloudinary.uploader.upload_stream(
         {
           folder: folderName,
@@ -92,6 +117,10 @@ export class CloudinaryService {
           ...(options.context ? { context: options.context } : {}),
         },
         (error?: UploadApiErrorResponse, result?: UploadApiResponse) => {
+          if (isSettled) return;
+          isSettled = true;
+          clearTimeout(timer);
+
           if (error || !result) {
             this.logger.error(
               `Cloudinary upload error: ${error?.message || "Unknown error"}`,

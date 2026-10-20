@@ -11,6 +11,10 @@ import {
   PartialPaymentCreditSchema,
   ContractorInfo,
 } from "./user-subdocuments.schema";
+import {
+  encryptUserProfileSensitiveFields,
+  decryptUserProfileSensitiveFields,
+} from "../../common/crypto/field-encryption.helper";
 
 export type {
   FriendRequest,
@@ -183,8 +187,26 @@ export class User {
   @Prop({ type: IdentityVerificationSchema, default: null })
   identityVerification?: IdentityVerification | null;
 }
-
 export const UserSchema = SchemaFactory.createForClass(User);
+
+// NIST CSF 2.0 PR.DS-01: Transparent Field-Level Encryption at Rest
+UserSchema.post("init", function (doc) {
+  if (doc?.profile) {
+    decryptUserProfileSensitiveFields(doc.profile);
+  }
+});
+
+UserSchema.pre("save", function () {
+  if (this.profile) {
+    encryptUserProfileSensitiveFields(this.profile);
+  }
+});
+
+UserSchema.post("save", function (doc) {
+  if (doc?.profile) {
+    decryptUserProfileSensitiveFields(doc.profile);
+  }
+});
 
 UserSchema.set("toJSON", {
   transform: (_doc, ret) => {
@@ -201,6 +223,9 @@ UserSchema.set("toJSON", {
       };
       delete iv["verifikId"];
       obj["identityVerification"] = iv;
+    }
+    if (obj["profile"] && typeof obj["profile"] === "object") {
+      decryptUserProfileSensitiveFields(obj["profile"]);
     }
     return obj;
   },

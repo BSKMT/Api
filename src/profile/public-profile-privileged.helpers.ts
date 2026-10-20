@@ -1,5 +1,6 @@
 import { str, num, computeMembershipStatus } from "./public-profile.helpers";
 import { buildGestorOperationalSection } from "./public-profile-gestor.helpers";
+import { decryptSensitiveField } from "../common/crypto/field-encryption.helper";
 
 export interface OperationalSection {
   scope:
@@ -35,8 +36,14 @@ function extractUserData(targetUser: Record<string, unknown>): UserProfileData {
   const personal = profile["datos-personales"] ?? {};
   const contacto = profile["contacto"] ?? {};
   const moto = profile["motocicleta"] ?? {};
-  const salud = profile["salud-seguridad"] ?? {};
-  const legal = profile["documentacion-legal"] ?? {};
+  const salud =
+    decryptSensitiveField<Record<string, unknown>>(
+      profile["salud-seguridad"],
+    ) ?? {};
+  const legal =
+    decryptSensitiveField<Record<string, unknown>>(
+      profile["documentacion-legal"],
+    ) ?? {};
   const membEco = profile["membresia-ecosistema"] ?? {};
 
   const fullName = [

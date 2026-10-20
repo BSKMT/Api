@@ -1,11 +1,18 @@
-import { Controller, Get, Header } from "@nestjs/common";
+import { Controller, Get, Header, Res } from "@nestjs/common";
 import { InjectConnection } from "@nestjs/mongoose";
 import { Connection } from "mongoose";
+import { ConfigService } from "@nestjs/config";
+import type { Response } from "express";
 import { Public } from "./common/decorators";
+import { generateCsrfToken } from "./common/csrf/csrf.helper";
+import type { EnvironmentConfig } from "./config/config.interface";
 
 @Controller()
 export class AppController {
-  constructor(@InjectConnection() private readonly connection: Connection) {}
+  constructor(
+    @InjectConnection() private readonly connection: Connection,
+    private readonly configService: ConfigService<EnvironmentConfig>,
+  ) {}
 
   @Public()
   @Get("robots.txt")
@@ -28,6 +35,31 @@ export class AppController {
   @Get("api")
   getApiRoot() {
     return this.getRoot();
+  }
+
+  /**
+   * Genera un token CSRF criptográfico y establece la cookie Double-Submit (NIST CSF 2.0 PR.PS-06).
+   */
+  @Public()
+  @Get(["csrf-token", "api/csrf-token"])
+  getCsrfToken(@Res({ passthrough: true }) res: Response) {
+    const secret =
+      this.configService.get<string>("BETTER_AUTH_SECRET", { infer: true }) ??
+      process.env.BETTER_AUTH_SECRET ??
+      "bskmt-default-csrf-secret-min32chars";
+
+    const token = generateCsrfToken(secret);
+    const isProd = process.env.NODE_ENV === "production";
+
+    res.cookie("bskmt.csrf", token, {
+      httpOnly: false, // Accesible por JS para enviar en encabezado X-CSRF-Token
+      secure: isProd,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    return { csrfToken: token };
   }
 
   @Public()

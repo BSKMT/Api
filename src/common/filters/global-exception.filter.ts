@@ -6,7 +6,11 @@ import {
   HttpStatus,
   Logger,
 } from "@nestjs/common";
-import type { Response } from "express";
+import type { Request, Response } from "express";
+import {
+  SecurityAuditService,
+  AuditSeverity,
+} from "../audit/security-audit.service";
 
 interface DbErrorLike {
   name?: string;
@@ -31,65 +35,99 @@ function extractHttpMessages(exceptionResponse: unknown): string[] {
   return [JSON.stringify(exceptionResponse)];
 }
 
-function tryHandleDatabaseError(
-  dbErr: DbErrorLike,
-  response: Response,
-): boolean {
+function getDatabaseErrorResponse(dbErr: DbErrorLike): {
+  status: HttpStatus;
+  error: string;
+  message: string[];
+} | null {
   if (dbErr?.name === "CastError") {
-    response.status(HttpStatus.BAD_REQUEST).json({
-      statusCode: HttpStatus.BAD_REQUEST,
-      message: ["Identificador o parámetro con formato inválido"],
+    return {
+      status: HttpStatus.BAD_REQUEST,
       error: "Bad Request",
-      timestamp: new Date().toISOString(),
-    });
-    return true;
+      message: ["Identificador o parámetro con formato inválido"],
+    };
   }
 
   if (dbErr?.code === 11000) {
-    response.status(HttpStatus.CONFLICT).json({
-      statusCode: HttpStatus.CONFLICT,
-      message: ["El registro o recurso ya existe"],
+    return {
+      status: HttpStatus.CONFLICT,
       error: "Conflict",
-      timestamp: new Date().toISOString(),
-    });
-    return true;
+      message: ["El registro o recurso ya existe"],
+    };
   }
 
   if (dbErr?.name === "ValidationError" && dbErr?.errors) {
     const messages = Object.values(dbErr.errors).map(
       (e) => e?.message || "Error de validación en esquema",
     );
-    response.status(HttpStatus.BAD_REQUEST).json({
-      statusCode: HttpStatus.BAD_REQUEST,
-      message: messages.length > 0 ? messages : ["Error de validación"],
+    return {
+      status: HttpStatus.BAD_REQUEST,
       error: "Bad Request",
-      timestamp: new Date().toISOString(),
-    });
-    return true;
+      message: messages.length > 0 ? messages : ["Error de validación"],
+    };
   }
 
-  return false;
+  return null;
 }
 
+function extractRequestId(req?: Request): string {
+  if (!req?.headers) return "unknown";
+  const raw = req.headers["x-request-id"];
+  const candidate = Array.isArray(raw) ? raw[0] : raw;
+  return typeof candidate === "string" && candidate.length > 0
+    ? candidate
+    : (req as Request & { id?: string }).id || "unknown";
+}
+
+/**
+ * Filtro global de excepciones con correlación y auditoría inmutable de incidentes.
+ * Satisface NIST CSF 2.0 DE.AE-03, RS.AN-03, RS.AN-06 y RS.AN-07.
+ */
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(GlobalExceptionFilter.name);
 
-  private handleHttpException(exception: HttpException, response: Response) {
+  constructor(private readonly auditService?: SecurityAuditService) {}
+
+  private handleHttpException(
+    exception: HttpException,
+    response: Response,
+    request: Request,
+    requestId: string,
+  ) {
     const status = exception.getStatus();
     const exceptionResponse = exception.getResponse();
     const message = extractHttpMessages(exceptionResponse);
 
     if (status >= 500) {
       this.logger.error(
-        `HTTP ${status}: ${JSON.stringify(message)}`,
+        JSON.stringify({
+          event: "HTTP_SERVER_ERROR",
+          statusCode: status,
+          requestId,
+          message,
+        }),
         exception.stack,
       );
+
+      if (this.auditService) {
+        void this.auditService.recordEvent({
+          requestId,
+          eventType: "HTTP_SERVER_ERROR",
+          severity: AuditSeverity.ERROR,
+          clientIp: request.ip || "unknown",
+          method: request.method || "UNKNOWN",
+          path: request.originalUrl || request.url || "unknown",
+          statusCode: status,
+          details: { message },
+        });
+      }
     }
 
     const payload: Record<string, unknown> = {
       statusCode: status,
       message,
+      requestId,
       timestamp: new Date().toISOString(),
     };
     if (
@@ -107,23 +145,54 @@ export class GlobalExceptionFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
+    const request = ctx.getRequest<Request>();
+    const requestId = extractRequestId(request);
 
     if (exception instanceof HttpException) {
-      return this.handleHttpException(exception, response);
+      return this.handleHttpException(exception, response, request, requestId);
     }
 
-    if (tryHandleDatabaseError(exception as DbErrorLike, response)) {
-      return;
+    const dbErrorMatch = getDatabaseErrorResponse(exception as DbErrorLike);
+    if (dbErrorMatch) {
+      return response.status(dbErrorMatch.status).json({
+        statusCode: dbErrorMatch.status,
+        message: dbErrorMatch.message,
+        error: dbErrorMatch.error,
+        requestId,
+        timestamp: new Date().toISOString(),
+      });
     }
 
     this.logger.error(
-      "Unhandled exception",
-      exception instanceof Error ? exception.stack : String(exception),
+      JSON.stringify({
+        event: "UNHANDLED_EXCEPTION",
+        requestId,
+        error:
+          exception instanceof Error ? exception.message : String(exception),
+      }),
+      exception instanceof Error ? exception.stack : undefined,
     );
+
+    if (this.auditService) {
+      void this.auditService.recordEvent({
+        requestId,
+        eventType: "UNHANDLED_EXCEPTION",
+        severity: AuditSeverity.CRITICAL,
+        clientIp: request?.ip || "unknown",
+        method: request?.method || "UNKNOWN",
+        path: request?.originalUrl || request?.url || "unknown",
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        details: {
+          error:
+            exception instanceof Error ? exception.message : String(exception),
+        },
+      });
+    }
 
     return response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       message: ["Error interno del servidor"],
+      requestId,
       timestamp: new Date().toISOString(),
     });
   }

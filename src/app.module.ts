@@ -31,6 +31,7 @@ import { GestionModule } from "./gestion/gestion.module";
 import { AppController } from "./app.controller";
 import { CloudinaryModule } from "./cloudinary/cloudinary.module";
 import { ObserveModule } from "./observe";
+import { SecurityAuditModule } from "./common/audit/security-audit.module";
 
 @Module({
   controllers: [AppController],
@@ -95,6 +96,7 @@ import { ObserveModule } from "./observe";
     GarageModule,
     GestionModule,
     CloudinaryModule,
+    SecurityAuditModule,
   ],
   providers: [
     {

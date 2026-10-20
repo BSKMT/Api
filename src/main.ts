@@ -55,6 +55,8 @@ import { getAuth, setAuthDependencies } from "./auth/better-auth";
 import { BirdEmailService } from "./bird/bird-email.service";
 import { createBetterAuthMiddleware } from "./bootstrap/auth-handler";
 import { setupSecurityMiddleware } from "./bootstrap/security";
+import { CorrelationIdMiddleware } from "./common/middleware/correlation-id.middleware";
+import { SecurityAuditService } from "./common/audit/security-audit.service";
 
 let expressApp: express.Express;
 
@@ -67,6 +69,11 @@ export async function bootstrap(): Promise<express.Express> {
     cors: false,
     bodyParser: false,
     instrument: ObserveInstrument,
+  });
+
+  const correlationMiddleware = new CorrelationIdMiddleware();
+  app.use((req: Request, res: Response, next: () => void) => {
+    correlationMiddleware.use(req, res, next);
   });
 
   const configService = app.get(ConfigService<EnvironmentConfig>);
@@ -111,11 +118,12 @@ export async function bootstrap(): Promise<express.Express> {
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
-      transformOptions: { enableImplicitConversion: true },
+      transformOptions: { enableImplicitConversion: false },
     }),
   );
 
-  app.useGlobalFilters(new GlobalExceptionFilter());
+  const auditService = app.get(SecurityAuditService);
+  app.useGlobalFilters(new GlobalExceptionFilter(auditService));
 
   app.use((req: Request, res: Response, next: () => void) => {
     const rawPath = (req.originalUrl || req.path || req.url || "").split(

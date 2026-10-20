@@ -3,6 +3,7 @@ import type { NestExpressApplication } from "@nestjs/platform-express";
 import type { ConfigService } from "@nestjs/config";
 import type { Request, Response, NextFunction } from "express";
 import type { EnvironmentConfig } from "../config/config.interface";
+import { validateDoubleSubmitCsrf } from "../common/csrf/csrf.helper";
 
 function isConstantTimeMatch(provided: string, expected: string): boolean {
   const bufA = Buffer.from(provided, "utf8");
@@ -11,6 +12,64 @@ function isConstantTimeMatch(provided: string, expected: string): boolean {
     return false;
   }
   return timingSafeEqual(bufA, bufB);
+}
+
+const CSRF_EXEMPT_PATHS = new Set([
+  "/api/payments/webhook",
+  "/api/membership/webhook",
+  "/api/alegra/webhook",
+  "/api/membership/internal/cron/sweep-pending",
+  "/api/events/internal/cron/sweep-stale-registrations",
+  "/api/shop/internal/cron/expire-pending",
+  "/api/internal/webhooks/bird/realtime",
+  "/api/garage/allied/service-order",
+]);
+
+function isCsrfExemptPath(path: string): boolean {
+  const normalized = (path || "").replace(/\/+$/, "");
+  return (
+    CSRF_EXEMPT_PATHS.has(normalized) ||
+    normalized.startsWith("/api/internal/cron/")
+  );
+}
+
+function isOriginAllowed(
+  req: Request,
+  allowedOrigins: Set<string>,
+): boolean | null {
+  const origin = req.headers.origin;
+  if (origin) {
+    return allowedOrigins.has(origin);
+  }
+  const referer = req.headers.referer;
+  if (referer) {
+    try {
+      return allowedOrigins.has(new URL(referer).origin);
+    } catch {
+      return false;
+    }
+  }
+  return null;
+}
+
+const NATIVE_UA_SUBSTRINGS = ["BSK", "Expo", "okhttp", "CFNetwork"];
+
+function isNativeAppClient(req: Request): boolean {
+  if (req.headers["x-device-platform"] !== "android") return false;
+  const userAgent = (req.headers["user-agent"] as string) ?? "";
+  return NATIVE_UA_SUBSTRINGS.some((s) => userAgent.includes(s));
+}
+
+function validateCsrfHeaderIfPresent(req: Request, secret: string): boolean {
+  const csrfHeader = Array.isArray(req.headers["x-csrf-token"])
+    ? req.headers["x-csrf-token"][0]
+    : req.headers["x-csrf-token"];
+  if (!csrfHeader) return true;
+
+  const cookieHeader = req.headers.cookie ?? "";
+  const match = /(?:^|;\s*)bskmt\.csrf=([^;]*)/.exec(cookieHeader);
+  const csrfCookie = match ? decodeURIComponent(match[1]) : undefined;
+  return validateDoubleSubmitCsrf(csrfHeader, csrfCookie, secret);
 }
 
 export function setupSecurityMiddleware(
@@ -153,58 +212,31 @@ export function setupSecurityMiddleware(
   });
 
   const allowedOrigins = new Set(allowedOriginsList);
+  const betterAuthSecret =
+    configService.get<string>("BETTER_AUTH_SECRET", { infer: true }) ||
+    "bskmt-default-csrf-secret-min32chars";
+
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
       return next();
     }
-    const normalizedPath = (req.path || "").replace(/\/+$/, "");
-    if (
-      normalizedPath === "/api/payments/webhook" ||
-      normalizedPath === "/api/membership/webhook" ||
-      normalizedPath === "/api/alegra/webhook" ||
-      normalizedPath.startsWith("/api/internal/cron/") ||
-      normalizedPath === "/api/membership/internal/cron/sweep-pending" ||
-      normalizedPath ===
-        "/api/events/internal/cron/sweep-stale-registrations" ||
-      normalizedPath === "/api/shop/internal/cron/expire-pending" ||
-      normalizedPath === "/api/internal/webhooks/bird/realtime" ||
-      normalizedPath === "/api/garage/allied/service-order"
-    ) {
+    if (isCsrfExemptPath(req.path)) {
       return next();
     }
 
-    const origin = req.headers.origin;
-    const referer = req.headers.referer;
+    if (!validateCsrfHeaderIfPresent(req, betterAuthSecret)) {
+      return res.status(403).json({ message: "Invalid CSRF token" });
+    }
 
-    if (origin) {
-      if (!allowedOrigins.has(origin)) {
-        return res.status(403).json({ message: "Origin not allowed" });
-      }
+    const originResult = isOriginAllowed(req, allowedOrigins);
+    if (originResult === true) {
       return next();
     }
-    if (referer) {
-      try {
-        const refererOrigin = new URL(referer).origin;
-        if (!allowedOrigins.has(refererOrigin)) {
-          return res
-            .status(403)
-            .json({ message: "Referer origin not allowed" });
-        }
-        return next();
-      } catch {
-        return res.status(403).json({ message: "Invalid referer header" });
-      }
+    if (originResult === false) {
+      return res.status(403).json({ message: "Origin or Referer not allowed" });
     }
 
-    // Android / Native App requests without browser Origin/Referer headers
-    const userAgent = (req.headers["user-agent"] as string) ?? "";
-    if (
-      req.headers["x-device-platform"] === "android" &&
-      (userAgent.includes("BSK") ||
-        userAgent.includes("Expo") ||
-        userAgent.includes("okhttp") ||
-        userAgent.includes("CFNetwork"))
-    ) {
+    if (isNativeAppClient(req)) {
       return next();
     }
 

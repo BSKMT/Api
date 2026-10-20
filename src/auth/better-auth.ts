@@ -31,26 +31,32 @@ export type Session = BetterAuthSessionData;
 
 interface BetterAuthExtendedDeps extends BetterAuthDeps {
   passkeyPlugin: (options?: Record<string, unknown>) => unknown;
+  twoFactorPlugin: (options?: Record<string, unknown>) => unknown;
 }
 
 let depsPromise: Promise<BetterAuthExtendedDeps> | null = null;
 
 async function loadBetterAuthDeps(): Promise<BetterAuthExtendedDeps> {
   depsPromise ??= (async (): Promise<BetterAuthExtendedDeps> => {
-    const [coreRaw, mongoRaw, passkeyRaw] = await Promise.all([
+    const [coreRaw, mongoRaw, passkeyRaw, twoFactorRaw] = await Promise.all([
       import("better-auth"),
       import("better-auth/adapters/mongodb"),
       import("@better-auth/passkey"),
+      import("better-auth/plugins/two-factor"),
     ]);
     const core = coreRaw as unknown as BetterAuthCoreModule;
     const mongoMod = mongoRaw as unknown as BetterAuthMongoModule;
     const passkeyMod = passkeyRaw as unknown as {
       passkey: (options?: Record<string, unknown>) => unknown;
     };
+    const twoFactorMod = twoFactorRaw as unknown as {
+      twoFactor: (options?: Record<string, unknown>) => unknown;
+    };
     return {
       betterAuth: core.betterAuth,
       mongodbAdapter: mongoMod.mongodbAdapter,
       passkeyPlugin: passkeyMod.passkey,
+      twoFactorPlugin: twoFactorMod.twoFactor,
     };
   })();
   return depsPromise;
@@ -89,7 +95,7 @@ export function setAuthDependencies(
 }
 
 async function initAuth(): Promise<AuthInstance> {
-  const { betterAuth, mongodbAdapter, passkeyPlugin } =
+  const { betterAuth, mongodbAdapter, passkeyPlugin, twoFactorPlugin } =
     await loadBetterAuthDeps();
 
   await ensureBetterAuthIndexesAndMigrations(mongoDb, authLogger);
@@ -117,7 +123,7 @@ async function initAuth(): Promise<AuthInstance> {
 
     emailAndPassword: {
       enabled: true,
-      minPasswordLength: 8,
+      minPasswordLength: 12,
       maxPasswordLength: 128,
       autoSignIn: false,
       requireEmailVerification: true,
@@ -146,7 +152,7 @@ async function initAuth(): Promise<AuthInstance> {
 
     session: {
       additionalFields: SESSION_ADDITIONAL_FIELDS,
-      expiresIn: 60 * 24 * 60 * 60,
+      expiresIn: 7 * 24 * 60 * 60,
       updateAge: 24 * 60 * 60,
       cookieCache: { enabled: true, maxAge: 5 * 60 },
     },
@@ -181,6 +187,18 @@ async function initAuth(): Promise<AuthInstance> {
           (process.env.NODE_ENV === "production" ? "bskmt.com" : "localhost"),
         rpName: "BSK Motorcycle Team",
         origin: getPasskeyOrigins(),
+      }),
+      twoFactorPlugin({
+        issuer: "BSK Motorcycle Team",
+        totpOptions: {
+          digits: 6,
+          period: 30,
+        },
+        backupCodeOptions: {
+          amount: 10,
+          length: 10,
+          storeBackupCodes: "encrypted",
+        },
       }),
     ],
 

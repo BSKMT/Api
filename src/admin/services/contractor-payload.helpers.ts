@@ -1,4 +1,5 @@
 import { BadRequestException } from "@nestjs/common";
+import { encryptSensitiveField } from "../../common/crypto/field-encryption.helper";
 import {
   CreateCollaboratorDto,
   CreateAdministratorDto,
@@ -134,11 +135,11 @@ export function buildStaffProfileUpdate(norm: NormalizedStaffPayload) {
       correoPersonal: norm.personalEmail || "",
       direccion: norm.address || "",
     },
-    "profile.salud-seguridad": {
+    "profile.salud-seguridad": encryptSensitiveField({
       rh: norm.bloodType || "O+",
       contactoEmergenciaNombre: norm.emergencyContactName || "",
       contactoEmergenciaTelefono: norm.emergencyContactPhone || "",
-    },
+    }),
   };
 }
 

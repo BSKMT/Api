@@ -20,33 +20,69 @@ const ADMIN_MODULE_MAP: Record<string, string> = {
   "/api/admin/config": "config",
 };
 
-function checkAdminModulePermissions(permissions: string[], url: string): void {
-  const lowerUrl = url.toLowerCase();
+function getPathWithoutQuery(rawUrl: string): string {
+  const qIdx = rawUrl.indexOf("?");
+  return (qIdx === -1 ? rawUrl : rawUrl.slice(0, qIdx)).toLowerCase().trim();
+}
+
+function resolveRequiredPermission(cleanPath: string): string | null {
   for (const [routePrefix, requiredPerm] of Object.entries(ADMIN_MODULE_MAP)) {
-    if (lowerUrl.includes(routePrefix)) {
-      const hasPerm =
-        permissions.includes(requiredPerm) ||
-        (requiredPerm === "arpha" && permissions.includes("events"));
-      if (!hasPerm) {
-        throw new ForbiddenException(
-          `No tienes permisos asignados para el módulo administrativo '${requiredPerm}'. Contacta a un Superadministrador.`,
-        );
-      }
-      break;
+    if (cleanPath.startsWith(routePrefix)) {
+      return requiredPerm;
     }
+  }
+  return null;
+}
+
+/**
+ * Valida permisos modulares para usuarios con rol ADMIN.
+ * Implementa política estricta FAIL-CLOSED: si una ruta administrativa no está
+ * mapeada explícitamente en ADMIN_MODULE_MAP, deniega el acceso por defecto (PR.AA-05).
+ */
+export function checkAdminModulePermissions(
+  permissions: string[],
+  rawUrl: string,
+): void {
+  const cleanPath = getPathWithoutQuery(rawUrl);
+  if (!cleanPath.startsWith("/api/admin") && !cleanPath.startsWith("/admin")) {
+    return;
+  }
+
+  const requiredPerm = resolveRequiredPermission(cleanPath);
+  if (!requiredPerm) {
+    throw new ForbiddenException(
+      "Módulo administrativo no reconocido o sin política de acceso definida. Acceso denegado (Fail-Closed).",
+    );
+  }
+
+  const hasPerm =
+    permissions.includes(requiredPerm) ||
+    (requiredPerm === "arpha" && permissions.includes("events"));
+
+  if (!hasPerm) {
+    throw new ForbiddenException(
+      `No tienes permisos asignados para el módulo administrativo '${requiredPerm}'. Contacta a un Superadministrador.`,
+    );
   }
 }
 
 /**
- * RolesGuard — checks that the authenticated user's role is in the
- * required roles list. The role is already populated on `req.user`
- * by `SessionGuard`, so no additional DB lookup is needed.
- *
- * Must be used AFTER `SessionGuard` in the `@UseGuards(...)` chain.
+ * RolesGuard — Verifica que el usuario autenticado posea el rol y permisos requeridos.
+ * Satisface NIST CSF 2.0 PR.AA-05 (Separación de Funciones y Menor Privilegio).
  */
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
+
+  private validateAdminAccess(
+    adminPermissions: string[] | undefined,
+    rawUrl: string,
+  ): void {
+    const perms = Array.isArray(adminPermissions) ? adminPermissions : [];
+    if (!perms.includes("*")) {
+      checkAdminModulePermissions(perms, rawUrl);
+    }
+  }
 
   canActivate(context: ExecutionContext): boolean {
     const requiredRoles = this.reflector.getAllAndOverride<Role[]>(ROLES_KEY, [
@@ -67,7 +103,7 @@ export class RolesGuard implements CanActivate {
     }
 
     if (!request.user?.userId) {
-      throw new ForbiddenException("Acceso denegado");
+      throw new ForbiddenException("Acceso denegado: usuario no autenticado");
     }
 
     const user = request.user as {
@@ -87,17 +123,11 @@ export class RolesGuard implements CanActivate {
       );
     }
 
-    // Validación granular de permisos por módulo para administradores (fail-closed)
     if (userRole === Role.ADMIN) {
-      const perms = Array.isArray(user.adminPermissions)
-        ? user.adminPermissions
-        : [];
-      if (!perms.includes("*")) {
-        checkAdminModulePermissions(
-          perms,
-          request.originalUrl || request.url || "",
-        );
-      }
+      this.validateAdminAccess(
+        user.adminPermissions,
+        request.originalUrl || request.url || "",
+      );
     }
 
     return true;
