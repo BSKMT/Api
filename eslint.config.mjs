@@ -1,13 +1,13 @@
 // @ts-check
-import { defineConfig } from 'eslint/config';
-import eslint from '@eslint/js';
-import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
-import globals from 'globals';
-import tseslint from 'typescript-eslint';
+import { defineConfig } from "eslint/config";
+import eslint from "@eslint/js";
+import eslintPluginPrettierRecommended from "eslint-plugin-prettier/recommended";
+import globals from "globals";
+import tseslint from "typescript-eslint";
 
 export default defineConfig(
   {
-    ignores: ['eslint.config.mjs', '.agents/**', 'dist/**'],
+    ignores: ["eslint.config.mjs", ".agents/**", "dist/**"],
   },
   eslint.configs.recommended,
   eslintPluginPrettierRecommended,
@@ -17,14 +17,12 @@ export default defineConfig(
         ...globals.node,
         ...globals.jest,
       },
-      sourceType: 'module',
+      sourceType: "module",
     },
   },
   {
-    files: ['**/*.ts', '**/*.tsx'],
-    extends: [
-      ...tseslint.configs.recommendedTypeChecked,
-    ],
+    files: ["**/*.ts", "**/*.tsx"],
+    extends: [...tseslint.configs.recommendedTypeChecked],
     languageOptions: {
       parserOptions: {
         projectService: true,
@@ -32,26 +30,26 @@ export default defineConfig(
       },
     },
     rules: {
-      '@typescript-eslint/no-explicit-any': 'warn',
-      '@typescript-eslint/no-unsafe-call': 'warn',
-      '@typescript-eslint/no-unsafe-assignment': 'warn',
-      '@typescript-eslint/no-unsafe-member-access': 'warn',
-      '@typescript-eslint/no-unsafe-return': 'warn',
-      '@typescript-eslint/no-unsafe-argument': 'warn',
-      '@typescript-eslint/no-unused-vars': [
-        'error',
-        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-unsafe-call": "warn",
+      "@typescript-eslint/no-unsafe-assignment": "warn",
+      "@typescript-eslint/no-unsafe-member-access": "warn",
+      "@typescript-eslint/no-unsafe-return": "warn",
+      "@typescript-eslint/no-unsafe-argument": "warn",
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
-      '@typescript-eslint/no-floating-promises': 'warn',
+      "@typescript-eslint/no-floating-promises": "warn",
     },
   },
   {
-    files: ['**/*.js', '**/*.mjs', '**/*.cjs'],
+    files: ["**/*.js", "**/*.mjs", "**/*.cjs"],
     extends: [tseslint.configs.disableTypeChecked],
   },
   {
     rules: {
-      'prettier/prettier': ['error', { endOfLine: 'auto' }],
+      "prettier/prettier": ["error", { endOfLine: "auto" }],
     },
   },
 );
