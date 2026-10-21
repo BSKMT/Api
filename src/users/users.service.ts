@@ -15,19 +15,7 @@ import {
   FriendRequest,
 } from "./schemas/user.schema";
 import { executeCreateUser } from "./users-create.helper";
-import {
-  executeActivateMembership,
-  executeUpdatePartialPaymentCredit,
-  executeUpdatePartialPaymentCreditIfType,
-  executeIncrementPartialPaymentCreditUsedAmount,
-  executeCreatePartialPaymentCredit,
-  executeClearPartialPaymentCredit,
-  executeRevertPartialPaymentCredit,
-  executeUpdateInstallmentsPaid,
-  executeIncrementInstallmentsPaid,
-  executeUpdateMembershipRenewal,
-  executeIncrementRenewalInstallmentsPaid,
-} from "./users-credit.helper";
+import * as credit from "./users-credit.helper";
 import {
   executeEnsureOfficialNumber,
   executeUpdateProfileSection,
@@ -145,7 +133,7 @@ export class UsersService {
     expiryDate: Date,
     paymentPlan: string,
   ): Promise<UserDocument> {
-    const saved = await executeActivateMembership(
+    const saved = await credit.executeActivateMembership(
       this.userModel,
       userId,
       startDate,
@@ -158,29 +146,36 @@ export class UsersService {
   }
 
   async updateInstallmentsPaid(userId: string, count: number): Promise<void> {
-    return executeUpdateInstallmentsPaid(this.userModel, userId, count);
+    return credit.executeUpdateInstallmentsPaid(this.userModel, userId, count);
   }
 
   async incrementInstallmentsPaid(userId: string): Promise<number> {
-    return executeIncrementInstallmentsPaid(this.userModel, userId);
+    return credit.executeIncrementInstallmentsPaid(this.userModel, userId);
   }
 
   async updateMembershipRenewal(
     userId: string,
     renewalCount: number,
   ): Promise<void> {
-    return executeUpdateMembershipRenewal(this.userModel, userId, renewalCount);
+    return credit.executeUpdateMembershipRenewal(
+      this.userModel,
+      userId,
+      renewalCount,
+    );
   }
 
   async incrementRenewalInstallmentsPaid(userId: string): Promise<number> {
-    return executeIncrementRenewalInstallmentsPaid(this.userModel, userId);
+    return credit.executeIncrementRenewalInstallmentsPaid(
+      this.userModel,
+      userId,
+    );
   }
 
   async updatePartialPaymentCredit(
     userId: string,
-    credit: PartialPaymentCredit,
+    c: PartialPaymentCredit,
   ): Promise<void> {
-    return executeUpdatePartialPaymentCredit(this.userModel, userId, credit);
+    return credit.executeUpdatePartialPaymentCredit(this.userModel, userId, c);
   }
 
   async updatePartialPaymentCreditIfType(
@@ -188,7 +183,7 @@ export class UsersService {
     expectedType: CreditType,
     newCredit: PartialPaymentCredit,
   ): Promise<boolean> {
-    return executeUpdatePartialPaymentCreditIfType(
+    return credit.executeUpdatePartialPaymentCreditIfType(
       this.userModel,
       userId,
       expectedType,
@@ -201,7 +196,7 @@ export class UsersService {
     increment: number,
     expectedUsedAmount: number,
   ): Promise<UserDocument | null> {
-    return executeIncrementPartialPaymentCreditUsedAmount(
+    return credit.executeIncrementPartialPaymentCreditUsedAmount(
       this.userModel,
       userId,
       increment,
@@ -214,7 +209,7 @@ export class UsersService {
     amount: number,
     installmentsPaid: number,
   ): Promise<void> {
-    return executeCreatePartialPaymentCredit(
+    return credit.executeCreatePartialPaymentCredit(
       this.userModel,
       userId,
       amount,
@@ -223,14 +218,18 @@ export class UsersService {
   }
 
   async clearPartialPaymentCredit(userId: string): Promise<void> {
-    return executeClearPartialPaymentCredit(this.userModel, userId);
+    return credit.executeClearPartialPaymentCredit(this.userModel, userId);
   }
 
   async revertPartialPaymentCredit(
     userId: string,
     amount: number,
   ): Promise<boolean> {
-    return executeRevertPartialPaymentCredit(this.userModel, userId, amount);
+    return credit.executeRevertPartialPaymentCredit(
+      this.userModel,
+      userId,
+      amount,
+    );
   }
 
   async updateSubrol(

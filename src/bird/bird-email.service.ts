@@ -1,37 +1,25 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { BirdService } from "./bird.service";
-import {
-  contactInternalTemplate,
-  emailVerificationTemplate,
-  notificationTemplate,
-  passwordResetTemplate,
-  ticketNotificationTemplate,
-} from "./email.templates";
-import {
-  renderContactInternal,
-  renderEmailVerification,
-  renderNotification,
-  renderPasswordReset,
-  renderTicketNotification,
-} from "./templates";
+import * as templates from "./email.templates";
+import * as renderers from "./templates";
 import { maskEmail } from "../common/utils/log-redact.util";
-import { formatBirdError, renderWithFallback } from "./bird-email.helpers";
+import {
+  formatBirdError,
+  renderWithFallback,
+  buildTicketAttachments,
+  buildTicketSubject,
+  getDefaultEmailSender,
+} from "./bird-email.helpers";
 
 @Injectable()
 export class BirdEmailService {
   private readonly logger = new Logger(BirdEmailService.name);
-  private readonly fromEmail: string;
-  private readonly fromName: string;
-  private readonly teamEmail: string;
+  private readonly sender = getDefaultEmailSender();
 
-  constructor(private readonly birdService: BirdService) {
-    this.fromEmail = process.env.BIRD_FROM_EMAIL ?? "no_responder@bskmt.com";
-    this.fromName = process.env.BIRD_FROM_NAME ?? "BSK Motorcycle Team";
-    this.teamEmail = process.env.BIRD_TEAM_EMAIL ?? "contacto@bskmt.com";
-  }
+  constructor(private readonly birdService: BirdService) {}
 
   private getFrom(): { email: string; name?: string } {
-    return { email: this.fromEmail, name: this.fromName };
+    return { email: this.sender.fromEmail, name: this.sender.fromName };
   }
 
   async sendContactMessages(data: {
@@ -49,9 +37,9 @@ export class BirdEmailService {
     try {
       const client = await this.birdService.getClient();
       const rendered = await renderWithFallback(
-        () => renderContactInternal(data),
+        () => renderers.renderContactInternal(data),
         () =>
-          contactInternalTemplate({
+          templates.contactInternalTemplate({
             ...data,
             source: data.source ?? "Formulario de contacto web",
           }),
@@ -61,7 +49,7 @@ export class BirdEmailService {
 
       await client.email.send({
         from: this.getFrom(),
-        to: [this.teamEmail],
+        to: [this.sender.teamEmail],
         subject: `[Contacto web] ${data.subject}`,
         html: rendered.html,
         ...(rendered.text ? { text: rendered.text } : {}),
@@ -89,8 +77,8 @@ export class BirdEmailService {
     try {
       const client = await this.birdService.getClient();
       const rendered = await renderWithFallback(
-        () => renderNotification(data),
-        () => notificationTemplate(data),
+        () => renderers.renderNotification(data),
+        () => templates.notificationTemplate(data),
         this.logger,
         "notificacion",
       );
@@ -125,8 +113,8 @@ export class BirdEmailService {
     try {
       const client = await this.birdService.getClient();
       const rendered = await renderWithFallback(
-        () => renderEmailVerification(data),
-        () => emailVerificationTemplate(data),
+        () => renderers.renderEmailVerification(data),
+        () => templates.emailVerificationTemplate(data),
         this.logger,
         "verificacion",
       );
@@ -164,8 +152,8 @@ export class BirdEmailService {
     try {
       const client = await this.birdService.getClient();
       const rendered = await renderWithFallback(
-        () => renderPasswordReset(data),
-        () => passwordResetTemplate(data),
+        () => renderers.renderPasswordReset(data),
+        () => templates.passwordResetTemplate(data),
         this.logger,
         "reset pass",
       );
@@ -216,26 +204,17 @@ export class BirdEmailService {
     try {
       const client = await this.birdService.getClient();
       const rendered = await renderWithFallback(
-        () => renderTicketNotification(data),
-        () => ticketNotificationTemplate(data),
+        () => renderers.renderTicketNotification(data),
+        () => templates.ticketNotificationTemplate(data),
         this.logger,
         "ticket",
       );
 
-      const attachments = data.pdfBuffer
-        ? [
-            {
-              filename: `Ticket-BSK-${data.checkInCode}.pdf`,
-              content: data.pdfBuffer.toString("base64"),
-              content_type: "application/pdf",
-            },
-          ]
-        : undefined;
-
-      const subject =
-        data.type === "EVENT"
-          ? `¡Tu registro está confirmado! Pase de Asistencia BSK · ${data.title}`
-          : `¡Tu matrícula está confirmada! Ticket Oficial BSK Academy · ${data.title}`;
+      const attachments = buildTicketAttachments(
+        data.checkInCode,
+        data.pdfBuffer,
+      );
+      const subject = buildTicketSubject(data.type, data.title);
 
       await client.email.send({
         from: this.getFrom(),

@@ -40,3 +40,37 @@ export async function renderWithFallback(
     };
   }
 }
+
+export function buildTicketAttachments(
+  checkInCode: string,
+  pdfBuffer?: Buffer,
+):
+  | Array<{ filename: string; content: string; content_type: string }>
+  | undefined {
+  if (!pdfBuffer) return undefined;
+  return [
+    {
+      filename: `Ticket-BSK-${checkInCode}.pdf`,
+      content: pdfBuffer.toString("base64"),
+      content_type: "application/pdf",
+    },
+  ];
+}
+
+export function buildTicketSubject(type: string, title: string): string {
+  return type === "EVENT"
+    ? `¡Tu registro está confirmado! Pase de Asistencia BSK · ${title}`
+    : `¡Tu matrícula está confirmada! Ticket Oficial BSK Academy · ${title}`;
+}
+
+export function getDefaultEmailSender(): {
+  fromEmail: string;
+  fromName: string;
+  teamEmail: string;
+} {
+  return {
+    fromEmail: process.env.BIRD_FROM_EMAIL ?? "no_responder@bskmt.com",
+    fromName: process.env.BIRD_FROM_NAME ?? "BSK Motorcycle Team",
+    teamEmail: process.env.BIRD_TEAM_EMAIL ?? "contacto@bskmt.com",
+  };
+}

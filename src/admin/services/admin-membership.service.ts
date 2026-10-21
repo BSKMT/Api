@@ -4,9 +4,9 @@ import {
   NotFoundException,
   Optional,
 } from "@nestjs/common";
-import { BirdContactService } from "../../bird/bird-contact.service";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
+import { BirdContactService } from "../../bird/bird-contact.service";
 import {
   MembershipTransaction,
   MembershipTransactionDocument,
@@ -40,7 +40,7 @@ import {
   SavingsRefundRequest,
   SavingsRefundRequestDocument,
 } from "../../membership/schemas/savings-refund-request.schema";
-import {
+import type {
   ReviewSavingsExtensionDto,
   ReviewSavingsRefundConsoleDto,
   ReviewSavingsRefundFinanceDto,
