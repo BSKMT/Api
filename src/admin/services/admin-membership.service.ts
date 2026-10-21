@@ -1,4 +1,10 @@
-import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from "@nestjs/common";
+import { BirdContactService } from "../../bird/bird-contact.service";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import {
@@ -67,6 +73,8 @@ export class AdminMembershipService {
     private readonly savingsPlanModel: Model<SavingsPlanDocument>,
     @InjectModel(SavingsRefundRequest.name)
     private readonly refundRequestModel: Model<SavingsRefundRequestDocument>,
+    @Optional()
+    private readonly birdContactService?: BirdContactService,
   ) {}
 
   async listTransactions(filters: {
@@ -103,13 +111,15 @@ export class AdminMembershipService {
   }
 
   async activateMembership(userId: string, actorId = "") {
-    return executeActivateMembership(
+    const result = await executeActivateMembership(
       this.userModel,
       this.notificationsService,
       this.logger,
       userId,
       actorId,
     );
+    this.birdContactService?.syncUser(userId).catch(() => {});
+    return result;
   }
 
   async extendMembership(
@@ -119,23 +129,27 @@ export class AdminMembershipService {
     baseDateStr?: string,
     actorId = "",
   ) {
-    return executeExtendMembership(
+    const result = await executeExtendMembership(
       this.userModel,
       this.notificationsService,
       this.logger,
       userId,
       { unit, amount, baseDateStr, actorId },
     );
+    this.birdContactService?.syncUser(userId).catch(() => {});
+    return result;
   }
 
   async revokeMembership(userId: string, actorId = "") {
-    return executeRevokeMembership(
+    const result = await executeRevokeMembership(
       this.userModel,
       this.notificationsService,
       this.logger,
       userId,
       actorId,
     );
+    this.birdContactService?.syncUser(userId).catch(() => {});
+    return result;
   }
 
   async listPendingRefunds() {

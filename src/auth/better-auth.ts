@@ -78,15 +78,21 @@ let authInstance: AuthInstance | null = null;
 let authPromise: Promise<AuthInstance> | null = null;
 let injectedEmailService: BirdEmailService | null = null;
 let injectedLandingPageUrl: string | null = null;
+let injectedBirdContactService:
+  import("../bird/bird-contact.service").BirdContactService | null = null;
 
 const authLogger = new Logger("BetterAuth");
 
 export function setAuthDependencies(
   emailService: BirdEmailService,
   landingPageUrl: string,
+  birdContactService?: import("../bird/bird-contact.service").BirdContactService,
 ): void {
   injectedEmailService = emailService;
   injectedLandingPageUrl = landingPageUrl;
+  if (birdContactService) {
+    injectedBirdContactService = birdContactService;
+  }
   if (authInstance) {
     authLogger.warn(
       "setAuthDependencies se llamo despues de la inicializacion.",
@@ -178,7 +184,11 @@ async function initAuth(): Promise<AuthInstance> {
 
     trustedOrigins: getTrustedOrigins(),
     disabledPaths: ["/sign-in/email"],
-    databaseHooks: createBetterAuthHooks(mongoDb, authLogger),
+    databaseHooks: createBetterAuthHooks(
+      mongoDb,
+      authLogger,
+      () => injectedBirdContactService,
+    ),
 
     plugins: [
       passkeyPlugin({

@@ -9,6 +9,8 @@ import {
   buildStaffContractorInfo,
 } from "./contractor-payload.helpers";
 
+import type { BirdContactService } from "../../bird/bird-contact.service";
+
 export interface ProvisionStaffOptions {
   userModel: Model<UserDocument>;
   norm: NormalizedStaffPayload;
@@ -18,6 +20,7 @@ export interface ProvisionStaffOptions {
   tipoContrato: string;
   creatorUserId: string;
   logger: Logger;
+  birdContactService?: BirdContactService;
 }
 
 export async function generateUniqueUsername(
@@ -192,6 +195,8 @@ export async function provisionStaffUser(options: ProvisionStaffOptions) {
   logger.log(
     `Personal provisionado: role="${role}", username="${username}", email="${norm.email}" por=${creatorUserId}`,
   );
+
+  options.birdContactService?.syncUser(updatedUser).catch(() => {});
 
   return {
     _id: updatedUser._id,

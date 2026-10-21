@@ -1,4 +1,5 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
+import { BirdContactService } from "../../bird/bird-contact.service";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
@@ -21,6 +22,8 @@ export class MembershipExpirationService {
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
     private readonly notificationsService: NotificationsService,
+    @Optional()
+    private readonly birdContactService?: BirdContactService,
   ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
@@ -102,6 +105,8 @@ export class MembershipExpirationService {
       },
       notifyCategory: "Membresia y pagos",
     });
+
+    this.birdContactService?.syncUser(member).catch(() => {});
   }
 
   /**
@@ -136,6 +141,7 @@ export class MembershipExpirationService {
     } else {
       await this.revokeWithoutCredit(member, now);
     }
+    this.birdContactService?.syncUser(member).catch(() => {});
   }
 
   private async revokeWithPartialCredit(

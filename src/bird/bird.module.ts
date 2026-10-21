@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { Global, Module } from "@nestjs/common";
 import { MongooseModule } from "@nestjs/mongoose";
 import { User, UserSchema } from "../users/schemas/user.schema";
 import { BirdService } from "./bird.service";
@@ -8,11 +8,13 @@ import { BirdWhatsappService } from "./bird-whatsapp.service";
 import { BirdNotifyService } from "./bird-notify.service";
 import { BirdRealtimeService } from "./bird-realtime.service";
 import { BirdRealtimeController } from "./bird-realtime.controller";
+import { BirdContactService } from "./bird-contact.service";
 
 /**
  * BirdModule — Proveedor unico para todos los servicios Bird:
  *
  *  - `BirdService`            — wrapper del SDK BirdClient (shared, lazy ESM import).
+ *  - `BirdContactService`     — sincronizacion de contactos y audiencias CRM (usuarios, miembros, empleados).
  *  - `BirdEmailService`       — envio de correos transaccionales (reemplaza Zoho).
  *  - `BirdSmsService`         — envio de SMS transaccionales.
  *  - `BirdWhatsappService`    — envio de mensajes WhatsApp transaccionales.
@@ -21,13 +23,8 @@ import { BirdRealtimeController } from "./bird-realtime.controller";
  *  - `BirdRealtimeService`    — publish de eventos WebSocket, member events,
  *                               channel state queries, webhook verification.
  *  - `BirdRealtimeController`  — endpoints de auth de member/channel + webhook.
- *
- * Exporta `BirdEmailService` (para Better Auth, Contact),
- * `BirdNotifyService` (para NotificationsService),
- * `BirdRealtimeService` (para NotificationsService, AuthController, etc.),
- * `BirdWhatsappService` (para ChannelVerificationService, futuro uso directo),
- * y `BirdService` (para inyeccion directa si se necesita).
  */
+@Global()
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
@@ -40,6 +37,7 @@ import { BirdRealtimeController } from "./bird-realtime.controller";
     BirdWhatsappService,
     BirdNotifyService,
     BirdRealtimeService,
+    BirdContactService,
   ],
   exports: [
     BirdEmailService,
@@ -47,6 +45,7 @@ import { BirdRealtimeController } from "./bird-realtime.controller";
     BirdWhatsappService,
     BirdNotifyService,
     BirdRealtimeService,
+    BirdContactService,
     BirdService,
   ],
 })

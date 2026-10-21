@@ -11,6 +11,7 @@ import {
   HttpCode,
   HttpStatus,
   BadRequestException,
+  NotFoundException,
 } from "@nestjs/common";
 import { IsOptional, IsString, ValidateIf } from "class-validator";
 import { SessionGuard } from "../../auth/session.guard";
@@ -19,6 +20,7 @@ import { Roles, Role } from "../../common/decorators";
 import { UsersService } from "../../users/users.service";
 import { UserSubrole } from "../../users/schemas/user.schema";
 import { ParseObjectIdPipe } from "../../common/pipes/parse-object-id.pipe";
+import { BirdContactService } from "../../bird/bird-contact.service";
 
 export class UpdateSubrolDto {
   @IsOptional()
@@ -31,7 +33,10 @@ export class UpdateSubrolDto {
 @UseGuards(SessionGuard, RolesGuard)
 @Roles(Role.ADMIN)
 export class AdminUsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly birdContactService?: BirdContactService,
+  ) {}
 
   @Get()
   async listUsers(
@@ -48,6 +53,36 @@ export class AdminUsersController {
       limit: limit ? Number.parseInt(limit, 10) : 20,
       page: page ? Number.parseInt(page, 10) : 1,
     });
+  }
+
+  @Post("sync-crm")
+  @HttpCode(HttpStatus.OK)
+  async syncAllToCrm() {
+    if (!this.birdContactService) {
+      throw new BadRequestException("Servicio de Bird CRM no disponible");
+    }
+    const result = await this.birdContactService.syncAllUsers();
+    return {
+      message: "Sincronización masiva con Bird CRM completada",
+      ...result,
+    };
+  }
+
+  @Post(":id/sync-crm")
+  @HttpCode(HttpStatus.OK)
+  async syncUserToCrm(@Param("id", ParseObjectIdPipe) id: string) {
+    if (!this.birdContactService) {
+      throw new BadRequestException("Servicio de Bird CRM no disponible");
+    }
+    const user = await this.usersService.findById(id);
+    if (!user) {
+      throw new NotFoundException("Usuario no encontrado");
+    }
+    const result = await this.birdContactService.syncUser(user);
+    return {
+      message: "Usuario sincronizado con Bird CRM exitosamente",
+      ...result,
+    };
   }
 
   @Patch(":id/subrol")

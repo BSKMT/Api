@@ -186,6 +186,10 @@ export class User {
 
   @Prop({ type: IdentityVerificationSchema, default: null })
   identityVerification?: IdentityVerification | null;
+
+  /** Identificador de contacto en Bird CRM (`con_...`). */
+  @Prop({ type: String, default: null, sparse: true, index: true })
+  birdContactId?: string | null;
 }
 export const UserSchema = SchemaFactory.createForClass(User);
 

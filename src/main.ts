@@ -53,6 +53,7 @@ import { GlobalExceptionFilter } from "./common/filters/global-exception.filter"
 import type { EnvironmentConfig } from "./config/config.interface";
 import { getAuth, setAuthDependencies } from "./auth/better-auth";
 import { BirdEmailService } from "./bird/bird-email.service";
+import { BirdContactService } from "./bird/bird-contact.service";
 import { createBetterAuthMiddleware } from "./bootstrap/auth-handler";
 import { setupSecurityMiddleware } from "./bootstrap/security";
 import { CorrelationIdMiddleware } from "./common/middleware/correlation-id.middleware";
@@ -78,6 +79,7 @@ export async function bootstrap(): Promise<express.Express> {
 
   const configService = app.get(ConfigService<EnvironmentConfig>);
   const emailService = app.get(BirdEmailService);
+  const birdContactService = app.get(BirdContactService);
 
   const landingPageUrl =
     configService.get<string>("LANDING_PAGE_URL", { infer: true }) ??
@@ -87,8 +89,8 @@ export async function bootstrap(): Promise<express.Express> {
     configService.get<string>("PANEL_URL", { infer: true }) ??
     "http://localhost:3000";
 
-  // Auth emails point directly to the panel
-  setAuthDependencies(emailService, panelUrl);
+  // Auth emails point directly to the panel; Bird CRM contact service synchronizes users
+  setAuthDependencies(emailService, panelUrl, birdContactService);
 
   setupSecurityMiddleware(app, configService, panelUrl, landingPageUrl);
 

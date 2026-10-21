@@ -35,6 +35,20 @@ export const configValidationSchema = Joi.object({
   BIRD_TEAM_EMAIL: Joi.string().email().allow("").default("contacto@bskmt.com"),
   BIRD_SMS_SENDER: Joi.string().allow("").default("BSKMT"),
 
+  // Bird CRM Audiences
+  BIRD_AUDIENCE_USERS_ID: Joi.string()
+    .allow("")
+    .default("adn_01m10ftkpeeyz9hmdk1ahy3s1h"),
+  BIRD_AUDIENCE_MEMBERS_ID: Joi.string()
+    .allow("")
+    .default("adn_01m10fv8axe26v3v646cmwj63s"),
+  BIRD_AUDIENCE_EMPLOYEES_ID: Joi.string()
+    .allow("")
+    .default("adn_01m5g854wbe05snnxfb17zct16"),
+  BIRD_AUDIENCE_ADMINS_ID: Joi.string()
+    .allow("")
+    .default("adn_01m10fw0chfqfseb3c4260yghq"),
+
   // Bird WhatsApp — numero remitente E.164 que el workspace posee y
   // tiene conectado a un WhatsApp Business Account (WABA) en Bird.
   // Requerido para envios free-form (fuera de plantillas bird_*).

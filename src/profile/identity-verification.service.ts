@@ -4,7 +4,9 @@ import {
   BadRequestException,
   ConflictException,
   ServiceUnavailableException,
+  Optional,
 } from "@nestjs/common";
+import { BirdContactService } from "../bird/bird-contact.service";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { User, UserDocument } from "../users/schemas/user.schema";
@@ -50,6 +52,7 @@ export class IdentityVerificationService {
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     private readonly verifikService: VerifikService,
     private readonly kvCache: KvCacheService,
+    @Optional() private readonly birdContactService?: BirdContactService,
   ) {
     this.throttle = new IdentityAttemptThrottle(this.kvCache);
   }
@@ -180,6 +183,7 @@ export class IdentityVerificationService {
       verifiedAt: user.identityVerifiedAt,
     };
     await user.save();
+    this.birdContactService?.syncUser(user).catch(() => {});
 
     this.logger.log(
       `Identity verified for user ${userId} doc ${maskDocument(documentNumber)} (${verifikType})`,

@@ -38,12 +38,14 @@ import {
   executeFindStaffBySubroles,
 } from "./users-query.helper";
 import { KvCacheService } from "../kv/kv-cache.service";
+import { BirdContactService } from "../bird/bird-contact.service";
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     private readonly kvCache: KvCacheService,
+    private readonly birdContactService?: BirdContactService,
   ) {}
 
   async invalidateUserCache(betterAuthId?: string | null): Promise<void> {
@@ -99,7 +101,9 @@ export class UsersService {
   }
 
   async create(betterAuthId: string, email: string): Promise<UserDocument> {
-    return executeCreateUser(this.userModel, betterAuthId, email);
+    const user = await executeCreateUser(this.userModel, betterAuthId, email);
+    this.birdContactService?.syncUser(user).catch(() => {});
+    return user;
   }
 
   async updateProfileSection(
@@ -107,12 +111,14 @@ export class UsersService {
     sectionId: string,
     sectionData: Record<string, unknown>,
   ): Promise<UserDocument> {
-    return executeUpdateProfileSection(
+    const saved = await executeUpdateProfileSection(
       this.userModel,
       userId,
       sectionId,
       sectionData,
     );
+    this.birdContactService?.syncUser(saved).catch(() => {});
+    return saved;
   }
 
   async acceptLegalConsent(userId: string): Promise<UserDocument> {
@@ -121,7 +127,9 @@ export class UsersService {
       throw new NotFoundException("Usuario no encontrado");
     }
     user.legalConsentAccepted = true;
-    return user.save();
+    const saved = await user.save();
+    this.birdContactService?.syncUser(saved).catch(() => {});
+    return saved;
   }
 
   async deleteProfileSection(
@@ -145,6 +153,7 @@ export class UsersService {
       paymentPlan,
     );
     await this.invalidateUserCache(saved.betterAuthId);
+    this.birdContactService?.syncUser(saved).catch(() => {});
     return saved;
   }
 
@@ -240,6 +249,7 @@ export class UsersService {
     user.subrol = subrol ?? null;
     const saved = await user.save();
     await this.invalidateUserCache(user.betterAuthId);
+    this.birdContactService?.syncUser(saved).catch(() => {});
     return saved;
   }
 

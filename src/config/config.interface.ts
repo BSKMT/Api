@@ -20,6 +20,12 @@ export interface EnvironmentConfig {
   BIRD_TEAM_EMAIL: string;
   BIRD_SMS_SENDER: string;
 
+  /** Bird CRM Audiences */
+  BIRD_AUDIENCE_USERS_ID?: string;
+  BIRD_AUDIENCE_MEMBERS_ID?: string;
+  BIRD_AUDIENCE_EMPLOYEES_ID?: string;
+  BIRD_AUDIENCE_ADMINS_ID?: string;
+
   /**
    * Bird WhatsApp — Numero remitente E.164 que el workspace posee y
    * tiene conectado a un WhatsApp Business Account (WABA) en Bird.

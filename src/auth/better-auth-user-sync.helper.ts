@@ -113,8 +113,8 @@ export async function insertNewMongooseUser(
   mongoDb: Db,
   user: BetterAuthUser,
   parsed: ParsedUserData,
-): Promise<void> {
-  await mongoDb.collection("users").insertOne({
+): Promise<ObjectId> {
+  const result = await mongoDb.collection("users").insertOne({
     email: user.email.toLowerCase(),
     betterAuthId: user.id,
     role: "user",
@@ -147,6 +147,7 @@ export async function insertNewMongooseUser(
     createdAt: new Date(),
     updatedAt: new Date(),
   });
+  return result.insertedId;
 }
 
 export async function cleanupOrphanBetterAuthUser(

@@ -10,6 +10,7 @@ import {
 } from "../dto/contractor-management.dto";
 import { normalizeStaffPayload } from "./contractor-payload.helpers";
 import { provisionStaffUser } from "./contractor-provision.helpers";
+import { BirdContactService } from "../../bird/bird-contact.service";
 
 @Injectable()
 export class ContractorManagementService {
@@ -17,6 +18,7 @@ export class ContractorManagementService {
 
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+    private readonly birdContactService?: BirdContactService,
   ) {}
 
   private async ensureEmailNotRegistered(email: string) {
@@ -48,6 +50,7 @@ export class ContractorManagementService {
       tipoContrato: dto.tipoContrato || "Contrato de Prestación de Servicios",
       creatorUserId,
       logger: this.logger,
+      birdContactService: this.birdContactService,
     });
 
     return {
@@ -84,6 +87,7 @@ export class ContractorManagementService {
       tipoContrato: "Contrato Laboral / Directivo BSKMT",
       creatorUserId,
       logger: this.logger,
+      birdContactService: this.birdContactService,
     });
 
     return {
@@ -114,6 +118,7 @@ export class ContractorManagementService {
       tipoContrato: "Propietario / Socio Fundador",
       creatorUserId,
       logger: this.logger,
+      birdContactService: this.birdContactService,
     });
 
     return {

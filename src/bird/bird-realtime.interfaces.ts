@@ -118,4 +118,64 @@ export interface BirdClientInstance {
       headers: Record<string, string | string[] | undefined>,
     ) => BirdWebhookEvent;
   };
+  readonly contacts: {
+    batch: (params: {
+      contacts: Array<{
+        email?: string | null;
+        phone_number?: string | null;
+        first_name?: string | null;
+        last_name?: string | null;
+        external_id?: string | null;
+        data?: Record<string, unknown> | null;
+      }>;
+      audience_ids?: string[] | null;
+      match_on?: "email" | "phone_number" | "external_id";
+      data_mode?: "merge" | "replace";
+      idempotency_key?: string;
+    }) => Promise<{
+      data: Array<{
+        contact_id?: string;
+        entry: {
+          email?: string | null;
+          phone_number?: string | null;
+          external_id?: string | null;
+        };
+        matched_on?: string | null;
+        status: "created" | "updated" | "failed";
+        error?: {
+          code: string;
+          message: string;
+          param?: string;
+          type: string;
+        };
+      }>;
+    }>;
+    get: (contactId: string) => Promise<{
+      id: string;
+      email?: string | null;
+      phone_number?: string | null;
+      first_name?: string | null;
+      last_name?: string | null;
+      external_id?: string | null;
+      data?: Record<string, unknown>;
+    }>;
+    create: (params: unknown) => Promise<unknown>;
+    update: (contactId: string, params: unknown) => Promise<unknown>;
+    delete: (contactId: string) => Promise<{ deleted: boolean; id: string }>;
+  };
+  readonly audiences: {
+    list: (params?: { limit?: number; q?: string }) => Promise<{
+      data: Array<{
+        id: string;
+        name: string;
+        type: string;
+        description?: string;
+      }>;
+    }>;
+    addContacts: (
+      audienceId: string,
+      params: { contact_ids: string[] },
+    ) => Promise<unknown>;
+    removeContact: (audienceId: string, contactId: string) => Promise<unknown>;
+  };
 }
