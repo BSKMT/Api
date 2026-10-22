@@ -291,7 +291,7 @@ export const EmailLayout: React.FC<EmailLayoutProps> = ({
 
             {/* Official Legal Identification */}
             <Text style={corporateInfoStyle} className="bsk-footer-corporate">
-              <strong>Organización Motera S.A.S.</strong> &bull; NIT
+              <strong>Organización Motear S.A.S.</strong> &bull; NIT
               901.444.877-6
               <br />
               Domicilio Principal: Bogotá D.C., Colombia &bull; Cámara de
