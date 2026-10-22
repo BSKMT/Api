@@ -98,7 +98,7 @@ export class AdminShopService {
           isNewProduct,
           status: dto.status ?? ProductStatus.DRAFT,
           stock: dto.stock ?? 0,
-          memberDiscountPercent: dto.memberDiscountPercent ?? 20,
+          memberDiscountPercent: dto.memberDiscountPercent ?? 15,
           featured: dto.featured ?? true,
         },
       ])
