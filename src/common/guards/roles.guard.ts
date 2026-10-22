@@ -18,6 +18,7 @@ const ADMIN_MODULE_MAP: Record<string, string> = {
   "/api/admin/arpha": "arpha",
   "/api/admin/settings": "eliminations",
   "/api/admin/config": "config",
+  "/api/admin/support": "support",
 };
 
 function getPathWithoutQuery(rawUrl: string): string {
