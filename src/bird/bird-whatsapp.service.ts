@@ -4,39 +4,9 @@ import { notificationWhatsappTemplate } from "./whatsapp.templates";
 import { maskPhone, sanitizeForLog } from "../common/utils/log-redact.util";
 
 /**
- * BirdWhatsappService — Servicio para el envio de mensajes WhatsApp a
- * traves de Bird WhatsApp API (`POST /v1/whatsapp/messages` via
- * `bird.whatsapp.send()`).
- *
- * Envia notificaciones transaccionales del sistema como texto libre
- * (free-form text), lo que requiere:
- *  - Un numero remitente E.164 (`BIRD_WHATSAPP_SENDER`) que el
- *    workspace posea y tenga conectado a un WhatsApp Business Account.
- *  - Una ventana de servicio al cliente abierta (24h desde el ultimo
- *    mensaje entrante del destinatario). Si la ventana esta cerrada,
- *    Bird acepta el mensaje (202) pero falla asincronamente con
- *    `service_window_expired`. Este caso se maneja como best-effort:
- *    se registra el fallo pero no se lanza ni se bloquea el flujo.
- *
- * Seguridad (OWASP A04, A05, A07, A09, A10):
- *  - Validacion estricta de formato E.164 para `to` y `from` antes
- *    de cualquier llamada a la API (A05 — Injection prevention).
- *  - El cuerpo del mensaje se sanitiza en la plantilla (sin CRLF,
- *    sin caracteres de control, max 4096 chars, preview_url=false).
- *  - `preview_url: false` para evitar que WhatsApp genere previews
- *    de URLs que podrian ser usadas para phishing (A05 — defense in
- *    depth).
- *  - El SDK inyecta `Idempotency-Key` automaticamente (reintentos
- *    seguros, sin duplicados).
- *  - Logs enmascaran el numero del destinatario (maskPhone) y
- *    sanitizan el contenido del mensaje (sanitizeForLog) (A09 — no
- *    PII en logs, CWE-532, CWE-117).
- *  - Si Bird no esta configurado o el sender no es E.164 valido,
- *    opera en modo degradado (no-op + log) sin lanzar errores
- *    (A10 — graceful degradation).
- *  - El envio es best-effort: un fallo no bloquea otros canales ni
- *    el flujo principal del negocio (A10 — mishandling of exceptional
- *    conditions).
+ * BirdWhatsappService — Envio de mensajes WhatsApp vía Bird API.
+ * Soporta notificaciones transaccionales (plantillas y texto libre) y chat directo en vivo.
+ * Cumple con validación E.164, sanitización anti-phishing, idempotencia y degradación elegante.
  */
 @Injectable()
 export class BirdWhatsappService {

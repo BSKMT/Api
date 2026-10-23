@@ -1,15 +1,12 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import {
-  TicketDocument,
-  TicketInteractionMode,
-  TicketStatus,
-} from "./schemas/ticket.schema";
+import { TicketDocument } from "./schemas/ticket.schema";
 import { BirdWhatsappService } from "../bird/bird-whatsapp.service";
 import { BirdRealtimeService } from "../bird/bird-realtime.service";
 import { BotProcessResult } from "./bot/bot.types";
-import { getMainMenuText, getEscalationReplyText } from "./bot/bot-texts-main";
+import { getMainMenuText } from "./bot/bot-texts-main";
 import { evaluateBotResponse } from "./bot/bot-evaluators";
+import { executeEscalationToLiveAgent } from "./bot/bot-escalation.helper";
 
 export type { BotProcessResult };
 
@@ -161,70 +158,15 @@ export class WhatsappBotService {
     customerName: string,
     customerPhone: string,
   ): Promise<BotProcessResult> {
-    ticket.interactionMode = TicketInteractionMode.LIVE_AGENT;
-    ticket.status = TicketStatus.ABIERTO;
-    ticket.auditLog.push({
-      action: "escalated_to_live_agent",
-      performedBy: customerName,
-      details: { prompt: userPrompt, phone: customerPhone },
-      timestamp: new Date(),
+    return executeEscalationToLiveAgent({
+      ticket,
+      userPrompt,
+      customerName,
+      customerPhone,
+      birdWhatsappService: this.birdWhatsappService,
+      birdRealtimeService: this.birdRealtimeService,
+      logger: this.logger,
     });
-
-    const replyText = getEscalationReplyText(customerName);
-
-    const systemMsg = {
-      messageId: randomUUID(),
-      sender: "system" as const,
-      senderName: "Asistente Virtual BSKMT",
-      content:
-        "Conversación transferida a Asesor en Vivo. Modo live_agent activado.",
-      isInternalNote: false,
-      createdAt: new Date(),
-    };
-    ticket.messages.push(systemMsg);
-    await ticket.save();
-
-    await this.birdWhatsappService.sendDirectWhatsapp({
-      to: customerPhone,
-      text: replyText,
-    });
-
-    if (this.birdRealtimeService.isRealtimeConfigured()) {
-      void this.birdRealtimeService.publishToChannel(
-        "private-admin",
-        "support.live_chat_requested",
-        {
-          ticketId: String(ticket._id),
-          ticketNumber: ticket.ticketNumber,
-          customer: ticket.customer,
-          userPrompt,
-          timestamp: new Date(),
-        },
-      );
-      void this.birdRealtimeService.publishToChannel(
-        "private-admin",
-        "support.ticket_message_received",
-        {
-          ticketId: String(ticket._id),
-          ticketNumber: ticket.ticketNumber,
-          channel: "whatsapp",
-          from: customerPhone,
-          text: userPrompt,
-          customer: ticket.customer,
-          isLiveChat: true,
-        },
-      );
-    }
-
-    this.logger.log(
-      `Ticket #${ticket.ticketNumber} transferido exitosamente a ASESOR EN VIVO para ${customerPhone}`,
-    );
-
-    return {
-      replyText,
-      nextState: "LIVE_AGENT",
-      escalatedToLiveAgent: true,
-    };
   }
 
   /**
