@@ -20,6 +20,10 @@ export class TicketQueryDto {
 
   @IsOptional()
   @IsString()
+  interactionMode?: string;
+
+  @IsOptional()
+  @IsString()
   assignedTo?: string;
 
   @IsOptional()

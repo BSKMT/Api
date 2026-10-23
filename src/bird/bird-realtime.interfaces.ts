@@ -62,10 +62,12 @@ export interface BirdRealtimeChannelInfo {
 
 /** Evento webhook desenvelopado por `bird.webhooks.unwrap()`. */
 export interface BirdWebhookEvent {
-  id: string;
-  type: string;
-  timestamp: string;
-  data: Record<string, unknown>;
+  id?: string;
+  type?: string;
+  timestamp?: string;
+  data?: Record<string, unknown>;
+  event?: string;
+  entity?: Record<string, unknown>;
 }
 
 export interface BirdClientInstance {

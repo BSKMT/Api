@@ -28,6 +28,12 @@ export enum TicketChannel {
   SMS = "sms",
 }
 
+export enum TicketInteractionMode {
+  BOT = "bot",
+  LIVE_AGENT = "live_agent",
+  CLOSED = "closed",
+}
+
 export enum TicketCategory {
   GENERAL = "general",
   MEMBRESIA = "membresia",
@@ -200,6 +206,17 @@ export class Ticket {
   })
   sla!: TicketSLA;
 
+  @Prop({
+    required: true,
+    enum: Object.values(TicketInteractionMode),
+    default: TicketInteractionMode.BOT,
+    index: true,
+  })
+  interactionMode!: TicketInteractionMode;
+
+  @Prop({ type: String, default: "MAIN" })
+  botState?: string;
+
   @Prop({ type: MongooseSchema.Types.Mixed, default: {} })
   metadata?: Record<string, unknown>;
 
@@ -212,3 +229,4 @@ export const TicketSchema = SchemaFactory.createForClass(Ticket);
 TicketSchema.index({ status: 1, priority: 1, createdAt: -1 });
 TicketSchema.index({ "customer.email": 1, createdAt: -1 });
 TicketSchema.index({ "assignedTo.userId": 1, status: 1 });
+TicketSchema.index({ channel: 1, interactionMode: 1, updatedAt: -1 });

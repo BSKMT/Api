@@ -39,6 +39,9 @@ export function buildTicketFilter(
   ) {
     filter.channel = query.channel;
   }
+  if (query.interactionMode) {
+    filter.interactionMode = query.interactionMode;
+  }
   if (query.assignedTo) {
     filter["assignedTo.userId"] = query.assignedTo;
   }

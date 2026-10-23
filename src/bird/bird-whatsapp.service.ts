@@ -187,4 +187,65 @@ export class BirdWhatsappService {
       return false;
     }
   }
+
+  /**
+   * Envia un mensaje directo de WhatsApp (conversacional / bot / chat en vivo)
+   * con formato libre (saltos de linea, emojis, listas), sin envolverlo en
+   * plantillas fijas.
+   *
+   * Requiere ventana de 24h activa y sender configurado.
+   */
+  async sendDirectWhatsapp(data: {
+    to: string;
+    text: string;
+  }): Promise<boolean> {
+    if (!this.birdService.isConfigured()) return false;
+
+    if (!this.isValidE164(data.to)) {
+      this.logger.warn(
+        `Numero WhatsApp invalido (no E.164): ${maskPhone(data.to)}`,
+      );
+      return false;
+    }
+
+    if (!this.isSenderConfigured()) {
+      this.logger.warn(
+        "BIRD_WHATSAPP_SENDER no configurado o formato invalido para chat en vivo.",
+      );
+      return false;
+    }
+
+    try {
+      const client = await this.birdService.getClient();
+
+      // Normalizar saltos de linea y remover caracteres de control
+      const sanitized = data.text
+        .replaceAll("\r\n", "\n")
+        .replace(/[\r\t\v\f\0]/g, " ")
+        .trim();
+      const body =
+        sanitized.length > 4096 ? sanitized.slice(0, 4093) + "..." : sanitized;
+
+      await client.whatsapp.send({
+        to: data.to,
+        from: this.sender,
+        text: {
+          body,
+          preview_url: false,
+        },
+        tags: [{ name: "channel", value: "live_chat" }],
+      });
+
+      this.logger.log(
+        `WhatsApp directo enviado a ${maskPhone(data.to)} (${body.length} caracteres)`,
+      );
+      return true;
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `Error enviando WhatsApp directo a ${maskPhone(data.to)}: ${errMsg}`,
+      );
+      return false;
+    }
+  }
 }

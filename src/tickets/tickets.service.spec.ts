@@ -4,7 +4,11 @@ import { TicketsService } from "./tickets.service";
 import { Ticket, TicketStatus, TicketChannel } from "./schemas/ticket.schema";
 import { BirdEmailService } from "../bird/bird-email.service";
 import { BirdContactService } from "../bird/bird-contact.service";
+import { BirdSmsService } from "../bird/bird-sms.service";
+import { BirdWhatsappService } from "../bird/bird-whatsapp.service";
+import { BirdRealtimeService } from "../bird/bird-realtime.service";
 import { UsersService } from "../users/users.service";
+import { WhatsappBotService } from "./whatsapp-bot.service";
 
 interface MockTicketModel {
   (...args: unknown[]): { save: jest.Mock };
@@ -20,6 +24,16 @@ describe("TicketsService", () => {
   let mockEmailService: { sendNotificationEmail: jest.Mock };
   let mockContactService: { syncContact: jest.Mock };
   let mockUsersService: { findById: jest.Mock };
+  let mockSmsService: { sendNotificationSms: jest.Mock };
+  let mockWhatsappService: {
+    sendNotificationWhatsapp: jest.Mock;
+    sendDirectWhatsapp: jest.Mock;
+  };
+  let mockRealtimeService: {
+    isRealtimeConfigured: jest.Mock;
+    publishToChannel: jest.Mock;
+  };
+  let mockBotService: { processInboundWhatsappMessage: jest.Mock };
 
   beforeEach(async () => {
     const modelFn = jest
@@ -66,6 +80,28 @@ describe("TicketsService", () => {
       }),
     };
 
+    mockSmsService = {
+      sendNotificationSms: jest.fn().mockResolvedValue(true),
+    };
+
+    mockWhatsappService = {
+      sendNotificationWhatsapp: jest.fn().mockResolvedValue(true),
+      sendDirectWhatsapp: jest.fn().mockResolvedValue(true),
+    };
+
+    mockRealtimeService = {
+      isRealtimeConfigured: jest.fn().mockReturnValue(true),
+      publishToChannel: jest.fn().mockResolvedValue(undefined),
+    };
+
+    mockBotService = {
+      processInboundWhatsappMessage: jest.fn().mockResolvedValue({
+        replyText: "Hola",
+        nextState: "MAIN",
+        escalatedToLiveAgent: false,
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TicketsService,
@@ -73,6 +109,10 @@ describe("TicketsService", () => {
         { provide: BirdEmailService, useValue: mockEmailService },
         { provide: BirdContactService, useValue: mockContactService },
         { provide: UsersService, useValue: mockUsersService },
+        { provide: BirdSmsService, useValue: mockSmsService },
+        { provide: BirdWhatsappService, useValue: mockWhatsappService },
+        { provide: BirdRealtimeService, useValue: mockRealtimeService },
+        { provide: WhatsappBotService, useValue: mockBotService },
       ],
     }).compile();
 
