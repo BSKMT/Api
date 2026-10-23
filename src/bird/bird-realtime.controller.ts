@@ -9,10 +9,14 @@ import {
   Logger,
   ForbiddenException,
   BadRequestException,
+  Inject,
+  Optional,
+  forwardRef,
 } from "@nestjs/common";
 import type { Request } from "express";
 import { BirdRealtimeService } from "./bird-realtime.service";
 import { BirdService } from "./bird.service";
+import { TicketsService } from "../tickets/tickets.service";
 import { Public } from "../common/decorators/public.decorator";
 import { sanitizeForLog } from "../common/utils/log-redact.util";
 import { AuthMemberDto, AuthChannelDto } from "./bird-realtime.dto";
@@ -32,6 +36,9 @@ export class BirdRealtimeController {
   constructor(
     private readonly realtimeService: BirdRealtimeService,
     private readonly birdService: BirdService,
+    @Optional()
+    @Inject(forwardRef(() => TicketsService))
+    private readonly ticketsService?: TicketsService,
   ) {}
 
   @Public()
@@ -164,7 +171,7 @@ export class BirdRealtimeController {
     }
 
     try {
-      processBirdWebhookEvent(this.logger, event);
+      await processBirdWebhookEvent(this.logger, event, this.ticketsService);
     } catch (err: unknown) {
       this.logger.error(
         `processWebhookEvent failed (type=${event.type}): ${sanitizeForLog(err instanceof Error ? err.message : String(err))}`,

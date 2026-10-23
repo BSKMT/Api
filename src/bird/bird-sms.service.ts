@@ -30,7 +30,7 @@ export class BirdSmsService {
   private static readonly E164_PATTERN = /^\+[1-9]\d{5,14}$/;
 
   constructor(private readonly birdService: BirdService) {
-    this.sender = process.env.BIRD_SMS_SENDER ?? "BSKMT";
+    this.sender = process.env.BIRD_SMS_SENDER || "901444BSKMT";
     const rawPrefixes = process.env.ALLOWED_SMS_PREFIXES ?? "+57";
     this.allowedPrefixes = rawPrefixes
       .split(",")

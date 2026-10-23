@@ -17,4 +17,12 @@ export class TicketReplyDto {
   @IsBoolean()
   @IsOptional()
   isInternalNote?: boolean = false;
+
+  @IsBoolean()
+  @IsOptional()
+  sendSms?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  sendWhatsapp?: boolean;
 }

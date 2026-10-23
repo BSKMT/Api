@@ -25,6 +25,7 @@ export enum TicketChannel {
   FASCIA = "fascia_operativa",
   WHATSAPP = "whatsapp",
   EMAIL = "email",
+  SMS = "sms",
 }
 
 export enum TicketCategory {

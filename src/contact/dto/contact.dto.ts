@@ -20,6 +20,11 @@ export class ContactDto {
   @IsEmail({}, { message: "Correo electronico invalido" })
   email!: string;
 
+  @IsString({ message: "El teléfono debe ser texto" })
+  @IsOptional()
+  @MaxLength(30, { message: "El teléfono no puede exceder 30 caracteres" })
+  phone?: string;
+
   @IsString({ message: "El asunto debe ser texto" })
   @MinLength(3, { message: "El asunto debe tener al menos 3 caracteres" })
   @MaxLength(150, { message: "El asunto no puede exceder 150 caracteres" })

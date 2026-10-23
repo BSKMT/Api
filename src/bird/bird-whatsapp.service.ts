@@ -54,7 +54,7 @@ export class BirdWhatsappService {
   private static readonly E164_PATTERN = /^\+[1-9]\d{5,14}$/;
 
   constructor(private readonly birdService: BirdService) {
-    this.sender = process.env.BIRD_WHATSAPP_SENDER ?? "";
+    this.sender = process.env.BIRD_WHATSAPP_SENDER || "+573169588444";
     this.defaultTemplateSlug = process.env.BIRD_WHATSAPP_TEMPLATE_SLUG ?? "";
   }
 

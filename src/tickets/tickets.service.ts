@@ -13,6 +13,7 @@ import {
   TicketStatus,
   TicketPriority,
   TicketChannel,
+  TicketCategory,
 } from "./schemas/ticket.schema";
 import { CreateTicketDto } from "./dto/create-ticket.dto";
 import { TicketReplyDto } from "./dto/ticket-reply.dto";
@@ -24,8 +25,8 @@ import {
 import { buildTicketFilter } from "./helpers/ticket-query.helper";
 import {
   syncTicketCustomerWithBird,
-  sendTicketCreationEmail,
-  sendTicketReplyEmail,
+  sendTicketCreationNotifications,
+  sendTicketReplyNotifications,
 } from "./helpers/ticket-notification.helper";
 import {
   generateTicketNumber,
@@ -36,7 +37,11 @@ import {
 } from "./helpers/ticket-actions.helper";
 import { BirdEmailService } from "../bird/bird-email.service";
 import { BirdContactService } from "../bird/bird-contact.service";
+import { BirdSmsService } from "../bird/bird-sms.service";
+import { BirdWhatsappService } from "../bird/bird-whatsapp.service";
+import { BirdRealtimeService } from "../bird/bird-realtime.service";
 import { UsersService } from "../users/users.service";
+import { normalizePhoneNumberHelper } from "../bird/bird-contact-extraction.helpers";
 
 @Injectable()
 export class TicketsService {
@@ -48,6 +53,9 @@ export class TicketsService {
     private readonly birdEmailService: BirdEmailService,
     private readonly birdContactService: BirdContactService,
     private readonly usersService: UsersService,
+    private readonly birdSmsService: BirdSmsService,
+    private readonly birdWhatsappService: BirdWhatsappService,
+    private readonly birdRealtimeService: BirdRealtimeService,
   ) {}
 
   async createTicket(
@@ -118,7 +126,16 @@ export class TicketsService {
     });
 
     const saved = await ticket.save();
-    void sendTicketCreationEmail(this.birdEmailService, saved, this.logger);
+    void sendTicketCreationNotifications(
+      {
+        birdEmailService: this.birdEmailService,
+        birdSmsService: this.birdSmsService,
+        birdWhatsappService: this.birdWhatsappService,
+        birdRealtimeService: this.birdRealtimeService,
+        logger: this.logger,
+      },
+      saved,
+    );
     return saved;
   }
 
@@ -133,16 +150,239 @@ export class TicketsService {
     }
 
     const { isInternal } = applyTicketReply(ticket, dto, actor);
-    if (actor.isAgent && !isInternal) {
-      void sendTicketReplyEmail(
-        this.birdEmailService,
+    if (actor.isAgent) {
+      void sendTicketReplyNotifications(
+        {
+          birdEmailService: this.birdEmailService,
+          birdSmsService: this.birdSmsService,
+          birdWhatsappService: this.birdWhatsappService,
+          birdRealtimeService: this.birdRealtimeService,
+          logger: this.logger,
+        },
         ticket,
         dto.content,
         actor.name,
-        this.logger,
+        {
+          isInternal,
+          sendSms: dto.sendSms,
+          sendWhatsapp: dto.sendWhatsapp,
+        },
       );
     }
     return ticket.save();
+  }
+
+  private async resolveInboundCustomer(params: {
+    channel: TicketChannel;
+    from: string;
+    senderName?: string;
+  }): Promise<{
+    customerName: string;
+    customerEmail: string;
+    customerPhone: string | null;
+    userId: string | null;
+  }> {
+    const { channel, from, senderName } = params;
+    let customerName = senderName || "Cliente";
+    let customerEmail = "";
+    let customerPhone: string | null = null;
+    let userId: string | null = null;
+
+    if (channel === TicketChannel.EMAIL) {
+      customerEmail = from.toLowerCase().trim();
+      const user = await this.usersService
+        .findByEmail(customerEmail)
+        .catch(() => null);
+      if (user) {
+        userId = String(user._id);
+        customerName = extractUserName(user) || customerName;
+        customerPhone = user.phone || null;
+      }
+    } else {
+      customerPhone = normalizePhoneNumberHelper(from) || from;
+      const user = await this.usersService
+        .findByPhone(customerPhone)
+        .catch(() => null);
+      if (user) {
+        userId = String(user._id);
+        customerName = extractUserName(user) || customerName;
+        customerEmail = user.email || "";
+      } else {
+        const cleanDigits = customerPhone.replace(/\D/g, "");
+        customerEmail = `${cleanDigits}@inbound.bskmt.com`;
+      }
+    }
+
+    return { customerName, customerEmail, customerPhone, userId };
+  }
+
+  private dispatchInboundAutoResponse(
+    channel: TicketChannel,
+    ticketNumber: string,
+    customerName: string,
+    customerPhone: string | null,
+  ): void {
+    if (!customerPhone) return;
+
+    if (channel === TicketChannel.WHATSAPP) {
+      void this.birdWhatsappService.sendNotificationWhatsapp({
+        to: customerPhone,
+        title: `Servicio al Cliente BSKMT #${ticketNumber}`,
+        message: `¡Hola ${customerName}! 👋 Gracias por comunicarte con el Servicio al Cliente de BSK Motorcycle Team. Hemos recibido tu mensaje y asignado el Ticket #[${ticketNumber}]. Un asesor te atenderá por este mismo canal en el menor tiempo posible.`,
+      });
+    } else if (channel === TicketChannel.SMS) {
+      void this.birdSmsService.sendNotificationSms({
+        to: customerPhone,
+        title: `BSKMT #${ticketNumber}`,
+        message: `BSKMT: Recibimos tu mensaje [Ticket #${ticketNumber}]. Un asesor te atenderá a la brevedad.`,
+      });
+    }
+  }
+
+  async handleInboundMessage(params: {
+    channel: TicketChannel;
+    from: string;
+    to: string;
+    text: string;
+    senderName?: string;
+    messageId?: string;
+  }): Promise<TicketDocument> {
+    const { channel, from, to, text, senderName, messageId } = params;
+    this.logger.log(
+      `handleInboundMessage: canal=${channel}, remitente=${from}, mensaje="${text.slice(0, 50)}..."`,
+    );
+
+    const { customerName, customerEmail, customerPhone, userId } =
+      await this.resolveInboundCustomer({ channel, from, senderName });
+
+    const queryFilter: Record<string, unknown> = {
+      status: {
+        $in: [
+          TicketStatus.NUEVO,
+          TicketStatus.ABIERTO,
+          TicketStatus.PENDIENTE,
+          TicketStatus.EN_PROGRESO,
+        ],
+      },
+    };
+    if (channel === TicketChannel.EMAIL) {
+      queryFilter["customer.email"] = customerEmail;
+    } else {
+      queryFilter.$or = [
+        { "customer.phone": customerPhone },
+        { "customer.email": customerEmail },
+      ];
+    }
+
+    let ticket = await this.ticketModel
+      .findOne(queryFilter)
+      .sort({ updatedAt: -1 });
+
+    const incomingMsg = {
+      messageId: messageId || randomUUID(),
+      sender: "customer" as const,
+      senderName: customerName,
+      senderEmail: customerEmail,
+      content: text,
+      isInternalNote: false,
+      createdAt: new Date(),
+    };
+
+    if (ticket) {
+      ticket.messages.push(incomingMsg);
+      ticket.status = TicketStatus.ABIERTO;
+      ticket.auditLog.push({
+        action: `inbound_${channel}_received`,
+        performedBy: customerName,
+        details: { from, to, snippet: text.slice(0, 100) },
+        timestamp: new Date(),
+      });
+      const saved = await ticket.save();
+
+      if (this.birdRealtimeService.isRealtimeConfigured()) {
+        void this.birdRealtimeService.publishToChannel(
+          "private-admin",
+          "support.ticket_message_received",
+          {
+            ticketId: String(saved._id),
+            ticketNumber: saved.ticketNumber,
+            channel,
+            from,
+            text,
+            customer: saved.customer,
+          },
+        );
+      }
+
+      this.logger.log(
+        `Mensaje entrante agregado a Ticket existente #${saved.ticketNumber}`,
+      );
+      return saved;
+    }
+
+    const ticketNumber = await generateTicketNumber(this.ticketModel);
+    const priority = TicketPriority.MEDIA;
+    const sla = computeInitialSLA(priority);
+
+    ticket = new this.ticketModel({
+      ticketNumber,
+      subject: `Consulta ${channel.toUpperCase()}: ${text.slice(0, 45)}${text.length > 45 ? "..." : ""}`,
+      description: text,
+      category: TicketCategory.GENERAL,
+      priority,
+      status: TicketStatus.NUEVO,
+      channel,
+      customer: {
+        name: customerName,
+        email: customerEmail,
+        phone: customerPhone,
+        userId,
+      },
+      messages: [incomingMsg],
+      auditLog: [
+        {
+          action: `ticket_created_via_${channel}`,
+          performedBy: customerName,
+          details: { from, to },
+          timestamp: new Date(),
+        },
+      ],
+      tags: [channel, "inbound_auto"],
+      sla,
+      metadata: { from, to, messageId },
+    });
+
+    const saved = await ticket.save();
+
+    this.dispatchInboundAutoResponse(
+      channel,
+      saved.ticketNumber,
+      customerName,
+      customerPhone,
+    );
+
+    if (this.birdRealtimeService.isRealtimeConfigured()) {
+      void this.birdRealtimeService.publishToChannel(
+        "private-admin",
+        "support.ticket_created",
+        {
+          ticketId: String(saved._id),
+          ticketNumber: saved.ticketNumber,
+          subject: saved.subject,
+          category: saved.category,
+          priority: saved.priority,
+          status: saved.status,
+          channel: saved.channel,
+          customer: saved.customer,
+          createdAt: saved.createdAt,
+        },
+      );
+    }
+
+    this.logger.log(
+      `Nuevo Ticket #${saved.ticketNumber} creado automáticamente vía ${channel}`,
+    );
+    return saved;
   }
 
   async updateStatus(

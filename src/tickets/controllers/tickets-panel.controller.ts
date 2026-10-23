@@ -18,7 +18,10 @@ import { TicketReplyDto } from "../dto/ticket-reply.dto";
 import { TicketChannel } from "../schemas/ticket.schema";
 import { ParseObjectIdPipe } from "../../common/pipes/parse-object-id.pipe";
 import { UsersService } from "../../users/users.service";
-import { extractUserName } from "../helpers/ticket-actions.helper";
+import {
+  extractUserName,
+  extractUserPhone,
+} from "../helpers/ticket-actions.helper";
 
 interface AuthenticatedMemberRequest extends Request {
   user: { userId: string; email: string };
@@ -52,8 +55,9 @@ export class TicketsPanelController {
     dto.channel = TicketChannel.PANEL;
     dto.customerName = actor.name;
     dto.customerEmail = actor.email;
-    if (fullUser?.phone) {
-      dto.customerPhone = fullUser.phone;
+    const phone = extractUserPhone(fullUser);
+    if (phone) {
+      dto.customerPhone = phone;
     }
     return this.ticketsService.createTicket(dto, actor);
   }

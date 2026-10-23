@@ -71,6 +71,7 @@ export class ContactService {
           channel: TicketChannel.WEB_CONTACT,
           customerName: dto.name,
           customerEmail: dto.email,
+          customerPhone: dto.phone,
           tags: ["landing_page", "contacto_web"],
         },
         undefined,

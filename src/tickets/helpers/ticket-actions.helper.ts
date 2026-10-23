@@ -36,9 +36,7 @@ export function applyTicketReply(
   ticket.messages.push(newMessage);
 
   if (actor.isAgent && !isInternal) {
-    if (!ticket.sla.firstRespondedAt) {
-      ticket.sla.firstRespondedAt = new Date();
-    }
+    ticket.sla.firstRespondedAt ??= new Date();
     if (
       ticket.status === TicketStatus.NUEVO ||
       ticket.status === TicketStatus.ABIERTO
@@ -121,4 +119,42 @@ export function extractUserName(
     .join(" ");
   if (contractorName) return contractorName;
   return user.email || fallback;
+}
+
+function parseStringField(val: unknown): string | undefined {
+  if (typeof val === "string") {
+    const trimmed = val.trim();
+    if (trimmed.length > 0) return trimmed;
+  } else if (typeof val === "number") {
+    return String(val);
+  }
+  return undefined;
+}
+
+export function extractUserPhone(
+  user?: {
+    phone?: string | null;
+    profile?: Record<string, unknown>;
+  } | null,
+): string | undefined {
+  if (!user) return undefined;
+  const directPhone = parseStringField(user.phone);
+  if (directPhone) return directPhone;
+
+  const profile = user.profile;
+  if (!profile) return undefined;
+
+  const contacto = profile.contacto;
+  if (contacto && typeof contacto === "object") {
+    const cel = parseStringField((contacto as Record<string, unknown>).celular);
+    if (cel) return cel;
+  }
+
+  const tel = parseStringField(profile.telefono);
+  if (tel) return tel;
+
+  const cel = parseStringField(profile.celular);
+  if (cel) return cel;
+
+  return undefined;
 }

@@ -1,6 +1,8 @@
 import { createHmac } from "node:crypto";
 import { Logger, ForbiddenException } from "@nestjs/common";
 import type { BirdWebhookEvent } from "./bird.service";
+import type { TicketsService } from "../tickets/tickets.service";
+import { TicketChannel } from "../tickets/schemas/ticket.schema";
 
 export function assertChannelAuthorized(
   channelName: string,
@@ -94,14 +96,34 @@ export function signChannelAuth(
   return { auth: `${key}:${sig}` };
 }
 
-export function processBirdWebhookEvent(
-  logger: Logger,
-  event: BirdWebhookEvent,
-): void {
-  logger.debug(
-    `processWebhookEvent: type=${event.type}, data=${JSON.stringify(event.data).slice(0, 200)}`,
-  );
+type WebhookEntity = Record<string, unknown> | string | undefined;
 
+function extractPhoneNumber(entity: WebhookEntity, fallback = ""): string {
+  if (typeof entity === "string") return entity;
+  if (typeof entity === "object" && entity !== null) {
+    const num = entity.phone_number;
+    if (typeof num === "string") return num;
+  }
+  return fallback;
+}
+
+function extractDisplayName(entity: WebhookEntity): string | undefined {
+  if (typeof entity === "object" && entity !== null) {
+    if (typeof entity.display_name === "string") return entity.display_name;
+    if (typeof entity.name === "string") return entity.name;
+  }
+  return undefined;
+}
+
+function extractEmailAddress(entity: WebhookEntity): string {
+  if (typeof entity === "string") return entity;
+  if (typeof entity === "object" && entity !== null) {
+    if (typeof entity.email === "string") return entity.email;
+  }
+  return "";
+}
+
+function handlePresenceEvent(logger: Logger, event: BirdWebhookEvent): void {
   const memberId =
     typeof event.data.member_id === "string" ? event.data.member_id : "";
   const channel =
@@ -125,7 +147,149 @@ export function processBirdWebhookEvent(
       logger.debug(`realtime.channel_vacated: channel=${channel}`);
       break;
     default:
-      logger.debug(`Unhandled webhook type: ${event.type}`);
       break;
   }
+}
+
+async function handleWhatsAppReceived(
+  logger: Logger,
+  event: BirdWebhookEvent,
+  ticketsService?: TicketsService,
+): Promise<void> {
+  const fromObj = event.data.from as WebhookEntity;
+  const toObj = event.data.to as WebhookEntity;
+  const senderPhone = extractPhoneNumber(fromObj);
+  const senderName = extractDisplayName(fromObj);
+  const receiver = extractPhoneNumber(toObj, "+573169588444");
+
+  const textObj = event.data.text as { body?: string } | undefined;
+  let bodyText = textObj?.body;
+  if (!bodyText && typeof event.data.body === "string") {
+    bodyText = event.data.body;
+  }
+  if (!bodyText && typeof event.data.message === "string") {
+    bodyText = event.data.message;
+  }
+
+  const messageId =
+    (typeof event.data.whatsapp_id === "string"
+      ? event.data.whatsapp_id
+      : undefined) ??
+    (typeof event.data.id === "string" ? event.data.id : undefined);
+
+  if (senderPhone && bodyText && ticketsService) {
+    await ticketsService.handleInboundMessage({
+      channel: TicketChannel.WHATSAPP,
+      from: senderPhone,
+      to: receiver,
+      text: bodyText,
+      senderName,
+      messageId,
+    });
+  } else {
+    logger.warn(
+      `whatsapp.received omitido: datos insuficientes o TicketsService no disponible`,
+    );
+  }
+}
+
+async function handleSmsReceived(
+  logger: Logger,
+  event: BirdWebhookEvent,
+  ticketsService?: TicketsService,
+): Promise<void> {
+  const senderPhone =
+    (typeof event.data.from === "string" && event.data.from) ||
+    (typeof event.data.originator === "string" && event.data.originator) ||
+    (typeof event.data.source === "string" && event.data.source) ||
+    "";
+  const receiver =
+    typeof event.data.to === "string" ? event.data.to : "901444BSKMT";
+
+  const bodyText =
+    (typeof event.data.text === "string" && event.data.text) ||
+    (typeof event.data.body === "string" && event.data.body) ||
+    (typeof event.data.message === "string" && event.data.message) ||
+    "";
+  const messageId =
+    (typeof event.data.sms_id === "string" ? event.data.sms_id : undefined) ??
+    (typeof event.data.id === "string" ? event.data.id : undefined);
+
+  if (senderPhone && bodyText && ticketsService) {
+    await ticketsService.handleInboundMessage({
+      channel: TicketChannel.SMS,
+      from: senderPhone,
+      to: receiver,
+      text: bodyText,
+      messageId,
+    });
+  } else {
+    logger.warn(
+      `sms.received omitido: datos insuficientes o TicketsService no disponible`,
+    );
+  }
+}
+
+async function handleEmailReceived(
+  event: BirdWebhookEvent,
+  ticketsService?: TicketsService,
+): Promise<void> {
+  const fromObj = event.data.from as WebhookEntity;
+  const fromEmail = extractEmailAddress(fromObj);
+  const senderName = extractDisplayName(fromObj);
+  const bodyText =
+    (typeof event.data.text === "string" && event.data.text) ||
+    (typeof event.data.subject === "string" && event.data.subject) ||
+    "Mensaje de correo entrante";
+  const messageId =
+    (typeof event.data.email_id === "string"
+      ? event.data.email_id
+      : undefined) ??
+    (typeof event.data.id === "string" ? event.data.id : undefined);
+
+  if (fromEmail && ticketsService) {
+    await ticketsService.handleInboundMessage({
+      channel: TicketChannel.EMAIL,
+      from: fromEmail,
+      to: "contacto@bskmt.com",
+      text: bodyText,
+      senderName,
+      messageId,
+    });
+  }
+}
+
+export async function processBirdWebhookEvent(
+  logger: Logger,
+  event: BirdWebhookEvent,
+  ticketsService?: TicketsService,
+): Promise<void> {
+  logger.debug(
+    `processWebhookEvent: type=${event.type}, data=${JSON.stringify(event.data).slice(0, 200)}`,
+  );
+
+  if (event.type.startsWith("realtime.")) {
+    handlePresenceEvent(logger, event);
+    return;
+  }
+
+  if (event.type === "whatsapp.received") {
+    await handleWhatsAppReceived(logger, event, ticketsService);
+    return;
+  }
+
+  if (event.type === "sms.received") {
+    await handleSmsReceived(logger, event, ticketsService);
+    return;
+  }
+
+  if (
+    event.type === "email.received" ||
+    event.type === "email_mailbox.message_received"
+  ) {
+    await handleEmailReceived(event, ticketsService);
+    return;
+  }
+
+  logger.debug(`Unhandled webhook type: ${event.type}`);
 }

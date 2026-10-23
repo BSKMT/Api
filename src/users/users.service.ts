@@ -53,6 +53,22 @@ export class UsersService {
     return this.userModel.findOne({ betterAuthId }).lean();
   }
 
+  async findByPhone(phone: string): Promise<UserDocument | null> {
+    const raw = phone.replace(/\D/g, "");
+    const last10 = raw.slice(-10);
+    return this.userModel
+      .findOne({
+        $or: [
+          { phone },
+          { pendingPhone: phone },
+          { "profile.contacto.celular": phone },
+          { "profile.contacto.celular": last10 },
+          { phone: last10 },
+        ],
+      })
+      .lean();
+  }
+
   async findByMemberNumber(
     numeroMiembro: string,
   ): Promise<UserDocument | null> {
