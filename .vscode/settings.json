@@ -2,6 +2,5 @@
     "sonarlint.connectedMode.project": {
         "connectionId": "bskmt",
         "projectKey": "BSKMT_Api"
-    },
-    "sonarlint.analysisExclusions": "**/.agents/**,**/.agents/skills/**"
+    }
 }
