@@ -217,5 +217,21 @@ describe("WhatsappBotService - Pruebas Exhaustivas de Cobertura Total", () => {
       });
       expect(res.replyText).toContain("No logré identificar esa opción");
     });
+
+    it("debe responder correctamente cuando el usuario escribe con un BSUID de WhatsApp", async () => {
+      const ticket = createMockTicket(TicketInteractionMode.BOT, "MAIN");
+      const res = await service.processInboundWhatsappMessage({
+        ticket,
+        text: "hola",
+        customerName: "James Andres",
+        customerPhone: "CO.2041512499849757",
+      });
+      expect(res.nextState).toBe("MAIN");
+      expect(mockWhatsappService.sendDirectWhatsapp).toHaveBeenCalledTimes(1);
+      const callArgs =
+        mockWhatsappService.sendDirectWhatsapp.mock.calls[0]?.[0];
+      expect(callArgs?.to).toBe("CO.2041512499849757");
+      expect(callArgs?.text).toContain("BSK MOTORCYCLE TEAM");
+    });
   });
 });
