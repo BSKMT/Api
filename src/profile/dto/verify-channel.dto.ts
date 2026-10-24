@@ -1,10 +1,31 @@
 import { IsString, IsNotEmpty, Matches, MaxLength } from "class-validator";
+import { Transform } from "class-transformer";
 
-const E164_PATTERN = /^\+[1-9]\d{5,14}$/;
+export const E164_PATTERN = /^\+[1-9]\d{5,14}$/;
+
+/**
+ * Normaliza un número telefónico a formato internacional E.164.
+ * Si es un número móvil colombiano de 10 dígitos (inicia en 3), antepone +57.
+ */
+export function normalizePhone(raw: unknown): string {
+  if (!raw || typeof raw !== "string") return "";
+  let clean = raw.trim().replace(/[\s\-()]/g, "");
+  if (!clean.startsWith("+")) {
+    if (/^3\d{9}$/.test(clean)) {
+      clean = `+57${clean}`;
+    } else if (/^573\d{9}$/.test(clean)) {
+      clean = `+${clean}`;
+    } else if (clean.length > 0) {
+      clean = `+${clean}`;
+    }
+  }
+  return clean;
+}
 
 export class InitiatePhoneVerifyDto {
   @IsString()
   @IsNotEmpty()
+  @Transform(({ value }: { value: unknown }): string => normalizePhone(value))
   @Matches(E164_PATTERN, {
     message: "El telefono debe estar en formato E.164 (ej: +573001234567)",
   })
@@ -15,6 +36,7 @@ export class InitiatePhoneVerifyDto {
 export class CheckPhoneVerifyDto {
   @IsString()
   @IsNotEmpty()
+  @Transform(({ value }: { value: unknown }): string => normalizePhone(value))
   @Matches(E164_PATTERN, {
     message: "El telefono debe estar en formato E.164 (ej: +573001234567)",
   })
@@ -23,6 +45,9 @@ export class CheckPhoneVerifyDto {
 
   @IsString()
   @IsNotEmpty()
+  @Transform(({ value }: { value: unknown }): string =>
+    typeof value === "string" ? value.trim() : "",
+  )
   @Matches(/^\d{4,8}$/, {
     message: "El codigo debe ser numerico de 4 a 8 digitos",
   })

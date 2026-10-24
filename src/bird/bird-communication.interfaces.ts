@@ -94,7 +94,11 @@ export type BirdVerifyRecipient<TRecipient = unknown> = TRecipient;
 
 export interface BirdVerifyCreateParams {
   to: { email: string } | { phone_number: string };
-  options?: { code_length?: number; channels?: string[] };
+  options?: {
+    code_length?: number;
+    channels?: string[];
+    language?: string;
+  };
   metadata?: Record<string, unknown>;
 }
 

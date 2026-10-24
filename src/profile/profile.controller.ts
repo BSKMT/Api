@@ -149,7 +149,7 @@ export class ProfileController {
     };
   }
 
-  // ── Phone (SMS) verification ───────────────────────────────────────
+  // ── Phone (WhatsApp / SMS) verification ────────────────────────────
 
   @Post("verify-phone/initiate")
   @Throttle({ default: { ttl: 60000, limit: 3 } })
@@ -161,7 +161,10 @@ export class ProfileController {
       req.user.userId,
       dto.phone,
     );
-    return { message: "Codigo SMS enviado" };
+    return {
+      message: "Código de verificación enviado a tu WhatsApp.",
+      phone: dto.phone,
+    };
   }
 
   @Post("verify-phone/verify")
@@ -175,7 +178,11 @@ export class ProfileController {
       dto.phone,
       dto.code,
     );
-    return { message: "Telefono verificado", phoneVerified: true };
+    return {
+      message: "Teléfono verificado correctamente vía WhatsApp.",
+      phoneVerified: true,
+      phone: dto.phone,
+    };
   }
 
   // ── Email change verification ───────────────────────────────────────

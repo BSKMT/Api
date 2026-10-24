@@ -1,6 +1,7 @@
 import { randomInt } from "node:crypto";
 import { Model } from "mongoose";
 import { UserDocument } from "./schemas/user.schema";
+import { normalizePhone } from "../profile/dto/verify-channel.dto";
 
 export function getColombiaDate(): string {
   const now = new Date();
@@ -62,14 +63,23 @@ export function syncPhoneIfChanged(
   sanitizedData: Record<string, unknown>,
 ): void {
   const oldPhone = extractPhoneFromContacto(user.profile?.["contacto"]);
-  const newPhone = extractPhoneFromContacto(sanitizedData);
+  const rawNewPhone = extractPhoneFromContacto(sanitizedData);
+  const newPhone = rawNewPhone ? normalizePhone(rawNewPhone) : null;
+  const normalizedOld = oldPhone ? normalizePhone(oldPhone) : null;
 
-  if (newPhone && newPhone !== oldPhone) {
+  if (newPhone && newPhone !== normalizedOld) {
     user.phone = newPhone;
     user.phoneVerified = false;
     user.phoneVerifiedAt = null;
     user.pendingPhone = null;
-  } else if (newPhone && newPhone === oldPhone && user.phone !== newPhone) {
+    if (typeof sanitizedData["celular"] === "string") {
+      sanitizedData["celular"] = newPhone;
+    }
+  } else if (
+    newPhone &&
+    newPhone === normalizedOld &&
+    user.phone !== newPhone
+  ) {
     user.phone = newPhone;
   }
 }

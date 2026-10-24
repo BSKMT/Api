@@ -115,19 +115,19 @@ export class BirdVerifyService {
     };
   }
 
-  // ── Phone (SMS) verification ───────────────────────────────────────
+  // ── Phone (WhatsApp / SMS) verification ────────────────────────────
 
   /**
    * Creates a phone verification — Bird generates a numeric code,
-   * delivers it via SMS, and returns the verification ID.
+   * delivers it via WhatsApp (or specified channels), and returns the verification ID.
    *
    * The phone number must be in E.164 format (e.g. +573001234567).
-   * Bird enforces a country allow-list for SMS OTPs; numbers outside
-   * it are rejected with `422 PhoneCountryNotAllowed`.
+   * Bird delivers the OTP to the user's WhatsApp line, confirming the number is real.
    */
   async createPhoneVerification(
     phone: string,
     metadata?: Record<string, unknown>,
+    options?: { channels?: string[]; language?: string; code_length?: number },
   ): Promise<BirdCreateResult> {
     if (!isAllowedVerifyPhonePrefix(phone)) {
       throw new BadRequestException(
@@ -137,6 +137,11 @@ export class BirdVerifyService {
     const client = await this.birdService.getClient();
     const params: BirdVerifyCreateParams = {
       to: { phone_number: phone },
+      options: {
+        channels: options?.channels ?? ["whatsapp"],
+        language: options?.language ?? "es",
+        ...(options?.code_length ? { code_length: options.code_length } : {}),
+      },
       ...(metadata ? { metadata } : {}),
     };
     const response: BirdVerificationResponse =
