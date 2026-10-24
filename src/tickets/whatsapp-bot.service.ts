@@ -189,9 +189,15 @@ export class WhatsappBotService {
     });
     await ticket.save();
 
-    await this.birdWhatsappService.sendDirectWhatsapp({
-      to: customerPhone,
-      text: replyText,
-    });
+    const recipient =
+      customerPhone ||
+      (ticket.metadata?.from as string | undefined) ||
+      ticket.customer?.phone;
+    if (recipient) {
+      await this.birdWhatsappService.sendDirectWhatsapp({
+        to: recipient,
+        text: replyText,
+      });
+    }
   }
 }

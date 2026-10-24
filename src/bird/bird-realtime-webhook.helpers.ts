@@ -18,7 +18,9 @@ function getNestedProperty(obj: unknown, path: string): string | undefined {
       return undefined;
     }
   }
-  return typeof cur === "string" ? cur : undefined;
+  if (typeof cur === "string") return cur;
+  if (typeof cur === "number") return String(cur);
+  return undefined;
 }
 
 export function extractInboundMessageFromWebhook(event: BirdWebhookEvent): {
@@ -29,15 +31,17 @@ export function extractInboundMessageFromWebhook(event: BirdWebhookEvent): {
   senderName?: string;
   messageId?: string;
 } | null {
-  const eventName = (event.event || "").toLowerCase();
-  const entity = event.entity || {};
+  const eventName = (event.type || event.event || "").toLowerCase();
+  const entity = event.data || event.entity || {};
 
   let channel: TicketChannel | null = null;
   if (
     eventName.includes("whatsapp") ||
     eventName.includes("message.created") ||
     entity["channel"] === "whatsapp" ||
-    entity["platform"] === "whatsapp"
+    entity["platform"] === "whatsapp" ||
+    Boolean(entity["bsuid"]) ||
+    Boolean(getNestedProperty(entity, "from.bsuid"))
   ) {
     channel = TicketChannel.WHATSAPP;
   } else if (eventName.includes("sms") || entity["channel"] === "sms") {
@@ -61,15 +65,21 @@ export function extractInboundMessageFromWebhook(event: BirdWebhookEvent): {
   }
 
   const from =
+    getNestedProperty(entity, "from.phone_number") ||
     getNestedProperty(entity, "from.phoneNumber") ||
-    getNestedProperty(entity, "from.email") ||
+    getNestedProperty(entity, "from.bsuid") ||
     getNestedProperty(entity, "from.id") ||
+    getNestedProperty(entity, "from.username") ||
+    getNestedProperty(entity, "from.email") ||
     (typeof entity["from"] === "string" ? entity["from"] : "") ||
     getNestedProperty(entity, "originator") ||
     getNestedProperty(entity, "sender") ||
+    getNestedProperty(entity, "contact.id") ||
+    getNestedProperty(entity, "contact.phone_number") ||
     "";
 
   const to =
+    getNestedProperty(entity, "to.phone_number") ||
     getNestedProperty(entity, "to.phoneNumber") ||
     getNestedProperty(entity, "to.email") ||
     (typeof entity["to"] === "string" ? entity["to"] : "") ||
@@ -77,12 +87,16 @@ export function extractInboundMessageFromWebhook(event: BirdWebhookEvent): {
     "";
 
   const text =
-    getNestedProperty(entity, "body.text.text") ||
     getNestedProperty(entity, "text.body") ||
+    getNestedProperty(entity, "body.text.text") ||
     getNestedProperty(entity, "body") ||
     getNestedProperty(entity, "text") ||
     getNestedProperty(entity, "content.text") ||
     getNestedProperty(entity, "message") ||
+    getNestedProperty(entity, "interactive_reply.title") ||
+    getNestedProperty(entity, "interactive.body_text") ||
+    getNestedProperty(entity, "image.caption") ||
+    getNestedProperty(entity, "document.caption") ||
     "";
 
   if (!from || !text) {
@@ -90,8 +104,10 @@ export function extractInboundMessageFromWebhook(event: BirdWebhookEvent): {
   }
 
   const senderName =
+    getNestedProperty(entity, "from.display_name") ||
     getNestedProperty(entity, "from.displayName") ||
     getNestedProperty(entity, "from.name") ||
+    getNestedProperty(entity, "from.username") ||
     getNestedProperty(entity, "senderName") ||
     undefined;
 
@@ -125,11 +141,14 @@ export async function handleWebhookInboundMessage(
   try {
     const extracted = extractInboundMessageFromWebhook(event);
     if (!extracted) {
+      logger.debug(
+        `Webhook Bird (tipo=${event.type || event.event}) omitido: no contiene mensaje entrante`,
+      );
       return;
     }
 
     logger.log(
-      `Mensaje entrante detectado vía Webhook Bird (${extracted.channel}) de ${extracted.from}`,
+      `Mensaje entrante detectado vía Webhook Bird (${extracted.channel}) de ${extracted.from}: "${extracted.text.slice(0, 40)}"`,
     );
 
     await ticketsService.handleInboundMessage({

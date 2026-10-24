@@ -58,10 +58,16 @@ export async function executeEscalationToLiveAgent(
   });
   await ticket.save();
 
-  await birdWhatsappService.sendDirectWhatsapp({
-    to: customerPhone,
-    text: replyText,
-  });
+  const recipient =
+    customerPhone ||
+    (ticket.metadata?.from as string | undefined) ||
+    ticket.customer?.phone;
+  if (recipient) {
+    await birdWhatsappService.sendDirectWhatsapp({
+      to: recipient,
+      text: replyText,
+    });
+  }
 
   if (birdRealtimeService.isRealtimeConfigured()) {
     void birdRealtimeService.publishToChannel(

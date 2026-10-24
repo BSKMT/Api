@@ -45,7 +45,9 @@ export async function resolveInboundCustomer(
       customerEmail = user.email || "";
     } else {
       const cleanDigits = customerPhone.replace(/\D/g, "");
-      customerEmail = `${cleanDigits}@inbound.bskmt.com`;
+      const safeId =
+        cleanDigits || customerPhone.toLowerCase().replace(/[^a-z0-9]/g, "_");
+      customerEmail = `${safeId}@inbound.bskmt.com`;
     }
   }
 

@@ -28,9 +28,25 @@ export class BirdWhatsappService {
     this.defaultTemplateSlug = process.env.BIRD_WHATSAPP_TEMPLATE_SLUG ?? "";
   }
 
+  /** Patron BSUID (Business-Scoped User ID de Meta / WhatsApp) o ID de grupo/contacto Bird */
+  private static readonly BSUID_PATTERN =
+    /^[A-Z]{2}\.\d+$|^wag_[a-zA-Z0-9]+$|^[a-zA-Z0-9_.-]{4,80}$/;
+
+  /** Valida que un destinatario sea un teléfono E.164 o BSUID de Meta/WhatsApp. */
+  isValidRecipient(recipient: string): boolean {
+    if (!recipient || typeof recipient !== "string") return false;
+    const trimmed = recipient.trim();
+    return (
+      BirdWhatsappService.E164_PATTERN.test(trimmed) ||
+      BirdWhatsappService.BSUID_PATTERN.test(trimmed)
+    );
+  }
+
   /** Valida que un numero este en formato E.164. */
   isValidE164(phone: string): boolean {
-    return BirdWhatsappService.E164_PATTERN.test(phone);
+    return (
+      Boolean(phone) && BirdWhatsappService.E164_PATTERN.test(phone.trim())
+    );
   }
 
   /** Indica si el sender de WhatsApp esta configurado y es E.164 valido. */
@@ -67,9 +83,9 @@ export class BirdWhatsappService {
   }): Promise<boolean> {
     if (!this.birdService.isConfigured()) return false;
 
-    if (!this.isValidE164(data.to)) {
+    if (!this.isValidRecipient(data.to)) {
       this.logger.warn(
-        `Numero WhatsApp invalido (no E.164): ${maskPhone(data.to)}`,
+        `Destinatario WhatsApp invalido (no es E.164 ni BSUID): ${maskPhone(data.to)}`,
       );
       return false;
     }
@@ -171,9 +187,9 @@ export class BirdWhatsappService {
   }): Promise<boolean> {
     if (!this.birdService.isConfigured()) return false;
 
-    if (!this.isValidE164(data.to)) {
+    if (!this.isValidRecipient(data.to)) {
       this.logger.warn(
-        `Numero WhatsApp invalido (no E.164): ${maskPhone(data.to)}`,
+        `Destinatario WhatsApp invalido (no es E.164 ni BSUID): ${maskPhone(data.to)}`,
       );
       return false;
     }

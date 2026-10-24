@@ -79,9 +79,11 @@ export async function dispatchLiveChatMessage(
 
   const saved = await ticket.save();
 
-  if (ticket.customer.phone) {
+  const recipient =
+    ticket.customer.phone || (ticket.metadata?.from as string | undefined);
+  if (recipient) {
     await ctx.birdWhatsappService.sendDirectWhatsapp({
-      to: ticket.customer.phone,
+      to: recipient,
       text: cleanText,
     });
   }
@@ -134,9 +136,11 @@ export async function changeInteractionMode(
         "¡Buenas rutas y rueda siempre seguro! 🏍️💨",
       ].join("\n");
 
-      if (ticket.customer.phone) {
+      const recipient =
+        ticket.customer.phone || (ticket.metadata?.from as string | undefined);
+      if (recipient) {
         void ctx.birdWhatsappService.sendDirectWhatsapp({
-          to: ticket.customer.phone,
+          to: recipient,
           text: farewell,
         });
       }

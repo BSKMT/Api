@@ -71,6 +71,7 @@ export async function processInboundMessage(
     queryFilter.$or = [
       { "customer.phone": customerPhone },
       { "customer.email": customerEmail },
+      { "metadata.from": from },
     ];
   }
 
