@@ -8,12 +8,12 @@ import type { Response } from "express";
 describe("AppController (NIST CSF 2.0 PR.PS-06, RC.RP-05)", () => {
   let controller: AppController;
   let mockConnection: { readyState: number };
-  let mockConfigService: { get: jest.Mock };
+  let mockConfigService: { get: jest.Mock<(key: string) => unknown> };
 
   beforeEach(async () => {
     mockConnection = { readyState: 1 };
     mockConfigService = {
-      get: jest.fn((key: string) => {
+      get: jest.fn<(key: string) => unknown>((key: string) => {
         if (key === "BETTER_AUTH_SECRET")
           return "app-controller-secret-minimum-32chars!";
         return null;
@@ -70,5 +70,25 @@ describe("AppController (NIST CSF 2.0 PR.PS-06, RC.RP-05)", () => {
         path: "/",
       }),
     );
+  });
+
+  it("configura domain .bskmt.com en la cookie CSRF cuando NODE_ENV es production (PR-03)", () => {
+    const prevEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      const cookieMock = jest.fn();
+      const mockResponse = { cookie: cookieMock } as unknown as Response;
+      controller.getCsrfToken(mockResponse);
+      expect(cookieMock).toHaveBeenCalledWith(
+        "bskmt.csrf",
+        expect.any(String),
+        expect.objectContaining({
+          domain: ".bskmt.com",
+          secure: true,
+        }),
+      );
+    } finally {
+      process.env.NODE_ENV = prevEnv;
+    }
   });
 });

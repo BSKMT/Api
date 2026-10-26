@@ -110,6 +110,11 @@ export enum UserSubrole {
   // MEMBRESIAS
   LIDER_MEMBRESIAS = "lider_membresias",
   GESTOR_MEMBRESIAS = "gestor_membresias",
+
+  // ATENCION AL MIEMBRO Y COMUNIDAD
+  LIDER_ATENCION_MIEMBRO = "lider_atencion_miembro",
+  GESTOR_ATENCION_MIEMBRO = "gestor_atencion_miembro",
+  LIDER_COMUNIDAD = "lider_comunidad",
 }
 
 export enum CreditType {

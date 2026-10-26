@@ -6,7 +6,7 @@ import {
   Max,
   IsOptional,
   IsString,
-  MaxLength,
+  IsIn,
 } from "class-validator";
 import type {
   Course,
@@ -42,7 +42,7 @@ export class UpdateCourseProgressDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(50)
+  @IsIn(["ACTIVE", "COMPLETED", "CANCELLED"])
   status?: string;
 }
 

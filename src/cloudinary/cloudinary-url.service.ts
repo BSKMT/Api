@@ -4,13 +4,58 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { v2 as CloudinaryType } from "cloudinary";
+import { UploadApiResponse, v2 as CloudinaryType } from "cloudinary";
 import { CLOUDINARY } from "./cloudinary.constants";
 import type {
+  CloudinaryUploadResult,
+  UploadOptions,
   OptimizedUrlOptions,
   UploadSignatureResult,
   PublicConfigResult,
 } from "./cloudinary.types";
+
+export function mapCloudinaryUploadResponse(
+  result: UploadApiResponse,
+): CloudinaryUploadResult {
+  return {
+    publicId: result.public_id,
+    url: result.url,
+    secureUrl: result.secure_url,
+    format: result.format,
+    width: result.width,
+    height: result.height,
+    bytes: result.bytes,
+    resourceType: result.resource_type,
+  };
+}
+
+export function buildCloudinaryUploadOptions(
+  options: UploadOptions,
+): Record<string, unknown> {
+  const folderName = options.folder
+    ? `bskmt/${options.folder}`
+    : "bskmt/general";
+  const entries: string[] = [];
+  if (options.folder) entries.push(`bsk_module=${options.folder}`);
+  if (options.metadata) {
+    for (const [k, v] of Object.entries(options.metadata)) {
+      if (v) entries.push(`${k}=${v}`);
+    }
+  }
+  const metadataString = entries.length > 0 ? entries.join("|") : undefined;
+  return {
+    folder: folderName,
+    public_id: options.publicId,
+    tags: options.tags || ["bskmt"],
+    resource_type: options.resourceType || "auto",
+    sanitize: true,
+    transformation: options.transformation || [
+      { quality: "auto", fetch_format: "auto" },
+    ],
+    ...(metadataString ? { metadata: metadataString } : {}),
+    ...(options.context ? { context: options.context } : {}),
+  };
+}
 
 @Injectable()
 export class CloudinaryUrlService {

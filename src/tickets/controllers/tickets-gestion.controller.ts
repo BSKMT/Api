@@ -14,6 +14,8 @@ import {
 import type { Request } from "express";
 import { SessionGuard } from "../../auth/session.guard";
 import { GestionGuard } from "../../common/guards/gestion.guard";
+import { RequireSubroles } from "../../common/decorators/subroles.decorator";
+import { UserSubrole } from "../../users/schemas/user.schema";
 import { TicketsService } from "../tickets.service";
 import { CreateTicketDto } from "../dto/create-ticket.dto";
 import { TicketReplyDto } from "../dto/ticket-reply.dto";
@@ -37,6 +39,12 @@ interface AuthenticatedGestionRequest extends Request {
 
 @Controller("gestion/support")
 @UseGuards(SessionGuard, GestionGuard)
+@RequireSubroles(
+  UserSubrole.GESTOR_ATENCION_MIEMBRO,
+  UserSubrole.LIDER_ATENCION_MIEMBRO,
+  UserSubrole.GESTOR_OFICINA,
+  UserSubrole.LIDER_COMUNIDAD,
+)
 export class TicketsGestionController {
   constructor(private readonly ticketsService: TicketsService) {}
 

@@ -149,7 +149,7 @@ async function initAuth(): Promise<AuthInstance> {
         authLogger,
       ),
       sendOnSignUp: true,
-      autoSignInAfterVerification: true,
+      autoSignInAfterVerification: false,
     },
 
     user: {

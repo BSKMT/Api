@@ -37,3 +37,22 @@ export function parseBoldWebhookEvent(
     amount: parseBoldAmount(data["amount"]),
   };
 }
+
+export function mapBoldStatus(eventType: string | undefined): string | null {
+  switch (eventType) {
+    case "SALE_APPROVED":
+    case "PAYMENT_APPROVED":
+      return "APPROVED";
+    case "SALE_REJECTED":
+    case "PAYMENT_REJECTED":
+      return "REJECTED";
+    case "VOID_APPROVED":
+    case "PAYMENT_VOIDED":
+      return "VOIDED";
+    case "VOID_REJECTED":
+    case "PAYMENT_FAILED":
+      return "FAILED";
+    default:
+      return null;
+  }
+}

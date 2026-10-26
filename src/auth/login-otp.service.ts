@@ -1,34 +1,25 @@
-import {
-  Injectable,
-  Logger,
-  GoneException,
-  UnauthorizedException,
-} from "@nestjs/common";
+import { Injectable, Logger, UnauthorizedException } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { LoginOtp, LoginOtpDocument } from "./schemas/login-otp.schema";
 import { User, UserDocument } from "../users/schemas/user.schema";
-import {
-  BirdVerifyService,
-  type BirdCheckResult,
-} from "../bird-verify/bird-verify.service";
+import { BirdVerifyService } from "../bird-verify/bird-verify.service";
 import { deriveSessionEncryptionKey } from "./login-otp-crypto.helper";
-import {
-  handleBirdCheckError,
-  processBirdCheckResult,
-  revokeEncryptedOtpSession,
-} from "./login-otp-check.helper";
+import { revokeEncryptedOtpSession } from "./login-otp-check.helper";
 import {
   authenticateAndExtractSession,
   executeDispatchOtpAndSave,
   revokeBetterAuthSessionByCookies,
 } from "./login-otp-session.helper";
 import {
+  findAndValidateStandardUser,
   findAndValidateFasciaUser,
   findAndValidateConsoleUser,
   findAndValidateSuperAdminUser,
+  executeVerifyOtp,
 } from "./login-otp-portals.helper";
 import { verifyTurnstileToken } from "../common/utils/turnstile.util";
+import { maskEmail } from "../common/utils/log-redact.util";
 
 @Injectable()
 export class LoginOtpService {
@@ -36,7 +27,6 @@ export class LoginOtpService {
   private readonly EMAIL_INITIATE_WINDOW_MS = 5 * 60 * 1000;
   private readonly EMAIL_INITIATE_MAX = 3;
   private readonly sessionEncKey: Buffer;
-
   private static readonly GENERIC_AUTH_ERROR =
     "Credenciales inválidas. Verifica tu correo y contraseña.";
 
@@ -60,7 +50,7 @@ export class LoginOtpService {
     authEmail: string;
     targetEmail: string;
     password: string;
-    remember: boolean;
+    remember?: boolean;
     clientIp?: string;
     userAgent?: string;
     errorMessage?: string;
@@ -70,7 +60,7 @@ export class LoginOtpService {
       authEmail,
       targetEmail,
       password,
-      remember,
+      remember = false,
       clientIp,
       userAgent,
       errorMessage = LoginOtpService.GENERIC_AUTH_ERROR,
@@ -90,7 +80,7 @@ export class LoginOtpService {
     if (!isEligible) {
       await revokeBetterAuthSessionByCookies(session.sessionCookies);
       this.logger.warn(
-        `Login OTP bloqueado tras verificar contraseña: cuenta no elegible o sin rol requerido para el portal (${targetEmail}).`,
+        `Login OTP bloqueado tras verificar contraseña: cuenta no elegible o sin rol requerido para el portal (${maskEmail(targetEmail)}).`,
       );
       throw new UnauthorizedException(errorMessage);
     }
@@ -119,34 +109,14 @@ export class LoginOtpService {
     userAgent?: string,
     turnstileToken?: string,
   ): Promise<{ requestId: string }> {
-    if (turnstileToken) {
-      await verifyTurnstileToken(turnstileToken, clientIp, this.logger);
-    }
-    const normalizedEmail = (email ?? "").toLowerCase().trim();
-    const user = await this.userModel
-      .findOne({
-        $or: [
-          { email: normalizedEmail },
-          { "contractorInfo.correoInstitucional": normalizedEmail },
-          { "profile.contacto.correoInstitucional": normalizedEmail },
-        ],
-      })
-      .lean();
-
-    const authEmail = user?.email || normalizedEmail;
-    const isEligible =
-      !user ||
-      (user.isActive !== false && user.accountDeletionRequested !== true);
-
+    await verifyTurnstileToken(turnstileToken, clientIp, this.logger);
+    const candidate = await findAndValidateStandardUser(this.userModel, email);
     return this.authenticateAndDispatch({
-      authEmail,
-      targetEmail: normalizedEmail,
+      ...candidate,
       password,
       remember: rememberMe === true,
       clientIp,
       userAgent,
-      errorMessage: LoginOtpService.GENERIC_AUTH_ERROR,
-      isEligible,
     });
   }
 
@@ -159,19 +129,19 @@ export class LoginOtpService {
     turnstileToken?: string,
   ): Promise<{ requestId: string }> {
     await verifyTurnstileToken(turnstileToken, clientIp, this.logger);
-    const { authEmail, targetEmail, isEligible } =
-      await findAndValidateFasciaUser(this.userModel, username, this.logger);
-
+    const candidate = await findAndValidateFasciaUser(
+      this.userModel,
+      username,
+      this.logger,
+    );
     return this.authenticateAndDispatch({
-      authEmail,
-      targetEmail,
+      ...candidate,
       password,
       remember: rememberMe === true,
       clientIp,
       userAgent,
       errorMessage:
         "Error al iniciar sesión en Fascia. Verifica tus credenciales.",
-      isEligible,
     });
   }
 
@@ -185,23 +155,19 @@ export class LoginOtpService {
     turnstileToken?: string,
   ): Promise<{ requestId: string }> {
     await verifyTurnstileToken(turnstileToken, clientIp, this.logger);
-    const { authEmail, targetEmail, isEligible } =
-      await findAndValidateConsoleUser(
-        this.userModel,
-        email,
-        username,
-        this.logger,
-      );
-
+    const candidate = await findAndValidateConsoleUser(
+      this.userModel,
+      email,
+      username,
+      this.logger,
+    );
     return this.authenticateAndDispatch({
-      authEmail,
-      targetEmail,
+      ...candidate,
       password,
       remember: rememberMe === true,
       clientIp,
       userAgent,
       errorMessage: "Error al iniciar sesión en la Consola Administrativa.",
-      isEligible,
     });
   }
 
@@ -215,23 +181,19 @@ export class LoginOtpService {
     turnstileToken?: string,
   ): Promise<{ requestId: string }> {
     await verifyTurnstileToken(turnstileToken, clientIp, this.logger);
-    const { authEmail, targetEmail, isEligible } =
-      await findAndValidateSuperAdminUser(
-        this.userModel,
-        email,
-        username,
-        this.logger,
-      );
-
+    const candidate = await findAndValidateSuperAdminUser(
+      this.userModel,
+      email,
+      username,
+      this.logger,
+    );
     return this.authenticateAndDispatch({
-      authEmail,
-      targetEmail,
+      ...candidate,
       password,
       remember: rememberMe === true,
       clientIp,
       userAgent,
       errorMessage: "Error al iniciar sesión como Superadministrador.",
-      isEligible,
     });
   }
 
@@ -239,53 +201,14 @@ export class LoginOtpService {
     requestId: string,
     code: string,
   ): Promise<{ cookies: string[]; setCookieHeaders: string[] }> {
-    const otpRecord = await this.otpModel.findOne({
+    return executeVerifyOtp({
+      otpModel: this.otpModel,
+      birdVerifyService: this.birdVerifyService,
       requestId,
-      status: "pending",
+      code,
+      sessionEncKey: this.sessionEncKey,
+      logger: this.logger,
     });
-
-    if (!otpRecord) {
-      throw new GoneException(
-        "El código de verificación no existe, ya fue utilizado o ha expirado.",
-      );
-    }
-
-    if (otpRecord.attempts >= 5) {
-      otpRecord.status = "expired";
-      await otpRecord.save();
-      await revokeEncryptedOtpSession(
-        otpRecord,
-        this.sessionEncKey,
-        this.logger,
-      );
-      throw new GoneException(
-        "Has superado el máximo de intentos permitidos. Solicita un nuevo código.",
-      );
-    }
-
-    let birdResult: BirdCheckResult;
-    try {
-      birdResult = await this.birdVerifyService.checkEmailVerification(
-        otpRecord.email,
-        code,
-      );
-    } catch (err) {
-      return await handleBirdCheckError(
-        err,
-        otpRecord,
-        requestId,
-        this.logger,
-        this.sessionEncKey,
-      );
-    }
-
-    return await processBirdCheckResult(
-      otpRecord,
-      requestId,
-      birdResult,
-      this.sessionEncKey,
-      this.logger,
-    );
   }
 
   async invalidatePending(email: string): Promise<void> {

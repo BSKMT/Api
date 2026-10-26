@@ -1,7 +1,8 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { ConfigService } from "@nestjs/config";
 import { Model } from "mongoose";
+import { KvCacheService } from "../kv/kv-cache.service";
 import {
   MembershipTransaction,
   MembershipTransactionDocument,
@@ -54,6 +55,7 @@ export class MembershipService {
     private readonly configService: ConfigService<EnvironmentConfig>,
     private readonly alegraService: AlegraService,
     private readonly pricingConfigService: SystemPricingConfigService,
+    @Optional() private readonly kvCache?: KvCacheService,
   ) {}
 
   async createMembershipPayment(
@@ -82,6 +84,7 @@ export class MembershipService {
         transactionModel: this.transactionModel,
         usersService: this.usersService,
         notificationsService: this.notificationsService,
+        kvCache: this.kvCache,
         logger: this.logger,
         processApprovedPayment: (t) => this.processApprovedPayment(t),
       },

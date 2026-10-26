@@ -38,9 +38,15 @@ export class ContactController {
   @Throttle({ medium: { ttl: 60000, limit: 5 } })
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async submit(@Body() dto: ContactDto, @Req() req: Request) {
+  async submit(
+    @Body() dto: ContactDto,
+    @Req() req: Request & { cfOriginVerified?: boolean },
+  ) {
     const clientIp =
       (req.headers["cf-connecting-ip"] as string | undefined) || req.ip || "";
-    return this.contactService.handleContact(dto, clientIp);
+    const edgeVerified =
+      Boolean(req.cfOriginVerified) &&
+      req.headers["x-turnstile-verified"] === "1";
+    return this.contactService.handleContact(dto, clientIp, edgeVerified);
   }
 }

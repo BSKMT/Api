@@ -194,23 +194,30 @@ export class User {
 export const UserSchema = SchemaFactory.createForClass(User);
 
 // NIST CSF 2.0 PR.DS-01: Transparent Field-Level Encryption at Rest
-UserSchema.post("init", function (doc) {
-  if (doc?.profile) {
-    decryptUserProfileSensitiveFields(doc.profile);
+export function decryptSensitiveProfileFields(doc: unknown): void {
+  if (!doc || typeof doc !== "object") return;
+  const record = doc as { profile?: unknown };
+  if (record.profile && typeof record.profile === "object") {
+    decryptUserProfileSensitiveFields(record.profile);
   }
-});
+}
 
+UserSchema.post("init", (doc) => decryptSensitiveProfileFields(doc));
 UserSchema.pre("save", function () {
-  if (this.profile) {
-    encryptUserProfileSensitiveFields(this.profile);
+  if (this.profile) encryptUserProfileSensitiveFields(this.profile);
+});
+UserSchema.post("save", (doc) => decryptSensitiveProfileFields(doc));
+UserSchema.post("find", (docs: unknown[]) => {
+  if (Array.isArray(docs)) {
+    for (const doc of docs) decryptSensitiveProfileFields(doc);
   }
 });
-
-UserSchema.post("save", function (doc) {
-  if (doc?.profile) {
-    decryptUserProfileSensitiveFields(doc.profile);
-  }
-});
+UserSchema.post("findOne", (doc: unknown) =>
+  decryptSensitiveProfileFields(doc),
+);
+UserSchema.post("findOneAndUpdate", (doc: unknown) =>
+  decryptSensitiveProfileFields(doc),
+);
 
 UserSchema.set("toJSON", {
   transform: (_doc, ret) => {

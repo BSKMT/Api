@@ -7,7 +7,7 @@ interface BetterAuthNodeModule {
 }
 
 const authRateLimit = new Map<string, { count: number; resetAt: number }>();
-const AUTH_RATE_LIMIT_MAX_SIZE = 5000;
+const MAX_MAP_SIZE = 10_000;
 
 export const SENSITIVE_AUTH_PATHS = new Set([
   "/sign-in/email",
@@ -20,18 +20,40 @@ export function shouldSkipAuthRoute(path: string): boolean {
   return path === "/me" || path === "/me/" || path.startsWith("/login-otp/");
 }
 
+function resolveAuthClientIp(req: Request): string {
+  const verifiedReq = req as Request & { cfOriginVerified?: boolean };
+  const canTrustCf =
+    verifiedReq.cfOriginVerified === true ||
+    process.env.NODE_ENV !== "production" ||
+    Boolean(process.env.CF_ORIGIN_SECRET?.trim());
+  const cfIp = canTrustCf ? req.headers["cf-connecting-ip"] : undefined;
+  const realIp = Array.isArray(cfIp) ? cfIp[0] : cfIp;
+  if (typeof realIp === "string" && realIp.trim().length > 0) {
+    return realIp.trim();
+  }
+  return req.ip || req.socket.remoteAddress || "unknown";
+}
+
+function pruneAuthRateLimit(now: number): void {
+  if (authRateLimit.size <= MAX_MAP_SIZE) return;
+  for (const [k, v] of authRateLimit) {
+    if (now >= v.resetAt) {
+      authRateLimit.delete(k);
+    }
+  }
+  while (authRateLimit.size > MAX_MAP_SIZE) {
+    const oldestKey = authRateLimit.keys().next().value;
+    if (oldestKey === undefined) break;
+    authRateLimit.delete(oldestKey);
+  }
+}
+
 export function enforceAuthRateLimit(
   req: Request,
   res: Response,
   path: string,
 ): boolean {
-  const cfIp = req.headers["cf-connecting-ip"];
-  const realIp = Array.isArray(cfIp) ? cfIp[0] : cfIp;
-  const ip =
-    (typeof realIp === "string" && realIp.trim()) ||
-    req.ip ||
-    req.socket.remoteAddress ||
-    "unknown";
+  const ip = resolveAuthClientIp(req);
   const key = `${ip}:${path}`;
   const now = Date.now();
   const windowMs = 60000;
@@ -48,13 +70,7 @@ export function enforceAuthRateLimit(
   } else {
     entry.count++;
   }
-  if (authRateLimit.size > AUTH_RATE_LIMIT_MAX_SIZE) {
-    for (const [k, v] of authRateLimit) {
-      if (now >= v.resetAt) {
-        authRateLimit.delete(k);
-      }
-    }
-  }
+  pruneAuthRateLimit(now);
   return true;
 }
 

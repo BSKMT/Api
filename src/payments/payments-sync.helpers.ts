@@ -180,6 +180,7 @@ export async function syncWithBoldHelper(
         Authorization: `x-api-key ${identityKey}`,
         Accept: "application/json",
       },
+      signal: AbortSignal.timeout(10_000),
     });
 
     if (!res.ok) {

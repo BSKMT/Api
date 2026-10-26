@@ -24,7 +24,7 @@ export class BirdWhatsappService {
   private static readonly E164_PATTERN = /^\+[1-9]\d{5,14}$/;
 
   constructor(private readonly birdService: BirdService) {
-    this.sender = process.env.BIRD_WHATSAPP_SENDER || "+573169588444";
+    this.sender = (process.env.BIRD_WHATSAPP_SENDER ?? "").trim();
     this.defaultTemplateSlug = process.env.BIRD_WHATSAPP_TEMPLATE_SLUG ?? "";
   }
 
@@ -32,14 +32,17 @@ export class BirdWhatsappService {
   private static readonly BSUID_PATTERN =
     /^[A-Z]{2}\.\d+$|^wag_[a-zA-Z0-9]+$|^[a-zA-Z0-9_.-]{4,80}$/;
 
-  /** Valida que un destinatario sea un teléfono E.164 o BSUID de Meta/WhatsApp. */
+  /** Valida que un destinatario sea un teléfono E.164 (+57) o BSUID de Meta/WhatsApp. */
   isValidRecipient(recipient: string): boolean {
     if (!recipient || typeof recipient !== "string") return false;
-    const trimmed = recipient.trim();
-    return (
-      BirdWhatsappService.E164_PATTERN.test(trimmed) ||
-      BirdWhatsappService.BSUID_PATTERN.test(trimmed)
-    );
+    const normalizedTo = recipient.trim();
+    if (normalizedTo.startsWith("+")) {
+      return (
+        BirdWhatsappService.E164_PATTERN.test(normalizedTo) &&
+        normalizedTo.startsWith("+57")
+      );
+    }
+    return BirdWhatsappService.BSUID_PATTERN.test(normalizedTo);
   }
 
   /** Valida que un numero este en formato E.164. */
@@ -83,9 +86,10 @@ export class BirdWhatsappService {
   }): Promise<boolean> {
     if (!this.birdService.isConfigured()) return false;
 
-    if (!this.isValidRecipient(data.to)) {
+    const normalizedTo = (data.to ?? "").trim();
+    if (!this.isValidRecipient(normalizedTo)) {
       this.logger.warn(
-        `Destinatario WhatsApp invalido (no es E.164 ni BSUID): ${maskPhone(data.to)}`,
+        `Destinatario WhatsApp invalido o fuera de prefijo (+57): ${maskPhone(normalizedTo)}`,
       );
       return false;
     }
@@ -187,9 +191,10 @@ export class BirdWhatsappService {
   }): Promise<boolean> {
     if (!this.birdService.isConfigured()) return false;
 
-    if (!this.isValidRecipient(data.to)) {
+    const normalizedTo = (data.to ?? "").trim();
+    if (!this.isValidRecipient(normalizedTo)) {
       this.logger.warn(
-        `Destinatario WhatsApp invalido (no es E.164 ni BSUID): ${maskPhone(data.to)}`,
+        `Destinatario WhatsApp invalido o fuera de prefijo (+57): ${maskPhone(normalizedTo)}`,
       );
       return false;
     }
@@ -233,5 +238,9 @@ export class BirdWhatsappService {
       );
       return false;
     }
+  }
+
+  async sendTextMessage(to: string, text: string): Promise<boolean> {
+    return this.sendDirectWhatsapp({ to, text });
   }
 }

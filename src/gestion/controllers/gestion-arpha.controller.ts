@@ -53,6 +53,7 @@ export class GestionArphaController {
   async listGestores(@Req() req: AuthenticatedRequest) {
     const isLeaderOrAdmin =
       req.user.role === UserRole.ADMIN ||
+      req.user.role === UserRole.SUPERADMIN ||
       req.user.subrol === UserSubrole.LIDER_ARPHA;
 
     if (!isLeaderOrAdmin) {
@@ -74,6 +75,7 @@ export class GestionArphaController {
   ) {
     const isLeaderOrAdmin =
       req.user.role === UserRole.ADMIN ||
+      req.user.role === UserRole.SUPERADMIN ||
       req.user.subrol === UserSubrole.LIDER_ARPHA;
 
     if (!isLeaderOrAdmin) {

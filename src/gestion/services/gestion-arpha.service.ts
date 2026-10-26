@@ -38,7 +38,9 @@ export class GestionArphaService {
     subrol?: string | null;
   }) {
     const isLeaderOrAdmin =
-      user.role === UserRole.ADMIN || user.subrol === UserSubrole.LIDER_ARPHA;
+      user.role === UserRole.ADMIN ||
+      user.role === UserRole.SUPERADMIN ||
+      user.subrol === UserSubrole.LIDER_ARPHA;
 
     let filter: Record<string, unknown> = {};
 
@@ -129,7 +131,9 @@ export class GestionArphaService {
     }
 
     const isLeaderOrAdmin =
-      user.role === UserRole.ADMIN || user.subrol === UserSubrole.LIDER_ARPHA;
+      user.role === UserRole.ADMIN ||
+      user.role === UserRole.SUPERADMIN ||
+      user.subrol === UserSubrole.LIDER_ARPHA;
 
     if (!isLeaderOrAdmin && request.assignedGestorId !== user.userId) {
       throw new ForbiddenException(
@@ -180,7 +184,9 @@ export class GestionArphaService {
     }
 
     const isLeaderOrAdmin =
-      user.role === UserRole.ADMIN || user.subrol === UserSubrole.LIDER_ARPHA;
+      user.role === UserRole.ADMIN ||
+      user.role === UserRole.SUPERADMIN ||
+      user.subrol === UserSubrole.LIDER_ARPHA;
 
     const isAssignedGestor =
       request.assignedGestorId != null &&

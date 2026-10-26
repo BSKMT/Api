@@ -6,6 +6,7 @@ import { MembershipTransactionDocument } from "./schemas/membership-transaction.
 import { UsersService } from "../users/users.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { maskReference } from "../common/utils/log-redact.util";
+import { KvCacheService } from "../kv/kv-cache.service";
 import type { EnvironmentConfig } from "../config/config.interface";
 import { TERMINAL_STATUSES } from "./membership.constants";
 import { revertCreditIfUsed } from "./membership-credit-apply.helpers";
@@ -14,12 +15,14 @@ import { sendRejectionNotification } from "./membership-sync.helpers";
 import {
   type ParsedMembershipWebhook,
   parseBoldWebhookEvent,
+  mapBoldStatus,
 } from "./membership-webhook-parser.helpers";
 
 export {
   type ParsedMembershipWebhook,
   parseBoldAmount,
   parseBoldWebhookEvent,
+  mapBoldStatus,
 } from "./membership-webhook-parser.helpers";
 
 export function verifyBoldWebhookSignature(
@@ -81,25 +84,6 @@ export function recordWebhookEvent(
   }
 }
 
-export function mapBoldStatus(eventType: string | undefined): string | null {
-  switch (eventType) {
-    case "SALE_APPROVED":
-    case "PAYMENT_APPROVED":
-      return "APPROVED";
-    case "SALE_REJECTED":
-    case "PAYMENT_REJECTED":
-      return "REJECTED";
-    case "VOID_APPROVED":
-    case "PAYMENT_VOIDED":
-      return "VOIDED";
-    case "VOID_REJECTED":
-    case "PAYMENT_FAILED":
-      return "FAILED";
-    default:
-      return null;
-  }
-}
-
 export function isAmountMismatch(
   transaction: MembershipTransactionDocument,
   parsed: ParsedMembershipWebhook,
@@ -140,8 +124,70 @@ export interface WebhookHandlerDeps {
   transactionModel: Model<MembershipTransactionDocument>;
   usersService: UsersService;
   notificationsService: NotificationsService;
+  kvCache?: KvCacheService;
   logger: Logger;
   processApprovedPayment: (t: MembershipTransactionDocument) => Promise<void>;
+}
+
+async function isSeenInWebhookKv(
+  deps: WebhookHandlerDeps,
+  parsed: ParsedMembershipWebhook,
+): Promise<boolean> {
+  if (!parsed.notificationId || !parsed.referenceId || !deps.kvCache) {
+    return false;
+  }
+  const kvSeen = await deps.kvCache.get<number>(
+    `webhook:seen:${parsed.referenceId}:${parsed.notificationId}`,
+    true,
+  );
+  if (kvSeen !== null) {
+    deps.logger.log(
+      `KV screener: duplicate membership webhook skipped: ${parsed.notificationId}, ${maskReference(parsed.referenceId)}`,
+    );
+    return true;
+  }
+  return false;
+}
+
+async function markSeenInWebhookKv(
+  deps: WebhookHandlerDeps,
+  parsed: ParsedMembershipWebhook,
+): Promise<void> {
+  if (!parsed.notificationId || !parsed.referenceId || !deps.kvCache) return;
+  await deps.kvCache.set(
+    `webhook:seen:${parsed.referenceId}:${parsed.notificationId}`,
+    1,
+    7 * 24 * 60 * 60,
+    true,
+  );
+}
+
+async function dispatchWebhookOutcome(
+  deps: WebhookHandlerDeps,
+  transaction: MembershipTransactionDocument,
+  statusFromEvent: string | null,
+  didChange: boolean,
+): Promise<void> {
+  if (!didChange || !statusFromEvent) return;
+  if (statusFromEvent === "APPROVED") {
+    await deps.processApprovedPayment(transaction);
+    return;
+  }
+  if (statusFromEvent === "REJECTED" || statusFromEvent === "FAILED") {
+    await revertCreditIfUsed(
+      {
+        usersService: deps.usersService,
+        transactionModel: deps.transactionModel,
+        logger: deps.logger,
+      },
+      transaction,
+    );
+    await sendRejectionNotification(
+      deps.notificationsService,
+      transaction,
+      statusFromEvent,
+    );
+  }
 }
 
 export async function handleWebhookHelper(
@@ -166,12 +212,16 @@ export async function handleWebhookHelper(
     return;
   }
 
+  if (await isSeenInWebhookKv(deps, parsed)) {
+    return;
+  }
+
   const transaction = await deps.transactionModel.findOne({
     reference: parsed.referenceId,
   });
   if (!transaction) {
     deps.logger.warn(
-      `Membership webhook for unknown reference: ${maskReference(parsed.referenceId ?? "")}`,
+      `Membership webhook for unknown reference: ${maskReference(parsed.referenceId)}`,
     );
     return;
   }
@@ -183,53 +233,31 @@ export async function handleWebhookHelper(
     return;
   }
 
+  await markSeenInWebhookKv(deps, parsed);
   recordWebhookEvent(transaction, event, parsed);
 
   const statusFromEvent = mapBoldStatus(parsed.eventType);
-  if (
-    statusFromEvent === "APPROVED" &&
-    isAmountMismatch(transaction, parsed, statusFromEvent)
-  ) {
+  if (isAmountMismatch(transaction, parsed, statusFromEvent)) {
     deps.logger.warn(
-      `Amount mismatch in membership webhook for ref ${maskReference(parsed.referenceId ?? "")}: expected ${transaction.amount}, received ${parsed.amount}. Skipping approval.`,
+      `Amount mismatch in membership webhook for ref ${maskReference(parsed.referenceId)}: expected ${transaction.amount}, received ${parsed.amount}. Skipping approval.`,
     );
     await transaction.save();
     return;
   }
 
-  let didChange = false;
-  if (statusFromEvent) {
-    didChange = applyWebhookStatusUpdate(
-      deps.logger,
-      transaction,
-      statusFromEvent,
-      parsed,
-    );
-  }
+  const didChange = statusFromEvent
+    ? applyWebhookStatusUpdate(
+        deps.logger,
+        transaction,
+        statusFromEvent,
+        parsed,
+      )
+    : false;
 
   await transaction.save();
   deps.logger.log(
-    `Membership webhook processed: ${parsed.eventType} for ${maskReference(parsed.referenceId ?? "")}`,
+    `Membership webhook processed: ${parsed.eventType} for ${maskReference(parsed.referenceId)}`,
   );
 
-  if (didChange && statusFromEvent === "APPROVED") {
-    await deps.processApprovedPayment(transaction);
-  } else if (
-    didChange &&
-    (statusFromEvent === "REJECTED" || statusFromEvent === "FAILED")
-  ) {
-    await revertCreditIfUsed(
-      {
-        usersService: deps.usersService,
-        transactionModel: deps.transactionModel,
-        logger: deps.logger,
-      },
-      transaction,
-    );
-    await sendRejectionNotification(
-      deps.notificationsService,
-      transaction,
-      statusFromEvent,
-    );
-  }
+  await dispatchWebhookOutcome(deps, transaction, statusFromEvent, didChange);
 }

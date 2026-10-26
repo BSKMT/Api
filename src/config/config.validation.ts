@@ -156,6 +156,18 @@ export const configValidationSchema = Joi.object({
   CLOUDINARY_API_SECRET: Joi.string().allow("").default(""),
   CLOUDINARY_URL: Joi.string().allow("").default(""),
   CLOUDINARY_UPLOAD_PRESET: Joi.string().allow("").default(""),
+  CLOUDINARY_TIMEOUT_MS: Joi.number()
+    .integer()
+    .min(1000)
+    .max(120000)
+    .default(30000),
+
+  FIELD_ENCRYPTION_KEY: Joi.string().min(32).allow("").default(""),
+  PROFILE_TOKEN_SECRET: Joi.string().min(32).allow("").default(""),
+  CSRF_SECRET: Joi.string().min(32).allow("").default(""),
+  COOKIE_SAME_SITE: Joi.string().valid("lax", "strict", "none").default("lax"),
+  SECDEVOPS_ALERT_PHONE: Joi.string().allow("").default(""),
+  SECURITY_ALERT_PHONE: Joi.string().allow("").default(""),
 
   NODE_ENV: Joi.string()
     .valid("development", "production", "test")

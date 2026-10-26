@@ -44,7 +44,7 @@ export async function executeListUsers(
       .skip(skip)
       .limit(limit)
       .select(
-        "-settings -betterAuthId -pendingPhone -pendingEmail -identityVerification.verifikId",
+        "-settings -betterAuthId -pendingPhone -pendingEmail -identityVerification.verifikId -profile.salud-seguridad -profile.documentacion-legal",
       )
       .lean(),
     userModel.countDocuments(filter),

@@ -43,11 +43,20 @@ export class SecurityAuditService {
     @Optional()
     private readonly birdSmsService?: BirdSmsService,
   ) {
-    this.hmacSecret =
-      this.configService.get<string>("BETTER_AUTH_SECRET", { infer: true }) ??
-      "bskmt-default-audit-secret-min32ch";
+    const configuredSecret =
+      this.configService.get<string>("BETTER_AUTH_SECRET", { infer: true }) ||
+      process.env.BETTER_AUTH_SECRET;
+    if (!configuredSecret && process.env.NODE_ENV === "production") {
+      throw new Error(
+        "BETTER_AUTH_SECRET is required in production for SecurityAuditService",
+      );
+    }
+    this.hmacSecret = configuredSecret || `dev-test-audit-${process.pid}`;
     this.alertPhone =
       this.configService.get<string>("SECDEVOPS_ALERT_PHONE", {
+        infer: true,
+      }) ??
+      this.configService.get<string>("SECURITY_ALERT_PHONE", {
         infer: true,
       }) ??
       process.env.SECDEVOPS_ALERT_PHONE ??

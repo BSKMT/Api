@@ -1,6 +1,6 @@
 import { Logger } from "@nestjs/common";
 import { Db, ObjectId } from "mongodb";
-import type { BetterAuthUser } from "./better-auth.types";
+import type { BetterAuthSession, BetterAuthUser } from "./better-auth.types";
 import { maskEmail } from "../common/utils/log-redact.util";
 import {
   parseUserPersonalData,
@@ -10,6 +10,28 @@ import {
   cleanupOrphanBetterAuthUser,
 } from "./better-auth-user-sync.helper";
 import type { BirdContactService } from "../bird/bird-contact.service";
+
+const STAFF_PORTAL_ROLES = new Set(["admin", "superadmin", "gestor"]);
+
+async function isStaffOrSubroleUser(
+  mongoDb: Db,
+  betterAuthUserId: string,
+): Promise<boolean> {
+  if (!betterAuthUserId) return false;
+  const userDoc = await mongoDb
+    .collection("users")
+    .findOne(
+      { betterAuthId: betterAuthUserId },
+      { projection: { role: 1, subrol: 1 } },
+    );
+  if (!userDoc) return false;
+  const role = typeof userDoc["role"] === "string" ? userDoc["role"] : "";
+  const subrol: unknown = userDoc["subrol"];
+  return (
+    STAFF_PORTAL_ROLES.has(role) ||
+    (typeof subrol === "string" && subrol.trim().length > 0)
+  );
+}
 
 export function createBetterAuthHooks(
   mongoDb: Db,
@@ -138,6 +160,49 @@ export function createBetterAuthHooks(
               "[databaseHooks] Failed to sync emailVerified:",
               err,
             );
+          }
+        },
+      },
+    },
+    session: {
+      create: {
+        before: async (
+          session: BetterAuthSession,
+          ctx?: { path?: string },
+        ): Promise<BetterAuthSession> => {
+          const staffUser = await isStaffOrSubroleUser(mongoDb, session.userId);
+          if (staffUser) {
+            const path = ctx?.path ?? "";
+            if (
+              path.includes("/sign-in/social") ||
+              path.includes("/callback") ||
+              path.includes("/passkey/verify-authentication")
+            ) {
+              authLogger.warn(
+                `[databaseHooks] Bloqueando bypass 4FA en ${path} para userId=${session.userId}: marcando otpPending=true`,
+              );
+            }
+            session.otpPending = true;
+          }
+          return session;
+        },
+        after: async (
+          session: BetterAuthSession,
+          ctx?: { path?: string },
+        ): Promise<void> => {
+          const path = ctx?.path ?? "";
+          const isSocialOrPasskey =
+            path.includes("/sign-in/social") ||
+            path.includes("/callback") ||
+            path.includes("/passkey/verify-authentication");
+          const staffUser = await isStaffOrSubroleUser(mongoDb, session.userId);
+          if (staffUser && (isSocialOrPasskey || session.otpPending)) {
+            await mongoDb
+              .collection("session")
+              .updateOne(
+                { token: session.token },
+                { $set: { otpPending: true } },
+              );
           }
         },
       },

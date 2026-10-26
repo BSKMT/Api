@@ -15,22 +15,33 @@ describe("CloudinaryService (NIST CSF 2.0 GV.SC-07, PR.IR-04)", () => {
   let mockCloudinary: {
     config: jest.Mock;
     uploader: {
-      upload_stream: jest.Mock;
+      upload_stream: jest.Mock<
+        (
+          _opts: unknown,
+          callback: (err: unknown, result?: unknown) => void,
+        ) => Writable
+      >;
     };
   };
-  let mockConfigService: { get: jest.Mock };
+  let mockConfigService: { get: jest.Mock<(key: string) => unknown> };
   let mockUrlService: Partial<CloudinaryUrlService>;
 
   beforeEach(async () => {
     mockCloudinary = {
       config: jest.fn().mockReturnValue({ cloud_name: "test-cloud" }),
       uploader: {
-        upload_stream: jest.fn(),
+        upload_stream:
+          jest.fn<
+            (
+              _opts: unknown,
+              callback: (err: unknown, result?: unknown) => void,
+            ) => Writable
+          >(),
       },
     };
 
     mockConfigService = {
-      get: jest.fn((key: string) => {
+      get: jest.fn<(key: string) => unknown>((key: string) => {
         if (key === "CLOUDINARY_CLOUD_NAME") return "test-cloud";
         if (key === "CLOUDINARY_TIMEOUT_MS") return 100; // Fast timeout for test
         return null;
@@ -143,5 +154,52 @@ describe("CloudinaryService (NIST CSF 2.0 GV.SC-07, PR.IR-04)", () => {
     await expect(service.uploadFile({} as Express.Multer.File)).rejects.toThrow(
       BadRequestException,
     );
+  });
+
+  it("uploadFile rechaza archivos cuyos magic bytes no coinciden con el MIME declarado (PR-05)", async () => {
+    const fakePngFile = {
+      buffer: Buffer.from("not-a-real-png-header"),
+      mimetype: "image/png",
+    } as Express.Multer.File;
+
+    await expect(service.uploadFile(fakePngFile)).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it("uploadFile acepta archivos con magic bytes válidos (PNG)", async () => {
+    mockCloudinary.uploader.upload_stream.mockImplementation(
+      (_opts: unknown, callback: (err: unknown, result?: unknown) => void) => {
+        const stream = new Writable({
+          write(_chunk, _encoding, next) {
+            next();
+          },
+        });
+        process.nextTick(() => {
+          callback(null, {
+            public_id: "bskmt/avatars/png1",
+            url: "http://res.cloudinary.com/test/image/upload/png1.png",
+            secure_url: "https://res.cloudinary.com/test/image/upload/png1.png",
+            format: "png",
+            width: 100,
+            height: 100,
+            bytes: 512,
+            resourceType: "image",
+          });
+        });
+        return stream;
+      },
+    );
+
+    const validPngHeader = Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00,
+    ]);
+    const validPngFile = {
+      buffer: validPngHeader,
+      mimetype: "image/png",
+    } as Express.Multer.File;
+
+    const res = await service.uploadFile(validPngFile, { folder: "avatars" });
+    expect(res.publicId).toBe("bskmt/avatars/png1");
   });
 });

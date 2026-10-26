@@ -17,6 +17,7 @@ import {
 @Injectable()
 export class MembershipExpirationService {
   private readonly logger = new Logger(MembershipExpirationService.name);
+  private static readonly BATCH_SIZE = 20;
 
   constructor(
     @InjectModel(User.name)
@@ -25,6 +26,27 @@ export class MembershipExpirationService {
     @Optional()
     private readonly birdContactService?: BirdContactService,
   ) {}
+
+  private processInBatches<T>(
+    items: T[],
+    processor: (item: T) => Promise<void>,
+  ): Promise<void> {
+    const batches: T[][] = [];
+    for (
+      let i = 0;
+      i < items.length;
+      i += MembershipExpirationService.BATCH_SIZE
+    ) {
+      batches.push(items.slice(i, i + MembershipExpirationService.BATCH_SIZE));
+    }
+    return batches.reduce<Promise<void>>(
+      (chain, batch) =>
+        chain.then(async () => {
+          await Promise.all(batch.map((item) => processor(item)));
+        }),
+      Promise.resolve(),
+    );
+  }
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async handleMembershipExpiration() {
@@ -57,10 +79,8 @@ export class MembershipExpirationService {
     const gracePeriodEnd = new Date(now);
     gracePeriodEnd.setMonth(gracePeriodEnd.getMonth() + 1);
 
-    await Promise.all(
-      expiredMembers.map((member) =>
-        this.startGracePeriodFor(member, now, gracePeriodEnd),
-      ),
+    await this.processInBatches(expiredMembers, (member) =>
+      this.startGracePeriodFor(member, now, gracePeriodEnd),
     );
   }
 
@@ -125,8 +145,8 @@ export class MembershipExpirationService {
       `Found ${gracePeriodExpired.length} members with expired grace period. Reverting to user role...`,
     );
 
-    await Promise.all(
-      gracePeriodExpired.map((member) => this.revokeExpiredMember(member, now)),
+    await this.processInBatches(gracePeriodExpired, (member) =>
+      this.revokeExpiredMember(member, now),
     );
   }
 

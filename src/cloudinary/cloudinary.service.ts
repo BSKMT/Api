@@ -14,7 +14,12 @@ import {
 } from "cloudinary";
 import { Readable } from "node:stream";
 import { CLOUDINARY } from "./cloudinary.constants";
-import { CloudinaryUrlService } from "./cloudinary-url.service";
+import {
+  CloudinaryUrlService,
+  mapCloudinaryUploadResponse,
+  buildCloudinaryUploadOptions,
+} from "./cloudinary-url.service";
+import { validateFileMagicBytes } from "./cloudinary.utils";
 import type {
   CloudinaryUploadResult,
   UploadOptions,
@@ -41,6 +46,37 @@ export class CloudinaryService {
     private readonly urlService: CloudinaryUrlService,
   ) {}
 
+  private get uploadTimeoutMs(): number {
+    return this.configService.get<number>("CLOUDINARY_TIMEOUT_MS") ?? 30000;
+  }
+
+  private async withTimeout<T>(
+    promise: Promise<T>,
+    operation: string,
+  ): Promise<T> {
+    const timeoutMs = this.uploadTimeoutMs;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            this.logger.error(
+              `Timeout de comunicación con Cloudinary (${timeoutMs}ms) en ${operation}`,
+            );
+            reject(
+              new ServiceUnavailableException(
+                "Tiempo de espera agotado al comunicar con el servicio de almacenamiento multimedia (Cloudinary).",
+              ),
+            );
+          }, timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   public isConfigured(): boolean {
     const cloudName =
       this.configService.get<string>("CLOUDINARY_CLOUD_NAME") ||
@@ -48,40 +84,25 @@ export class CloudinaryService {
     return Boolean(cloudName);
   }
 
-  private buildMetadataString(options: UploadOptions): string | undefined {
-    const entries: string[] = [];
-    if (options.folder) {
-      entries.push(`bsk_module=${options.folder}`);
-    }
-    if (options.metadata) {
-      for (const [k, v] of Object.entries(options.metadata)) {
-        if (v) entries.push(`${k}=${v}`);
-      }
-    }
-    return entries.length > 0 ? entries.join("|") : undefined;
-  }
-
-  async uploadBuffer(
-    buffer: Buffer,
-    options: UploadOptions = {},
-  ): Promise<CloudinaryUploadResult> {
+  private assertConfigured(): void {
     if (!this.isConfigured()) {
       this.logger.error("Cloudinary credentials are not configured.");
       throw new ServiceUnavailableException(
         "El servicio de almacenamiento multimedia (Cloudinary) no está configurado.",
       );
     }
+  }
 
-    const folderName = options.folder
-      ? `bskmt/${options.folder}`
-      : "bskmt/general";
-    const metadataString = this.buildMetadataString(options);
-    const timeoutMs =
-      this.configService.get<number>("CLOUDINARY_TIMEOUT_MS") ?? 30000;
+  async uploadBuffer(
+    buffer: Buffer,
+    options: UploadOptions = {},
+  ): Promise<CloudinaryUploadResult> {
+    this.assertConfigured();
+    const uploadParams = buildCloudinaryUploadOptions(options);
+    const timeoutMs = this.uploadTimeoutMs;
 
     return new Promise((resolve, reject) => {
       let isSettled = false;
-
       // NIST CSF 2.0 PR.IR-04 & GV.SC-07: Resiliencia ante fallos/stalling de terceros
       const timer = setTimeout(() => {
         if (isSettled) return;
@@ -104,23 +125,11 @@ export class CloudinaryService {
       }, timeoutMs);
 
       const uploadStream = this.cloudinary.uploader.upload_stream(
-        {
-          folder: folderName,
-          public_id: options.publicId,
-          tags: options.tags || ["bskmt"],
-          resource_type: options.resourceType || "auto",
-          sanitize: true,
-          transformation: options.transformation || [
-            { quality: "auto", fetch_format: "auto" },
-          ],
-          ...(metadataString ? { metadata: metadataString } : {}),
-          ...(options.context ? { context: options.context } : {}),
-        },
+        uploadParams,
         (error?: UploadApiErrorResponse, result?: UploadApiResponse) => {
           if (isSettled) return;
           isSettled = true;
           clearTimeout(timer);
-
           if (error || !result) {
             this.logger.error(
               `Cloudinary upload error: ${error?.message || "Unknown error"}`,
@@ -132,17 +141,7 @@ export class CloudinaryService {
               ),
             );
           }
-
-          resolve({
-            publicId: result.public_id,
-            url: result.url,
-            secureUrl: result.secure_url,
-            format: result.format,
-            width: result.width,
-            height: result.height,
-            bytes: result.bytes,
-            resourceType: result.resource_type,
-          });
+          resolve(mapCloudinaryUploadResponse(result));
         },
       );
 
@@ -162,19 +161,18 @@ export class CloudinaryService {
         "No se ha proporcionado un archivo válido.",
       );
     }
-    return this.uploadBuffer(file.buffer, options);
+    const buffer = file.buffer;
+    const mimetype =
+      typeof file.mimetype === "string" ? file.mimetype : undefined;
+    validateFileMagicBytes(buffer, mimetype);
+    return this.uploadBuffer(buffer, options);
   }
 
   async uploadBase64(
     base64Data: string,
     options: UploadOptions = {},
   ): Promise<CloudinaryUploadResult> {
-    if (!this.isConfigured()) {
-      throw new ServiceUnavailableException(
-        "El servicio de almacenamiento multimedia no está configurado.",
-      );
-    }
-
+    this.assertConfigured();
     if (
       typeof base64Data !== "string" ||
       !/^data:(image\/(jpeg|png|webp|gif)|application\/pdf);base64,[A-Za-z0-9+/=]+$/.test(
@@ -186,36 +184,17 @@ export class CloudinaryService {
       );
     }
 
-    const folderName = options.folder
-      ? `bskmt/${options.folder}`
-      : "bskmt/general";
-    const metadataString = this.buildMetadataString(options);
-
     try {
-      const result = await this.cloudinary.uploader.upload(base64Data, {
-        folder: folderName,
-        public_id: options.publicId,
-        tags: options.tags || ["bskmt"],
-        resource_type: options.resourceType || "auto",
-        sanitize: true,
-        transformation: options.transformation || [
-          { quality: "auto", fetch_format: "auto" },
-        ],
-        ...(metadataString ? { metadata: metadataString } : {}),
-        ...(options.context ? { context: options.context } : {}),
-      });
-
-      return {
-        publicId: result.public_id,
-        url: result.url,
-        secureUrl: result.secure_url,
-        format: result.format,
-        width: result.width,
-        height: result.height,
-        bytes: result.bytes,
-        resourceType: result.resource_type,
-      };
+      const result = await this.withTimeout(
+        this.cloudinary.uploader.upload(
+          base64Data,
+          buildCloudinaryUploadOptions(options),
+        ),
+        "uploadBase64",
+      );
+      return mapCloudinaryUploadResponse(result);
     } catch (err: unknown) {
+      if (err instanceof ServiceUnavailableException) throw err;
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`Error uploading base64 to Cloudinary: ${msg}`);
       throw new BadRequestException(
@@ -228,17 +207,16 @@ export class CloudinaryService {
     publicId: string,
     options: { resourceType?: "image" | "video" | "raw" } = {},
   ): Promise<{ result: string }> {
-    if (!this.isConfigured()) {
-      throw new ServiceUnavailableException(
-        "El servicio de almacenamiento multimedia no está configurado.",
-      );
-    }
-
+    this.assertConfigured();
     try {
-      return (await this.cloudinary.uploader.destroy(publicId, {
-        resource_type: options.resourceType || "image",
-      })) as { result: string };
+      return (await this.withTimeout(
+        this.cloudinary.uploader.destroy(publicId, {
+          resource_type: options.resourceType || "image",
+        }),
+        "deleteFile",
+      )) as { result: string };
     } catch (err: unknown) {
+      if (err instanceof ServiceUnavailableException) throw err;
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`Error deleting asset ${publicId}: ${msg}`);
       throw new BadRequestException(

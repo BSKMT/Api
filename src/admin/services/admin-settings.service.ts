@@ -14,6 +14,7 @@ import {
 } from "../../notifications/schemas/notification.schema";
 import { getMongoDb } from "../../auth/better-auth";
 import { ObjectId } from "mongodb";
+import { maskEmail } from "../../common/utils/log-redact.util";
 @Injectable()
 export class AdminSettingsService {
   private readonly logger = new Logger(AdminSettingsService.name);
@@ -199,7 +200,7 @@ export class AdminSettingsService {
     await this.userModel.deleteOne({ _id: userId });
 
     this.logger.log(
-      `Account permanently deleted by admin: userId=${userId} email=${user.email} actor=${actorId}`,
+      `Account permanently deleted by admin: userId=${userId} email=${maskEmail(user.email)} actor=${actorId}`,
     );
     return { success: true, message: "Cuenta eliminada permanentemente" };
   }

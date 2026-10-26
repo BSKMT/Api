@@ -39,6 +39,7 @@ export function sanitizeFolder(folder?: string): CloudinaryFolder {
 
 export const STAFF_ROLES: readonly string[] = [
   "admin",
+  "superadmin",
   "event-manager",
   "moderator",
   "road-captain",
@@ -48,16 +49,87 @@ export const STAFF_ROLES: readonly string[] = [
 
 export const STAFF_SUBROLES: readonly string[] = Object.values(UserSubrole);
 
+export function isAdminOrSuperAdmin(role?: string): boolean {
+  if (!role) return false;
+  const normalized = role.toLowerCase().trim();
+  return normalized === "admin" || normalized === "superadmin";
+}
+
 export function isStaffUser(role?: string, subrol?: string | null): boolean {
   if (role) {
     const normalized = role.toLowerCase().trim();
-    if (STAFF_ROLES.includes(normalized) || normalized === "admin") return true;
+    if (STAFF_ROLES.includes(normalized)) return true;
   }
   if (subrol) {
     const normalizedSub = subrol.toLowerCase().trim();
     if (STAFF_SUBROLES.includes(normalizedSub)) return true;
   }
   return false;
+}
+
+const MAGIC_BYTES_MATCHERS: Record<string, (buf: Buffer) => boolean> = {
+  "image/jpeg": (buf) =>
+    buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff,
+  "image/png": (buf) =>
+    buf.length >= 8 &&
+    buf[0] === 0x89 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x4e &&
+    buf[3] === 0x47 &&
+    buf[4] === 0x0d &&
+    buf[5] === 0x0a &&
+    buf[6] === 0x1a &&
+    buf[7] === 0x0a,
+  "image/gif": (buf) => {
+    if (buf.length < 6) return false;
+    const header = buf.subarray(0, 6).toString("ascii");
+    return header === "GIF87a" || header === "GIF89a";
+  },
+  "image/webp": (buf) =>
+    buf.length >= 12 &&
+    buf.subarray(0, 4).toString("ascii") === "RIFF" &&
+    buf.subarray(8, 12).toString("ascii") === "WEBP",
+  "image/avif": (buf) => {
+    if (buf.length < 12) return false;
+    const boxType = buf.subarray(4, 8).toString("ascii");
+    const brand = buf.subarray(8, 12).toString("ascii");
+    return (
+      boxType === "ftyp" && ["avif", "avis", "mif1", "msf1"].includes(brand)
+    );
+  },
+  "application/pdf": (buf) =>
+    buf.length >= 5 && buf.subarray(0, 5).toString("ascii") === "%PDF-",
+};
+
+export function validateFileMagicBytes(
+  buffer: Buffer,
+  mimetype?: string,
+): void {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 3) {
+    throw new BadRequestException(
+      "El contenido binario del archivo es inválido o está vacío.",
+    );
+  }
+
+  if (mimetype) {
+    const normalizedMime = mimetype.toLowerCase().trim();
+    const matcher = MAGIC_BYTES_MATCHERS[normalizedMime];
+    if (!matcher?.(buffer)) {
+      throw new BadRequestException(
+        "El contenido binario del archivo (magic bytes) no coincide con el tipo MIME declarado.",
+      );
+    }
+    return;
+  }
+
+  const matchesAny = Object.values(MAGIC_BYTES_MATCHERS).some((fn) =>
+    fn(buffer),
+  );
+  if (!matchesAny) {
+    throw new BadRequestException(
+      "El contenido binario del archivo (magic bytes) no corresponde a un formato permitido.",
+    );
+  }
 }
 
 export function assertFolderAccess(

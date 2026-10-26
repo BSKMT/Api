@@ -17,7 +17,7 @@ export function assertChannelAuthorized(
     const isOwner =
       channelOwner === betterAuthId ||
       (Boolean(userId) && channelOwner === userId);
-    if (!isOwner && role !== "admin") {
+    if (!isOwner && role !== "admin" && role !== "superadmin") {
       throw new ForbiddenException(
         "No tienes autorización para unirte a este canal personal de usuario",
       );
@@ -29,7 +29,7 @@ export function assertChannelAuthorized(
     channelName.startsWith("private-admin") ||
     channelName.startsWith("presence-admin")
   ) {
-    if (role !== "admin") {
+    if (role !== "admin" && role !== "superadmin") {
       throw new ForbiddenException(
         "Acceso denegado a canales de administración",
       );

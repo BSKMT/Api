@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeEach, jest } from "@jest/globals";
-import { BadRequestException, HttpStatus, ArgumentsHost } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  HttpStatus,
+  ArgumentsHost,
+} from "@nestjs/common";
 
 import { GlobalExceptionFilter } from "./global-exception.filter";
+import type { SecurityAuditService } from "../audit/security-audit.service";
 import type { Request, Response } from "express";
 
 describe("GlobalExceptionFilter (NIST CSF 2.0 DE.AE-03, RS.AN-03, RS.AN-07)", () => {
@@ -86,6 +92,27 @@ describe("GlobalExceptionFilter (NIST CSF 2.0 DE.AE-03, RS.AN-03, RS.AN-07)", ()
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
         message: ["Error interno del servidor"],
         requestId: "req-500-unhandled",
+      }),
+    );
+  });
+
+  it("registra anomalías 403 en SecurityAuditService con requestId (DE-01)", () => {
+    const recordEvent = jest.fn().mockReturnValue(Promise.resolve(null));
+    const auditedFilter = new GlobalExceptionFilter({
+      recordEvent,
+    } as unknown as SecurityAuditService);
+    const { host, resStatus } = createMockHost({
+      "x-request-id": "req-403-audit",
+    });
+
+    auditedFilter.catch(new ForbiddenException("Sin permisos"), host);
+
+    expect(resStatus).toHaveBeenCalledWith(HttpStatus.FORBIDDEN);
+    expect(recordEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestId: "req-403-audit",
+        eventType: "ACCESS_FORBIDDEN",
+        statusCode: HttpStatus.FORBIDDEN,
       }),
     );
   });

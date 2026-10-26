@@ -53,12 +53,15 @@ export class ContactService {
   async handleContact(
     dto: ContactDto,
     clientIp?: string,
+    edgeTurnstileVerified = false,
   ): Promise<{
     message: string;
     delivered: boolean;
     ticketNumber?: string;
   }> {
-    await verifyTurnstileToken(dto.captchaToken, clientIp, this.logger);
+    if (!edgeTurnstileVerified) {
+      await verifyTurnstileToken(dto.captchaToken, clientIp, this.logger);
+    }
 
     let ticketNumber: string | undefined;
     try {

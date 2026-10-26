@@ -1,6 +1,17 @@
-import { IsEmail, IsString, IsIn, MinLength, MaxLength } from "class-validator";
+import {
+  IsEmail,
+  IsString,
+  IsIn,
+  IsOptional,
+  MinLength,
+  MaxLength,
+} from "class-validator";
 
 export class B2bContactDto {
+  @IsOptional()
+  @IsString()
+  turnstileToken?: string;
+
   @IsString({ message: "El nombre de la empresa debe ser texto" })
   @MinLength(2, {
     message: "El nombre de la empresa debe tener al menos 2 caracteres",

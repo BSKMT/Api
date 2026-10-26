@@ -14,16 +14,17 @@ export class CloudflareThrottlerGuard extends ThrottlerGuard {
       string,
       string | string[] | undefined
     >;
-    const cfIpRaw = headers["cf-connecting-ip"];
-    const cfIp = Array.isArray(cfIpRaw) ? cfIpRaw[0] : cfIpRaw;
-    if (typeof cfIp === "string" && cfIp.trim().length > 0) {
-      return Promise.resolve(cfIp.trim());
-    }
+    const canTrustCfHeader =
+      req.cfOriginVerified === true ||
+      process.env.NODE_ENV !== "production" ||
+      Boolean(process.env.CF_ORIGIN_SECRET?.trim());
 
-    const realIpRaw = headers["x-real-ip"];
-    const realIp = Array.isArray(realIpRaw) ? realIpRaw[0] : realIpRaw;
-    if (typeof realIp === "string" && realIp.trim().length > 0) {
-      return Promise.resolve(realIp.trim());
+    if (canTrustCfHeader) {
+      const cfIpRaw = headers["cf-connecting-ip"];
+      const cfIp = Array.isArray(cfIpRaw) ? cfIpRaw[0] : cfIpRaw;
+      if (typeof cfIp === "string" && cfIp.trim().length > 0) {
+        return Promise.resolve(cfIp.trim());
+      }
     }
 
     const ip =

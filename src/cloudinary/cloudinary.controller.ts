@@ -16,6 +16,7 @@ import {
   Req,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+import { Throttle } from "@nestjs/throttler";
 import { CloudinaryService } from "./cloudinary.service";
 import { Public } from "../common/decorators/public.decorator";
 import {
@@ -26,6 +27,7 @@ import {
 import {
   sanitizeFolder,
   isStaffUser,
+  isAdminOrSuperAdmin,
   assertFolderAccess,
   buildTagsAndMetadata,
   validateSignatureParams,
@@ -34,6 +36,7 @@ import {
 import type { AuthenticatedRequest } from "./cloudinary.utils";
 
 @Controller("cloudinary")
+@Throttle({ default: { ttl: 60000, limit: 15 } })
 export class CloudinaryController {
   constructor(private readonly cloudinaryService: CloudinaryService) {}
 
@@ -183,6 +186,26 @@ export class CloudinaryController {
     if (!resolvedPublicId) {
       throw new BadRequestException(
         "El publicId del archivo a eliminar es requerido.",
+      );
+    }
+
+    if (
+      !resolvedPublicId.startsWith("bskmt/") ||
+      resolvedPublicId.includes("..")
+    ) {
+      throw new ForbiddenException(
+        "Solo se permite eliminar recursos ubicados dentro del prefijo 'bskmt/'.",
+      );
+    }
+
+    const userRole = req.user?.role;
+    if (
+      (resolvedPublicId.startsWith("bskmt/documents/") ||
+        resolvedPublicId.startsWith("bskmt/profiles/")) &&
+      !isAdminOrSuperAdmin(typeof userRole === "string" ? userRole : undefined)
+    ) {
+      throw new ForbiddenException(
+        "Solo Administradores o Superadministradores pueden eliminar documentos o perfiles en Cloudinary.",
       );
     }
 

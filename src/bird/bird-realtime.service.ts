@@ -4,6 +4,7 @@ import {
   type BirdClientInstance,
   type BirdRealtimeChannelInfo,
 } from "./bird.service";
+import type { BirdWebhookEvent } from "./bird-realtime.interfaces";
 import { sanitizeForLog } from "../common/utils/log-redact.util";
 
 /**
@@ -222,12 +223,7 @@ export class BirdRealtimeService {
   async verifyWebhook(
     rawBody: Buffer | string,
     headers: Record<string, string | string[] | undefined>,
-  ): Promise<{
-    id: string;
-    type: string;
-    timestamp: string;
-    data: Record<string, unknown>;
-  } | null> {
+  ): Promise<BirdWebhookEvent | null> {
     const webhookSecret = this.birdService.getWebhookSecret();
     if (!webhookSecret) {
       this.logger.warn(

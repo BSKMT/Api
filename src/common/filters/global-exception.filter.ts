@@ -79,6 +79,16 @@ function extractRequestId(req?: Request): string {
     : (req as Request & { id?: string }).id || "unknown";
 }
 
+function resolveSecurityEventType(status: number): string {
+  if (status === Number(HttpStatus.TOO_MANY_REQUESTS)) {
+    return "RATE_LIMIT_EXCEEDED";
+  }
+  if (status === Number(HttpStatus.FORBIDDEN)) {
+    return "ACCESS_FORBIDDEN";
+  }
+  return "UNAUTHORIZED_ACCESS";
+}
+
 /**
  * Filtro global de excepciones con correlación y auditoría inmutable de incidentes.
  * Satisface NIST CSF 2.0 DE.AE-03, RS.AN-03, RS.AN-06 y RS.AN-07.
@@ -115,10 +125,43 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           requestId,
           eventType: "HTTP_SERVER_ERROR",
           severity: AuditSeverity.ERROR,
-          clientIp: request.ip || "unknown",
-          method: request.method || "UNKNOWN",
-          path: request.originalUrl || request.url || "unknown",
+          clientIp: request?.ip || "unknown",
+          method: request?.method || "UNKNOWN",
+          path: request?.originalUrl || request?.url || "unknown",
           statusCode: status,
+          details: { message },
+        });
+      }
+    } else if (
+      status === Number(HttpStatus.UNAUTHORIZED) ||
+      status === Number(HttpStatus.FORBIDDEN) ||
+      status === Number(HttpStatus.TOO_MANY_REQUESTS)
+    ) {
+      const eventType = resolveSecurityEventType(status);
+      this.logger.warn(
+        JSON.stringify({
+          event: eventType,
+          statusCode: status,
+          requestId,
+          path: request?.originalUrl || request?.url || "unknown",
+          clientIp: request?.ip || "unknown",
+          message,
+        }),
+      );
+
+      if (this.auditService) {
+        void this.auditService.recordEvent({
+          requestId,
+          eventType,
+          severity: AuditSeverity.WARN,
+          clientIp: request?.ip || "unknown",
+          method: request?.method || "UNKNOWN",
+          path: request?.originalUrl || request?.url || "unknown",
+          statusCode: status,
+          userId:
+            (request as Request & { user?: { userId?: string } })?.user
+              ?.userId ?? null,
+          userAgent: request?.headers?.["user-agent"] ?? null,
           details: { message },
         });
       }

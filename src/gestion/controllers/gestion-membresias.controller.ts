@@ -12,6 +12,8 @@ import {
   HttpStatus,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
+  Optional,
   Logger,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
@@ -23,9 +25,15 @@ import { RequireSubroles } from "../../common/decorators/subroles.decorator";
 import {
   User,
   UserDocument,
+  UserRole,
   UserSubrole,
 } from "../../users/schemas/user.schema";
 import { ParseObjectIdPipe } from "../../common/pipes/parse-object-id.pipe";
+import { KvCacheService } from "../../kv/kv-cache.service";
+import {
+  SecurityAuditService,
+  AuditSeverity,
+} from "../../common/audit/security-audit.service";
 
 interface AuthenticatedRequest extends Request {
   user: {
@@ -45,6 +53,8 @@ export class GestionMembresiasController {
   constructor(
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
+    @Optional() private readonly kvCache?: KvCacheService,
+    @Optional() private readonly securityAudit?: SecurityAuditService,
   ) {}
 
   @Get("members")
@@ -138,6 +148,18 @@ export class GestionMembresiasController {
       throw new NotFoundException("Usuario no encontrado");
     }
 
+    const targetRole = (user.role ?? "").toLowerCase();
+    if (
+      targetRole === (UserRole.ADMIN as string) ||
+      targetRole === (UserRole.SUPERADMIN as string) ||
+      targetRole === (UserRole.GESTOR as string) ||
+      Boolean(user.subrol)
+    ) {
+      throw new ForbiddenException(
+        "No está permitido verificar manualmente cuentas administrativas o de colaboradores.",
+      );
+    }
+
     const existingKyc = user.identityVerification;
     const personal = user.profile?.["datos-personales"] as
       Record<string, unknown> | undefined;
@@ -172,6 +194,30 @@ export class GestionMembresiasController {
       verificationMethod: "manual_gestion",
     };
     await user.save();
+
+    if (user.betterAuthId && this.kvCache) {
+      await this.kvCache.delete(`user:ba:${user.betterAuthId}`, true);
+    }
+
+    if (this.securityAudit) {
+      await this.securityAudit.recordEvent({
+        requestId:
+          (req.headers?.["x-request-id"] as string | undefined) || "manual-kyc",
+        eventType: "MANUAL_IDENTITY_VERIFICATION",
+        severity: AuditSeverity.WARN,
+        clientIp: req.ip || "unknown",
+        method: req.method || "POST",
+        path:
+          req.originalUrl || req.url || `/api/gestion/membresias/verify/${id}`,
+        statusCode: HttpStatus.OK,
+        userId: req.user.userId,
+        userAgent: req.headers?.["user-agent"] ?? null,
+        details: {
+          verifiedUserId: String(user._id),
+          verificationMethod: "manual_gestion",
+        },
+      });
+    }
 
     this.logger.log(
       `Identity manually verified for user ${id} by gestor ${req.user.userId}`,

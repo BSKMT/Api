@@ -2,6 +2,7 @@ import { Logger } from "@nestjs/common";
 import type { BirdWebhookEvent } from "./bird-realtime.interfaces";
 import type { TicketsService } from "../tickets/tickets.service";
 import { TicketChannel } from "../tickets/schemas/ticket.schema";
+import { maskEmail, maskPhone } from "../common/utils/log-redact.util";
 
 function getNestedProperty(obj: unknown, path: string): string | undefined {
   if (!obj || typeof obj !== "object") return undefined;
@@ -147,8 +148,11 @@ export async function handleWebhookInboundMessage(
       return;
     }
 
+    const maskedSender = extracted.from.includes("@")
+      ? maskEmail(extracted.from)
+      : maskPhone(extracted.from);
     logger.log(
-      `Mensaje entrante detectado vía Webhook Bird (${extracted.channel}) de ${extracted.from}: "${extracted.text.slice(0, 40)}"`,
+      `Mensaje entrante detectado vía Webhook Bird (${extracted.channel}) de ${maskedSender} (len=${extracted.text.length})`,
     );
 
     await ticketsService.handleInboundMessage({

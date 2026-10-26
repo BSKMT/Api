@@ -137,6 +137,15 @@ export class GestionCursosController {
       "Estudiante",
     );
 
+    const attendeeSummary = (checkedInByName?: string | null) => ({
+      name: attendee.name,
+      email: attendee.email,
+      phone: attendee.phone,
+      checkInCode: enrollment.checkInCode,
+      attendedAt: enrollment.attendedAt,
+      checkedInByName,
+    });
+
     if (enrollment.attendanceConfirmed) {
       return {
         success: false,
@@ -149,32 +158,16 @@ export class GestionCursosController {
               })
             : "en campo"
         }).`,
-        attendee: {
-          name: attendee.name,
-          email: attendee.email,
-          phone: attendee.phone,
-          checkInCode: enrollment.checkInCode,
-          attendedAt: enrollment.attendedAt,
-          checkedInByName: enrollment.checkedInByName,
-        },
+        attendee: attendeeSummary(enrollment.checkedInByName),
         enrollment,
       };
     }
-
     const checkedByName = await applyCourseCheckIn(enrollment, req.user);
-
     return {
       success: true,
       alreadyCheckedIn: false,
       message: `¡Asistencia confirmada para ${attendee.name}!`,
-      attendee: {
-        name: attendee.name,
-        email: attendee.email,
-        phone: attendee.phone,
-        checkInCode: enrollment.checkInCode,
-        attendedAt: enrollment.attendedAt,
-        checkedInByName: checkedByName,
-      },
+      attendee: attendeeSummary(checkedByName),
       enrollment,
     };
   }
@@ -188,16 +181,12 @@ export class GestionCursosController {
     @Req() req: AuthenticatedGestionRequest,
   ) {
     const enrollment = await this.enrollmentModel.findById(id);
-    if (!enrollment) {
+    if (!enrollment)
       throw new NotFoundException("Matrícula a curso no encontrada");
-    }
-
     const course = await this.courseModel.findOne({
       slug: enrollment.courseSlug,
     });
-    if (!course) {
-      throw new NotFoundException("Curso asociado no encontrado");
-    }
+    if (!course) throw new NotFoundException("Curso asociado no encontrado");
 
     authorizeCourseCoordinator(course, req.user);
     await applyCourseCheckIn(enrollment, req.user);
@@ -216,16 +205,26 @@ export class GestionCursosController {
   async updateProgress(
     @Param("id", ParseObjectIdPipe) id: string,
     @Body() dto: UpdateCourseProgressDto,
+    @Req() req: AuthenticatedGestionRequest,
   ) {
     const enrollment = await this.enrollmentModel.findById(id);
-    if (!enrollment) {
+    if (!enrollment)
       throw new NotFoundException("Inscripción a curso no encontrada");
+    const course = await this.courseModel.findOne({
+      slug: enrollment.courseSlug,
+    });
+    if (!course) throw new NotFoundException("Curso asociado no encontrado");
+
+    authorizeCourseCoordinator(course, req.user);
+
+    if (!enrollment.paymentConfirmed) {
+      throw new BadRequestException(
+        "El pago de la matrícula de este estudiante no ha sido confirmado.",
+      );
     }
 
     enrollment.progress = Math.min(Math.max(dto.progress, 0), 100);
-    if (dto.status) {
-      enrollment.status = dto.status;
-    }
+    if (dto.status) enrollment.status = dto.status;
     if (enrollment.progress >= 100) {
       enrollment.status = "COMPLETED";
       enrollment.completedAt = new Date();

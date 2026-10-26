@@ -163,6 +163,15 @@ export interface EnvironmentConfig {
   CLOUDINARY_API_SECRET?: string;
   CLOUDINARY_URL?: string;
   CLOUDINARY_UPLOAD_PRESET?: string;
+  CLOUDINARY_TIMEOUT_MS?: number;
+
+  /** Cryptographic & Cookie Governance (NIST CSF 2.0 GV.SC-07, PR.DS-01) */
+  FIELD_ENCRYPTION_KEY?: string;
+  PROFILE_TOKEN_SECRET?: string;
+  CSRF_SECRET?: string;
+  COOKIE_SAME_SITE?: string;
+  SECDEVOPS_ALERT_PHONE?: string;
+  SECURITY_ALERT_PHONE?: string;
 
   /**
    * VULN-17: Shared secret injected by Cloudflare Transform Rules (`X-CF-Origin-Secret`)

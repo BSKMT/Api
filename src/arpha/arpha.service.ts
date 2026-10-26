@@ -43,7 +43,6 @@ export class ArphaService {
       userId,
       status: { $in: ACTIVE_ARPHA_STATUSES },
     });
-
     if (activeRequest) {
       throw new BadRequestException(
         "Ya tienes una solicitud de asistencia activa",
@@ -54,7 +53,6 @@ export class ArphaService {
       dto.requestType,
       membershipLevel,
     );
-
     const request = new this.arphaRequestModel({
       userId,
       requestType: dto.requestType,
@@ -74,12 +72,7 @@ export class ArphaService {
     try {
       saved = await request.save();
     } catch (err: unknown) {
-      if (
-        err &&
-        typeof err === "object" &&
-        "code" in err &&
-        (err as { code: number }).code === 11000
-      ) {
+      if ((err as { code?: number })?.code === 11000) {
         throw new ConflictException(
           "Ya tienes una solicitud de asistencia activa",
         );
@@ -90,14 +83,9 @@ export class ArphaService {
     this.logger.log(
       `ARPHA request created: id=${String(saved._id)} user=${userId} type=${dto.requestType} amount=${amount}`,
     );
-
     return {
       request: saved,
-      pricing: {
-        amount,
-        isMember,
-        requiresPayment: !isMember && amount > 0,
-      },
+      pricing: { amount, isMember, requiresPayment: !isMember && amount > 0 },
     };
   }
 
@@ -108,6 +96,7 @@ export class ArphaService {
   ): Promise<{ message: string }> {
     const isLeaderOrAdmin =
       callerUser?.role === UserRole.ADMIN ||
+      callerUser?.role === UserRole.SUPERADMIN ||
       callerUser?.subrol === UserSubrole.LIDER_ARPHA;
 
     const query = isLeaderOrAdmin
@@ -115,9 +104,7 @@ export class ArphaService {
       : { _id: requestId, userId };
 
     const request = await this.arphaRequestModel.findOne(query);
-    if (!request) {
-      throw new NotFoundException("Solicitud no encontrada");
-    }
+    if (!request) throw new NotFoundException("Solicitud no encontrada");
 
     if (
       request.status === ArphaRequestStatus.COMPLETED ||
@@ -143,7 +130,6 @@ export class ArphaService {
     this.logger.log(
       `ARPHA request cancelled: id=${requestId} by user=${userId}`,
     );
-
     return { message: "Solicitud cancelada exitosamente" };
   }
 
@@ -156,21 +142,15 @@ export class ArphaService {
       _id: requestId,
       userId,
     });
-
-    if (!request) {
-      throw new NotFoundException("Solicitud no encontrada");
-    }
-
+    if (!request) throw new NotFoundException("Solicitud no encontrada");
     if (request.status !== ArphaRequestStatus.COMPLETED) {
       throw new BadRequestException(
         "Solo se pueden calificar solicitudes completadas",
       );
     }
-
     if (request.rating !== null) {
       throw new BadRequestException("Ya has calificado esta solicitud");
     }
-
     request.rating = dto.rating;
     request.comment = dto.comment ?? null;
     return request.save();
@@ -184,19 +164,14 @@ export class ArphaService {
       .find({ userId })
       .sort({ createdAt: -1 })
       .lean();
-
-    const active = requests.filter(
-      (r) =>
-        r.status === ArphaRequestStatus.PENDING ||
-        r.status === ArphaRequestStatus.EN_CAMINO ||
-        r.status === ArphaRequestStatus.EN_SITIO,
+    const active = requests.filter((r) =>
+      (ACTIVE_ARPHA_STATUSES as readonly string[]).includes(r.status),
     );
     const history = requests.filter(
       (r) =>
         r.status === ArphaRequestStatus.COMPLETED ||
         r.status === ArphaRequestStatus.CANCELLED,
     );
-
     return { active, history };
   }
 
@@ -211,9 +186,7 @@ export class ArphaService {
     requestId: string,
     userId: string,
   ): Promise<ArphaRequestDocument | null> {
-    if (!requestId || !/^[a-f\d]{24}$/i.test(requestId)) {
-      return null;
-    }
+    if (!requestId || !/^[a-f\d]{24}$/i.test(requestId)) return null;
     return this.arphaRequestModel.findOne({
       _id: requestId,
       userId,
@@ -232,9 +205,7 @@ export class ArphaService {
       _id: requestId,
       userId,
     });
-    if (!existing) {
-      throw new NotFoundException("Solicitud no encontrada");
-    }
+    if (!existing) throw new NotFoundException("Solicitud no encontrada");
     if (
       typeof paidAmount === "number" &&
       existing.amount > 0 &&
@@ -250,21 +221,14 @@ export class ArphaService {
 
     const request = await this.arphaRequestModel.findOneAndUpdate(
       { _id: requestId, userId },
-      {
-        transactionReference,
-        paymentConfirmed: true,
-      },
+      { transactionReference, paymentConfirmed: true },
       { new: true },
     );
-
-    if (!request) {
-      throw new NotFoundException("Solicitud no encontrada");
-    }
+    if (!request) throw new NotFoundException("Solicitud no encontrada");
 
     this.logger.log(
       `ARPHA payment linked: id=${requestId} ref=${transactionReference}`,
     );
-
     return request;
   }
 
@@ -273,7 +237,6 @@ export class ArphaService {
       requestType,
       membershipLevel,
     );
-
     return {
       amount,
       isMember,

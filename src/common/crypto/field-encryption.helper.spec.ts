@@ -7,6 +7,7 @@ import {
   decryptUserProfileSensitiveFields,
   isEncryptedField,
 } from "./field-encryption.helper";
+import { decryptSensitiveProfileFields } from "../../users/schemas/user.schema";
 
 describe("FieldEncryptionHelper (NIST PR.DS-01, Ley 1581 de 2012)", () => {
   const testSecret = "test-secret-key-32-characters-minimum-length!";
@@ -124,5 +125,16 @@ describe("FieldEncryptionHelper (NIST PR.DS-01, Ley 1581 de 2012)", () => {
       licenciaConduccionNumero: "1020304050",
       licenciaConduccionCategoria: "A2",
     });
+  });
+
+  it("should decrypt sensitive profile fields on lean documents via decryptSensitiveProfileFields (ID-01)", () => {
+    const leanDoc = {
+      profile: {
+        "salud-seguridad": encryptSensitiveField({ eps: "Sura" }),
+      },
+    };
+    expect(isEncryptedField(leanDoc.profile["salud-seguridad"])).toBe(true);
+    decryptSensitiveProfileFields(leanDoc);
+    expect(leanDoc.profile["salud-seguridad"]).toEqual({ eps: "Sura" });
   });
 });

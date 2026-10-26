@@ -19,8 +19,15 @@ export function deriveFieldEncryptionKey(secret?: string): Buffer {
   const masterSecret =
     secret ||
     process.env.FIELD_ENCRYPTION_KEY ||
-    process.env.BETTER_AUTH_SECRET ||
-    "bskmt-dev-fallback-key-min-32-chars-ok!";
+    process.env.BETTER_AUTH_SECRET;
+  if (!masterSecret) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "FIELD_ENCRYPTION_KEY or BETTER_AUTH_SECRET is required in production",
+      );
+    }
+    return scryptSync(`dev-test-only-${process.pid}`, SALT, 32);
+  }
   return scryptSync(masterSecret, SALT, 32);
 }
 

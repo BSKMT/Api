@@ -8,10 +8,7 @@ import { validateDoubleSubmitCsrf } from "../common/csrf/csrf.helper";
 function isConstantTimeMatch(provided: string, expected: string): boolean {
   const bufA = Buffer.from(provided, "utf8");
   const bufB = Buffer.from(expected, "utf8");
-  if (bufA.length !== bufB.length) {
-    return false;
-  }
-  return timingSafeEqual(bufA, bufB);
+  return bufA.length === bufB.length && timingSafeEqual(bufA, bufB);
 }
 
 const CSRF_EXEMPT_PATHS = new Set([
@@ -37,14 +34,10 @@ function isOriginAllowed(
   req: Request,
   allowedOrigins: Set<string>,
 ): boolean | null {
-  const origin = req.headers.origin;
-  if (origin) {
-    return allowedOrigins.has(origin);
-  }
-  const referer = req.headers.referer;
-  if (referer) {
+  if (req.headers.origin) return allowedOrigins.has(req.headers.origin);
+  if (req.headers.referer) {
     try {
-      return allowedOrigins.has(new URL(referer).origin);
+      return allowedOrigins.has(new URL(req.headers.referer).origin);
     } catch {
       return false;
     }
@@ -73,6 +66,57 @@ function validateCsrfHeaderIfPresent(req: Request, secret: string): boolean {
   return validateDoubleSubmitCsrf(csrfHeader, csrfCookie, secret);
 }
 
+const VERCEL_INTERNAL_PATHS = new Set([
+  "/api/health",
+  "/api/membership/internal/cron/sweep-pending",
+  "/api/events/internal/cron/sweep-stale-registrations",
+  "/api/shop/internal/cron/expire-pending",
+]);
+
+function isVercelInternalCronOrHealthPath(rawPath: string): boolean {
+  const normalizedPath = (rawPath || "").replace(/\/+$/, "");
+  return (
+    VERCEL_INTERNAL_PATHS.has(normalizedPath) ||
+    normalizedPath.startsWith("/api/internal/cron/")
+  );
+}
+
+function evaluateOriginAccess(
+  req: Request,
+  cfOriginSecret: string,
+  isProduction: boolean,
+): { allowed: boolean; verified: boolean } {
+  if (!cfOriginSecret) {
+    return { allowed: true, verified: !isProduction };
+  }
+  const headerVal = req.headers["x-cf-origin-secret"];
+  const providedSecret = Array.isArray(headerVal) ? headerVal[0] : headerVal;
+  const isSecretValid =
+    typeof providedSecret === "string" &&
+    isConstantTimeMatch(providedSecret, cfOriginSecret);
+  if (isSecretValid) {
+    return { allowed: true, verified: true };
+  }
+  if (isVercelInternalCronOrHealthPath(req.path)) {
+    return { allowed: true, verified: !isProduction };
+  }
+  return { allowed: false, verified: false };
+}
+
+function applyVerifiedCloudflareIp(req: Request, verified: boolean): void {
+  if (!verified) {
+    delete req.headers["cf-connecting-ip"];
+    return;
+  }
+  const cfConnectingIp = req.headers["cf-connecting-ip"];
+  const realClientIp = Array.isArray(cfConnectingIp)
+    ? cfConnectingIp[0]
+    : cfConnectingIp;
+  if (typeof realClientIp === "string" && realClientIp.trim().length > 0) {
+    req.headers["x-forwarded-for"] = realClientIp.trim();
+  }
+}
+
 export function setupSecurityMiddleware(
   app: NestExpressApplication,
   configService: ConfigService<EnvironmentConfig>,
@@ -81,46 +125,23 @@ export function setupSecurityMiddleware(
 ) {
   app.set("trust proxy", 2);
 
+  const isProduction =
+    configService.get<string>("NODE_ENV", { infer: true }) === "production";
   const cfOriginSecret =
     configService.get<string>("CF_ORIGIN_SECRET", { infer: true })?.trim() ??
     "";
 
   app.use((req: Request, res: Response, next: NextFunction) => {
-    // 1. Aislar el origen de Vercel exigiendo X-CF-Origin-Secret cuando está configurado (VULN-17)
-    if (cfOriginSecret) {
-      const normalizedPath = (req.path || "").replace(/\/+$/, "");
-      const isVercelInternalCronOrHealth =
-        normalizedPath === "/api/health" ||
-        normalizedPath.startsWith("/api/internal/cron/") ||
-        normalizedPath === "/api/membership/internal/cron/sweep-pending" ||
-        normalizedPath ===
-          "/api/events/internal/cron/sweep-stale-registrations" ||
-        normalizedPath === "/api/shop/internal/cron/expire-pending";
-
-      if (!isVercelInternalCronOrHealth) {
-        const headerVal = req.headers["x-cf-origin-secret"];
-        const providedSecret = Array.isArray(headerVal)
-          ? headerVal[0]
-          : headerVal;
-        if (
-          typeof providedSecret !== "string" ||
-          !isConstantTimeMatch(providedSecret, cfOriginSecret)
-        ) {
-          return res
-            .status(403)
-            .json({ message: "Direct origin access is not allowed" });
-        }
-      }
+    const originCheck = evaluateOriginAccess(req, cfOriginSecret, isProduction);
+    if (!originCheck.allowed) {
+      return res
+        .status(403)
+        .json({ message: "Direct origin access is not allowed" });
     }
 
-    // 2. Fijar la IP real desde cf-connecting-ip para evitar spoofing de X-Forwarded-For
-    const cfConnectingIp = req.headers["cf-connecting-ip"];
-    const realClientIp = Array.isArray(cfConnectingIp)
-      ? cfConnectingIp[0]
-      : cfConnectingIp;
-    if (typeof realClientIp === "string" && realClientIp.trim().length > 0) {
-      req.headers["x-forwarded-for"] = realClientIp.trim();
-    }
+    (req as Request & { cfOriginVerified?: boolean }).cfOriginVerified =
+      originCheck.verified;
+    applyVerifiedCloudflareIp(req, originCheck.verified);
 
     res.setHeader(
       "Permissions-Policy",
@@ -164,9 +185,6 @@ export function setupSecurityMiddleware(
     .map((o) => o.trim())
     .filter(Boolean);
 
-  const isProduction =
-    configService.get<string>("NODE_ENV", { infer: true }) === "production";
-
   const devOrigins = isProduction
     ? []
     : [
@@ -176,7 +194,6 @@ export function setupSecurityMiddleware(
         "http://localhost:5173",
         "https://10.0.2.2",
       ];
-
   const allowedOriginsList = Array.from(
     new Set([
       ...configuredOrigins,
@@ -194,11 +211,7 @@ export function setupSecurityMiddleware(
 
   app.enableCors({
     origin: (origin, callback) => {
-      if (!origin || allowedOriginsList.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(null, false);
-      }
+      callback(null, !origin || allowedOriginsList.includes(origin));
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
     credentials: true,
@@ -216,34 +229,30 @@ export function setupSecurityMiddleware(
   });
 
   const allowedOrigins = new Set(allowedOriginsList);
-  const betterAuthSecret =
+  const configuredCsrfSecret =
+    configService.get<string>("CSRF_SECRET", { infer: true }) ||
     configService.get<string>("BETTER_AUTH_SECRET", { infer: true }) ||
-    "bskmt-default-csrf-secret-min32chars";
+    process.env.CSRF_SECRET ||
+    process.env.BETTER_AUTH_SECRET;
+  if (!configuredCsrfSecret && isProduction) {
+    throw new Error(
+      "CSRF_SECRET or BETTER_AUTH_SECRET is required in production",
+    );
+  }
+  const csrfSecret = configuredCsrfSecret || `dev-test-csrf-${process.pid}`;
 
   app.use((req: Request, res: Response, next: NextFunction) => {
-    if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
-      return next();
-    }
-    if (isCsrfExemptPath(req.path)) {
-      return next();
-    }
-
-    if (!validateCsrfHeaderIfPresent(req, betterAuthSecret)) {
+    if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) return next();
+    if (isCsrfExemptPath(req.path)) return next();
+    if (!validateCsrfHeaderIfPresent(req, csrfSecret)) {
       return res.status(403).json({ message: "Invalid CSRF token" });
     }
-
     const originResult = isOriginAllowed(req, allowedOrigins);
-    if (originResult === true) {
-      return next();
-    }
+    if (originResult === true) return next();
     if (originResult === false) {
       return res.status(403).json({ message: "Origin or Referer not allowed" });
     }
-
-    if (isNativeAppClient(req)) {
-      return next();
-    }
-
+    if (isNativeAppClient(req)) return next();
     return res
       .status(403)
       .json({ message: "Origin or Referer header required" });

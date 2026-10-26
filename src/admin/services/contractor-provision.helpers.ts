@@ -3,6 +3,7 @@ import { Model } from "mongoose";
 import { UserDocument, UserRole } from "../../users/schemas/user.schema";
 import { getAuth, getMongoDb } from "../../auth/better-auth";
 import { generateBskmtUsername } from "../../common/utils/username-generator.util";
+import { maskEmail } from "../../common/utils/log-redact.util";
 import {
   NormalizedStaffPayload,
   buildStaffProfileUpdate,
@@ -94,7 +95,9 @@ export async function createBetterAuthAccount(
     betterAuthId = authRes?.user?.id || "";
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
-    logger.error(`Error en auth.api.signUpEmail para ${email}: ${errMsg}`);
+    logger.error(
+      `Error en auth.api.signUpEmail para ${maskEmail(email)}: ${errMsg}`,
+    );
     throw new BadRequestException(
       `Error al registrar credenciales de Better Auth: ${errMsg}`,
     );
@@ -193,7 +196,7 @@ export async function provisionStaffUser(options: ProvisionStaffOptions) {
     .updateOne({ email: norm.email }, { $set: { username, role } });
 
   logger.log(
-    `Personal provisionado: role="${role}", username="${username}", email="${norm.email}" por=${creatorUserId}`,
+    `Personal provisionado: role="${role}", username="${username}", email="${maskEmail(norm.email)}" por=${creatorUserId}`,
   );
 
   options.birdContactService?.syncUser(updatedUser).catch(() => {});
