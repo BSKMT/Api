@@ -24,7 +24,6 @@ import {
   AssignTicketDto,
 } from "../dto/update-ticket.dto";
 import { ParseObjectIdPipe } from "../../common/pipes/parse-object-id.pipe";
-import { TicketInteractionMode } from "../schemas/ticket.schema";
 
 interface AuthenticatedGestionRequest extends Request {
   user: {
@@ -44,11 +43,6 @@ export class TicketsGestionController {
   @Get("stats")
   getStats() {
     return this.ticketsService.getStats();
-  }
-
-  @Get("live-chats")
-  getLiveChats() {
-    return this.ticketsService.getLiveChats();
   }
 
   @Get()
@@ -122,29 +116,5 @@ export class TicketsGestionController {
       dto.assignedToUserId,
       actorName,
     );
-  }
-
-  @Post(":id/chat")
-  sendLiveChatMessage(
-    @Param("id", ParseObjectIdPipe) id: string,
-    @Body("text") text: string,
-    @Req() req: AuthenticatedGestionRequest,
-  ) {
-    const actor = {
-      userId: req.user.userId,
-      name: req.user.name || req.user.email,
-      email: req.user.email,
-    };
-    return this.ticketsService.sendLiveChatMessage(id, text, actor);
-  }
-
-  @Patch(":id/mode")
-  updateInteractionMode(
-    @Param("id", ParseObjectIdPipe) id: string,
-    @Body("mode") mode: TicketInteractionMode,
-    @Req() req: AuthenticatedGestionRequest,
-  ) {
-    const actorName = req.user.name || req.user.email;
-    return this.ticketsService.updateTicketInteractionMode(id, mode, actorName);
   }
 }

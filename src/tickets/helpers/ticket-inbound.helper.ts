@@ -7,7 +7,6 @@ import {
   TicketPriority,
   TicketChannel,
   TicketCategory,
-  TicketInteractionMode,
 } from "../schemas/ticket.schema";
 import { computeInitialSLA } from "./ticket-sla.helper";
 import { generateTicketNumber } from "./ticket-actions.helper";
@@ -15,7 +14,6 @@ import { UsersService } from "../../users/users.service";
 import { BirdWhatsappService } from "../../bird/bird-whatsapp.service";
 import { BirdSmsService } from "../../bird/bird-sms.service";
 import { BirdRealtimeService } from "../../bird/bird-realtime.service";
-import { WhatsappBotService } from "../whatsapp-bot.service";
 import {
   resolveInboundCustomer,
   dispatchInboundAutoResponse,
@@ -29,7 +27,6 @@ export interface InboundContext {
   birdWhatsappService: BirdWhatsappService;
   birdSmsService: BirdSmsService;
   birdRealtimeService: BirdRealtimeService;
-  whatsappBotService: WhatsappBotService;
   logger: Logger;
 }
 
@@ -100,9 +97,6 @@ export async function processInboundMessage(
     });
     const saved = await ticket.save();
 
-    const isLiveChat =
-      saved.interactionMode === TicketInteractionMode.LIVE_AGENT;
-
     if (ctx.birdRealtimeService.isRealtimeConfigured()) {
       void ctx.birdRealtimeService.publishToChannel(
         "private-admin",
@@ -114,22 +108,12 @@ export async function processInboundMessage(
           from,
           text,
           customer: saved.customer,
-          isLiveChat,
         },
       );
     }
 
-    if (channel === TicketChannel.WHATSAPP && !isLiveChat) {
-      void ctx.whatsappBotService.processInboundWhatsappMessage({
-        ticket: saved,
-        text,
-        customerName,
-        customerPhone: customerPhone || from,
-      });
-    }
-
     ctx.logger.log(
-      `Mensaje entrante agregado a Ticket existente #${saved.ticketNumber} [modo=${saved.interactionMode}]`,
+      `Mensaje entrante agregado a Ticket existente #${saved.ticketNumber}`,
     );
     return saved;
   }
@@ -146,8 +130,6 @@ export async function processInboundMessage(
     priority,
     status: TicketStatus.NUEVO,
     channel,
-    interactionMode: TicketInteractionMode.BOT,
-    botState: "MAIN",
     customer: {
       name: customerName,
       email: customerEmail,
@@ -188,23 +170,14 @@ export async function processInboundMessage(
     );
   }
 
-  if (channel === TicketChannel.WHATSAPP) {
-    void ctx.whatsappBotService.processInboundWhatsappMessage({
-      ticket: saved,
-      text,
-      customerName,
-      customerPhone: customerPhone || from,
-    });
-  } else {
-    dispatchInboundAutoResponse(
-      channel,
-      saved.ticketNumber,
-      customerName,
-      customerPhone,
-      ctx.birdWhatsappService,
-      ctx.birdSmsService,
-    );
-  }
+  dispatchInboundAutoResponse(
+    channel,
+    saved.ticketNumber,
+    customerName,
+    customerPhone,
+    ctx.birdWhatsappService,
+    ctx.birdSmsService,
+  );
 
   ctx.logger.log(
     `Nuevo Ticket #${saved.ticketNumber} creado automáticamente vía ${channel}`,

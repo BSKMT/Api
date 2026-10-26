@@ -7,7 +7,6 @@ import {
   TicketStatus,
   TicketPriority,
   TicketChannel,
-  TicketInteractionMode,
 } from "./schemas/ticket.schema";
 import { CreateTicketDto } from "./dto/create-ticket.dto";
 import { TicketReplyDto } from "./dto/ticket-reply.dto";
@@ -22,11 +21,6 @@ import {
 import { executeCreateTicket } from "./helpers/ticket-creation.helper";
 import { processInboundMessage } from "./helpers/ticket-inbound.helper";
 import {
-  fetchLiveChats,
-  dispatchLiveChatMessage,
-  changeInteractionMode,
-} from "./helpers/ticket-live-chat.helper";
-import {
   queryTickets,
   findTicketById,
   findTicketsForUser,
@@ -38,7 +32,6 @@ import { BirdSmsService } from "../bird/bird-sms.service";
 import { BirdWhatsappService } from "../bird/bird-whatsapp.service";
 import { BirdRealtimeService } from "../bird/bird-realtime.service";
 import { UsersService } from "../users/users.service";
-import { WhatsappBotService } from "./whatsapp-bot.service";
 
 @Injectable()
 export class TicketsService {
@@ -53,7 +46,6 @@ export class TicketsService {
     private readonly birdSmsService: BirdSmsService,
     private readonly birdWhatsappService: BirdWhatsappService,
     private readonly birdRealtimeService: BirdRealtimeService,
-    private readonly whatsappBotService: WhatsappBotService,
   ) {}
 
   async createTicket(
@@ -124,43 +116,8 @@ export class TicketsService {
       birdWhatsappService: this.birdWhatsappService,
       birdSmsService: this.birdSmsService,
       birdRealtimeService: this.birdRealtimeService,
-      whatsappBotService: this.whatsappBotService,
       logger: this.logger,
     });
-  }
-
-  async getLiveChats(): Promise<TicketDocument[]> {
-    return fetchLiveChats(this.ticketModel);
-  }
-
-  async sendLiveChatMessage(
-    ticketId: string,
-    text: string,
-    actor: { userId: string; name: string; email: string },
-  ): Promise<TicketDocument> {
-    return dispatchLiveChatMessage(
-      { ticketId, text, actor },
-      {
-        ticketModel: this.ticketModel,
-        birdWhatsappService: this.birdWhatsappService,
-        birdRealtimeService: this.birdRealtimeService,
-      },
-    );
-  }
-
-  async updateTicketInteractionMode(
-    ticketId: string,
-    mode: TicketInteractionMode,
-    actorName: string,
-  ): Promise<TicketDocument> {
-    return changeInteractionMode(
-      { ticketId, mode, actorName },
-      {
-        ticketModel: this.ticketModel,
-        birdWhatsappService: this.birdWhatsappService,
-        birdRealtimeService: this.birdRealtimeService,
-      },
-    );
   }
 
   async updateStatus(

@@ -8,7 +8,6 @@ import { BirdSmsService } from "../bird/bird-sms.service";
 import { BirdWhatsappService } from "../bird/bird-whatsapp.service";
 import { BirdRealtimeService } from "../bird/bird-realtime.service";
 import { UsersService } from "../users/users.service";
-import { WhatsappBotService } from "./whatsapp-bot.service";
 
 interface MockTicketModel {
   (...args: unknown[]): { save: jest.Mock };
@@ -33,7 +32,6 @@ describe("TicketsService", () => {
     isRealtimeConfigured: jest.Mock;
     publishToChannel: jest.Mock;
   };
-  let mockBotService: { processInboundWhatsappMessage: jest.Mock };
 
   beforeEach(async () => {
     const modelFn = jest
@@ -94,14 +92,6 @@ describe("TicketsService", () => {
       publishToChannel: jest.fn().mockResolvedValue(undefined),
     };
 
-    mockBotService = {
-      processInboundWhatsappMessage: jest.fn().mockResolvedValue({
-        replyText: "Hola",
-        nextState: "MAIN",
-        escalatedToLiveAgent: false,
-      }),
-    };
-
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TicketsService,
@@ -112,7 +102,6 @@ describe("TicketsService", () => {
         { provide: BirdSmsService, useValue: mockSmsService },
         { provide: BirdWhatsappService, useValue: mockWhatsappService },
         { provide: BirdRealtimeService, useValue: mockRealtimeService },
-        { provide: WhatsappBotService, useValue: mockBotService },
       ],
     }).compile();
 

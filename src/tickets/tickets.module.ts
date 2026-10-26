@@ -7,7 +7,6 @@ import { TicketsGestionController } from "./controllers/tickets-gestion.controll
 import { TicketsPanelController } from "./controllers/tickets-panel.controller";
 import { BirdModule } from "../bird/bird.module";
 import { UsersModule } from "../users/users.module";
-import { WhatsappBotService } from "./whatsapp-bot.service";
 
 @Module({
   imports: [
@@ -20,7 +19,7 @@ import { WhatsappBotService } from "./whatsapp-bot.service";
     TicketsGestionController,
     TicketsPanelController,
   ],
-  providers: [TicketsService, WhatsappBotService],
-  exports: [TicketsService, WhatsappBotService],
+  providers: [TicketsService],
+  exports: [TicketsService],
 })
 export class TicketsModule {}

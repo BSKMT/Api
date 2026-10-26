@@ -207,15 +207,12 @@ export class Ticket {
   sla!: TicketSLA;
 
   @Prop({
-    required: true,
+    required: false,
     enum: Object.values(TicketInteractionMode),
-    default: TicketInteractionMode.BOT,
+    default: TicketInteractionMode.LIVE_AGENT,
     index: true,
   })
-  interactionMode!: TicketInteractionMode;
-
-  @Prop({ type: String, default: "MAIN" })
-  botState?: string;
+  interactionMode?: TicketInteractionMode;
 
   @Prop({ type: MongooseSchema.Types.Mixed, default: {} })
   metadata?: Record<string, unknown>;
