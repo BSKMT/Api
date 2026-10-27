@@ -16,6 +16,7 @@ import {
   LoginOtpConsoleInitiateDto,
   LoginOtpSuperAdminInitiateDto,
   LoginOtpVerifyDto,
+  LoginOtpResendDto,
 } from "./dto/login-otp.dto";
 import { Public } from "../common/decorators";
 
@@ -146,5 +147,18 @@ export class LoginOtpController {
       cookies: result.cookies ?? [],
       message: "Sesión iniciada exitosamente",
     };
+  }
+
+  @Public()
+  @Post("resend")
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
+  async resend(@Body() dto: LoginOtpResendDto): Promise<{
+    message: string;
+    requestId: string;
+    expiresInSeconds: number;
+    maskedEmail: string;
+  }> {
+    return this.loginOtpService.resendOtp(dto.requestId);
   }
 }

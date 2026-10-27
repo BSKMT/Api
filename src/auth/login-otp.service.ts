@@ -1,4 +1,10 @@
-import { Injectable, Logger, UnauthorizedException } from "@nestjs/common";
+import {
+  Injectable,
+  Logger,
+  UnauthorizedException,
+  GoneException,
+  BadRequestException,
+} from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { LoginOtp, LoginOtpDocument } from "./schemas/login-otp.schema";
@@ -10,6 +16,7 @@ import {
   authenticateAndExtractSession,
   executeDispatchOtpAndSave,
   revokeBetterAuthSessionByCookies,
+  assertEmailThrottle,
 } from "./login-otp-session.helper";
 import {
   findAndValidateStandardUser,
@@ -211,6 +218,53 @@ export class LoginOtpService {
     });
   }
 
+  async resendOtp(requestId: string): Promise<{
+    message: string;
+    requestId: string;
+    expiresInSeconds: number;
+    maskedEmail: string;
+  }> {
+    const otpRecord = await this.otpModel.findOne({
+      requestId,
+      status: "pending",
+    });
+    if (!otpRecord) {
+      throw new GoneException(
+        "La solicitud de verificación no existe o ha expirado.",
+      );
+    }
+
+    await assertEmailThrottle(
+      this.otpModel,
+      otpRecord.email,
+      this.EMAIL_INITIATE_WINDOW_MS,
+      this.EMAIL_INITIATE_MAX,
+      this.logger,
+    );
+
+    if (!this.birdVerifyService.isConfigured()) {
+      throw new BadRequestException("Servicio de verificación no disponible.");
+    }
+
+    const birdRes = await this.birdVerifyService.createEmailVerification(
+      otpRecord.email,
+      {
+        purpose: "login_resend",
+        requestId,
+      },
+    );
+
+    otpRecord.birdVerificationId = birdRes.id;
+    await otpRecord.save();
+
+    return {
+      message: "Nuevo código de seguridad enviado.",
+      requestId,
+      expiresInSeconds: 300,
+      maskedEmail: maskEmail(otpRecord.email),
+    };
+  }
+
   async invalidatePending(email: string): Promise<void> {
     const normalized = email.toLowerCase();
     const pendingRecords = await this.otpModel.find({
@@ -218,7 +272,7 @@ export class LoginOtpService {
       status: "pending",
     });
     await Promise.all(
-      pendingRecords.map((rec) =>
+      pendingRecords.map((rec: LoginOtpDocument) =>
         revokeEncryptedOtpSession(rec, this.sessionEncKey, this.logger),
       ),
     );

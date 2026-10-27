@@ -129,3 +129,13 @@ export class LoginOtpVerifyDto {
   })
   code!: string;
 }
+
+/**
+ * DTO para reenviar el código OTP de login a partir del requestId existente.
+ */
+export class LoginOtpResendDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(64)
+  requestId!: string;
+}
