@@ -35,6 +35,7 @@ export interface UploadSignatureResult {
   timestamp: number;
   apiKey: string;
   cloudName: string;
+  overwrite?: string | boolean;
 }
 
 export interface PublicConfigResult {

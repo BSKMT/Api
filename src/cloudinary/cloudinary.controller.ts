@@ -132,6 +132,7 @@ export class CloudinaryController {
       success: true,
       ...signatureData,
       folder: filteredParams.folder,
+      overwrite: signatureData.overwrite ?? "false",
     };
   }
 

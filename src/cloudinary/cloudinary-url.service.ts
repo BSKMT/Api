@@ -111,6 +111,7 @@ export class CloudinaryUrlService {
       timestamp,
       apiKey,
       cloudName,
+      overwrite: safeParams.overwrite as string,
     };
   }
 
