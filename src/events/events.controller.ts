@@ -115,6 +115,21 @@ export class EventsController {
     return this.eventsService.confirmRegistration(userId, dto.eventSlug);
   }
 
+  @Get(["confirm", "confirm/:eventSlug"])
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  async confirmRegistrationGet(
+    @Req() req: AuthenticatedRequest,
+    @Param("eventSlug") paramSlug?: string,
+    @Query("eventSlug") querySlug?: string,
+  ) {
+    const { userId } = req.user;
+    const eventSlug = paramSlug || querySlug;
+    if (!eventSlug) {
+      throw new BadRequestException("El parámetro eventSlug es requerido");
+    }
+    return this.eventsService.confirmRegistration(userId, eventSlug);
+  }
+
   @Post("waiver")
   @Throttle({ default: { ttl: 60000, limit: 10 } })
   async acceptWaiver(

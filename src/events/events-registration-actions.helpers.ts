@@ -83,7 +83,10 @@ export async function executeConfirmRegistration(
   }
 
   if (registration.status === "CONFIRMED") {
-    throw new BadRequestException("El registro ya está confirmado");
+    logger.log(
+      `Registration already confirmed: user=${userId} event=${eventSlug}`,
+    );
+    return registration;
   }
 
   validateConfirmationPrerequisites(registration);
