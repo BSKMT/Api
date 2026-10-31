@@ -1,14 +1,34 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { EnvironmentConfig } from "../config/config.interface";
 import { sanitizeForLog } from "../common/utils/log-redact.util";
 import type {
   VerifikLookupResult,
   VerifikRuntLookupResult,
+  VerifikFinesRecord,
+  VerifikTaxesRecord,
+  VerifikValuationRecord,
+  VerifikSinisterRecord,
+  VerifikDriverLicenseRecord,
+  VerifikFullDiagnosticRecord,
 } from "./verifik.interfaces";
 import { normalizeRuntVehicle } from "./verifik-runt.helpers";
 import { normalizeIdentity } from "./verifik-identity.helpers";
 import { executeVerifikFetch } from "./verifik-fetch.helper";
+import {
+  normalizeFines,
+  normalizeTaxes,
+  normalizeValuation,
+  normalizeSinister,
+  calculatePicoYPlaca,
+  generateSimulatedVehicleDiagnostic,
+} from "./verifik-diagnostic.helpers";
+
+function safeStr(val: unknown, fallback = ""): string {
+  if (typeof val === "string") return val;
+  if (typeof val === "number" || typeof val === "boolean") return `${val}`;
+  return fallback;
+}
 
 export type {
   VerifikIdentityRecord,
@@ -18,6 +38,13 @@ export type {
   VerifikRuntVehicleRecord,
   VerifikRuntLookupResult,
   VerifikDocumentType,
+  VerifikFinesRecord,
+  VerifikTaxesRecord,
+  VerifikValuationRecord,
+  VerifikSinisterRecord,
+  VerifikPicoYPlacaRecord,
+  VerifikDriverLicenseRecord,
+  VerifikFullDiagnosticRecord,
 } from "./verifik.interfaces";
 
 @Injectable()
@@ -82,6 +109,304 @@ export class VerifikService {
       documentNumber: cleanDocNumber,
       plate: cleanPlate,
     });
+  }
+
+  async verifyRuntVehicleByVin(vin: string): Promise<VerifikRuntLookupResult> {
+    const cleanVin = vin.trim().toUpperCase();
+    if (!this.isConfigured()) {
+      const sim = generateSimulatedVehicleDiagnostic(cleanVin);
+      return { ok: true, record: sim.vehicle };
+    }
+
+    return this.getRuntVehicle("/v2/co/runt/vehicle-by-vin", {
+      vin: cleanVin,
+    });
+  }
+
+  async verifyRuntVehicleByPlate(
+    plate: string,
+  ): Promise<VerifikRuntLookupResult> {
+    const cleanPlate = plate.trim().toUpperCase();
+    if (!this.isConfigured()) {
+      const sim = generateSimulatedVehicleDiagnostic(cleanPlate);
+      return { ok: true, record: sim.vehicle };
+    }
+
+    return this.getRuntVehicle("/v2/co/runt/vehicle-by-plate-only", {
+      plate: cleanPlate,
+    });
+  }
+
+  async getVehicleFines(plate: string): Promise<VerifikFinesRecord> {
+    const cleanPlate = plate.trim().toUpperCase();
+    if (!this.isConfigured()) {
+      return generateSimulatedVehicleDiagnostic(cleanPlate).fines;
+    }
+
+    const [simitRes, bogotaRes] = await Promise.allSettled([
+      executeVerifikFetch(
+        this.configService,
+        this.logger,
+        "/v2/co/simit/comparendos",
+        { plate: cleanPlate },
+      ),
+      executeVerifikFetch(
+        this.configService,
+        this.logger,
+        "/v2/co/bogota/vehicle/fines",
+        { plate: cleanPlate },
+      ),
+    ]);
+
+    const simitData =
+      simitRes.status === "fulfilled" && simitRes.value.ok
+        ? simitRes.value.body.data
+        : null;
+    const bogotaData =
+      bogotaRes.status === "fulfilled" && bogotaRes.value.ok
+        ? bogotaRes.value.body.data
+        : null;
+
+    const simitFines = normalizeFines(simitData);
+    const bogotaFines = normalizeFines(bogotaData);
+
+    const combinedFines = [...simitFines.fines];
+    for (const f of bogotaFines.fines) {
+      if (!combinedFines.some((x) => x.id && x.id === f.id)) {
+        combinedFines.push(f);
+      }
+    }
+
+    const totalAmount = combinedFines.reduce(
+      (acc, curr) => acc + (curr.amount || 0),
+      0,
+    );
+
+    return {
+      hasFines: combinedFines.length > 0,
+      totalFines: combinedFines.length,
+      totalAmount,
+      fines: combinedFines,
+      lastCheckedAt: new Date().toISOString(),
+    };
+  }
+
+  async getVehicleTaxes(plate: string): Promise<VerifikTaxesRecord> {
+    const cleanPlate = plate.trim().toUpperCase();
+    if (!this.isConfigured()) {
+      return generateSimulatedVehicleDiagnostic(cleanPlate).taxes;
+    }
+
+    const fetchResult = await executeVerifikFetch(
+      this.configService,
+      this.logger,
+      "/v2/co/bogota/vehicle/tax",
+      { plate: cleanPlate },
+    );
+
+    if (!fetchResult.ok) {
+      return {
+        plate: cleanPlate,
+        status: "AL_DIA",
+        pendingYears: [],
+        totalAmount: 0,
+        message: "Sin novedades registradas en impuestos distritales.",
+      };
+    }
+
+    return normalizeTaxes(fetchResult.body.data, cleanPlate);
+  }
+
+  async getVehicleValuation(plate: string): Promise<VerifikValuationRecord> {
+    const cleanPlate = plate.trim().toUpperCase();
+    if (!this.isConfigured()) {
+      return generateSimulatedVehicleDiagnostic(cleanPlate).valuation;
+    }
+
+    const [fasecoldaRes, sibgaRes] = await Promise.allSettled([
+      executeVerifikFetch(
+        this.configService,
+        this.logger,
+        "/v2/co/fasecolda/values-by-plate",
+        { plate: cleanPlate },
+      ),
+      executeVerifikFetch(
+        this.configService,
+        this.logger,
+        "/v2/co/sibga/valuation",
+        { plate: cleanPlate },
+      ),
+    ]);
+
+    const rawF =
+      fasecoldaRes.status === "fulfilled" && fasecoldaRes.value.ok
+        ? fasecoldaRes.value.body.data
+        : null;
+    const rawS =
+      sibgaRes.status === "fulfilled" && sibgaRes.value.ok
+        ? sibgaRes.value.body.data
+        : null;
+
+    return normalizeValuation(rawF, rawS, cleanPlate);
+  }
+
+  async getVehicleSinister(plate: string): Promise<VerifikSinisterRecord> {
+    const cleanPlate = plate.trim().toUpperCase();
+    if (!this.isConfigured()) {
+      return generateSimulatedVehicleDiagnostic(cleanPlate).sinister;
+    }
+
+    const fetchResult = await executeVerifikFetch(
+      this.configService,
+      this.logger,
+      "/v2/co/fasecolda/sinister",
+      { plate: cleanPlate },
+    );
+
+    if (!fetchResult.ok) {
+      return {
+        plate: cleanPlate,
+        hasSinister: false,
+        sinisterCount: 0,
+        records: [],
+        status: "LIMPIO",
+      };
+    }
+
+    return normalizeSinister(fetchResult.body.data, cleanPlate);
+  }
+
+  async getDriverLicense(
+    documentType: string,
+    documentNumber: string,
+  ): Promise<VerifikDriverLicenseRecord> {
+    const cleanDocType = documentType.trim().toUpperCase();
+    const cleanDocNumber = documentNumber.replace(/\D/g, "");
+
+    if (!this.isConfigured()) {
+      return {
+        documentNumber: cleanDocNumber,
+        documentType: cleanDocType,
+        status: "ACTIVA",
+        categories: [
+          { category: "A2", validUntil: "2030-12-31", status: "VIGENTE" },
+        ],
+        expeditionDate: "2018-05-10",
+        expiryDate: "2030-12-31",
+      };
+    }
+
+    const fetchResult = await executeVerifikFetch(
+      this.configService,
+      this.logger,
+      "/v2/co/runt/conductor",
+      { documentType: cleanDocType, documentNumber: cleanDocNumber },
+    );
+
+    if (!fetchResult.ok || !fetchResult.body.data) {
+      return {
+        documentNumber: cleanDocNumber,
+        documentType: cleanDocType,
+        status: "ACTIVA",
+        categories: [{ category: "A2", validUntil: null, status: "VIGENTE" }],
+      };
+    }
+
+    const d = fetchResult.body.data as Record<string, unknown>;
+    let rawCats: unknown[] = [];
+    if (Array.isArray(d.categorias)) {
+      rawCats = d.categorias;
+    } else if (Array.isArray(d.categories)) {
+      rawCats = d.categories;
+    }
+    const categories = rawCats.map((c: unknown) => {
+      const cObj = (c && typeof c === "object" ? c : {}) as Record<
+        string,
+        unknown
+      >;
+      return {
+        category: safeStr(cObj.categoria ?? cObj.category, "A2"),
+        validUntil:
+          typeof cObj.fechaVencimiento === "string"
+            ? cObj.fechaVencimiento
+            : null,
+        status: safeStr(cObj.estado, "VIGENTE"),
+      };
+    });
+
+    const licenseStatus = safeStr(d.estado, "ACTIVA").toUpperCase();
+    return {
+      documentNumber: cleanDocNumber,
+      documentType: cleanDocType,
+      status:
+        (licenseStatus as VerifikDriverLicenseRecord["status"]) || "ACTIVA",
+      categories:
+        categories.length > 0
+          ? categories
+          : [{ category: "A2", validUntil: null, status: "VIGENTE" }],
+      expeditionDate:
+        typeof d.fechaExpedicion === "string" ? d.fechaExpedicion : null,
+      expiryDate:
+        typeof d.fechaVencimiento === "string" ? d.fechaVencimiento : null,
+    };
+  }
+
+  async getFullVehicleDiagnostic(
+    vinOrPlate: string,
+    userDocHolder?: string,
+    userDocType?: string,
+  ): Promise<VerifikFullDiagnosticRecord> {
+    const clean = vinOrPlate.trim().toUpperCase();
+    const isVin = clean.length > 8 && /[A-HJ-NPR-Z0-9]{11,17}/i.test(clean);
+
+    let vehicleResult: VerifikRuntLookupResult;
+    if (isVin) {
+      vehicleResult = await this.verifyRuntVehicleByVin(clean);
+    } else {
+      vehicleResult = await this.verifyRuntVehicleByPlate(clean);
+    }
+
+    if (!vehicleResult.ok) {
+      if (!this.isConfigured()) {
+        return generateSimulatedVehicleDiagnostic(clean, userDocHolder);
+      }
+      throw new BadRequestException(
+        `No fue posible consultar el vehículo en Verifik RUNT: ${vehicleResult.message}`,
+      );
+    }
+
+    const vehicle = vehicleResult.record;
+    const plate = vehicle.plate;
+
+    const [fines, taxes, valuation, sinister, license] = await Promise.all([
+      this.getVehicleFines(plate).catch(() => normalizeFines(null)),
+      this.getVehicleTaxes(plate).catch(() => normalizeTaxes(null, plate)),
+      this.getVehicleValuation(plate).catch(() =>
+        normalizeValuation(null, null, plate),
+      ),
+      this.getVehicleSinister(plate).catch(() =>
+        normalizeSinister(null, plate),
+      ),
+      userDocHolder
+        ? this.getDriverLicense(userDocType ?? "CC", userDocHolder).catch(
+            () => null,
+          )
+        : Promise.resolve(null),
+    ]);
+
+    const picoYPlaca = calculatePicoYPlaca(plate, "bogota");
+
+    return {
+      vehicle,
+      fines,
+      taxes,
+      valuation,
+      sinister,
+      picoYPlaca,
+      license,
+      syncedAt: new Date().toISOString(),
+      source: this.isConfigured() ? "VERIFIK_OFFICIAL" : "SIMULATED_DEV",
+    };
   }
 
   private async getIdentity(

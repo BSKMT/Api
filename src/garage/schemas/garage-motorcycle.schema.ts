@@ -90,6 +90,45 @@ export class GarageMotorcycle {
 
   @Prop({ type: String, default: null })
   runtDocumentHolder!: string | null;
+
+  @Prop({ type: String, default: null })
+  fasecoldaCode!: string | null;
+
+  @Prop({ type: Number, default: null })
+  fasecoldaValue!: number | null;
+
+  @Prop({ type: Number, default: null })
+  sibgaValuation!: number | null;
+
+  @Prop({ type: Number, default: 0 })
+  finesCount!: number;
+
+  @Prop({ type: Number, default: 0 })
+  finesTotalAmount!: number;
+
+  @Prop({ type: Date, default: null })
+  finesLastCheckedAt!: Date | null;
+
+  @Prop({ type: [Object], default: [] })
+  finesDetails!: Record<string, unknown>[];
+
+  @Prop({ type: String, default: null })
+  taxesStatus!: string | null;
+
+  @Prop({ type: [String], default: [] })
+  taxesPendingYears!: string[];
+
+  @Prop({ type: Number, default: 0 })
+  sinisterCount!: number;
+
+  @Prop({ type: [Object], default: [] })
+  sinisterDetails!: Record<string, unknown>[];
+
+  @Prop({ type: Boolean, default: false })
+  picoYPlacaRestrictedToday!: boolean;
+
+  @Prop({ type: Date, default: null })
+  fullDiagnosticLastSyncedAt!: Date | null;
 }
 
 export const GarageMotorcycleSchema =

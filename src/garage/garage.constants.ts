@@ -114,4 +114,5 @@ export interface ProfileMotorcycleData {
   tecnomecanicaVigencia?: string;
   seguroTodoRiesgo?: string;
   polizaNumero?: string;
+  vinMoto?: string;
 }

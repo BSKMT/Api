@@ -98,20 +98,85 @@ export function normalizeRuntVehicle(
     return null;
   };
 
-  const plate = str(data.plate) ?? str(data.placa) ?? fallbackPlate;
-  const brand = str(data.marca) ?? str(data.brand);
-  const modelLine = str(data.linea) ?? str(data.modelLine) ?? str(data.line);
-  const year = num(data.modelo) ?? num(data.year);
-  const displacementCc = num(data.cilindraje) ?? num(data.displacementCc);
-  const color = str(data.color);
-  const serviceType = str(data.servicio) ?? str(data.serviceType);
-  const classType = str(data.clase) ?? str(data.classType);
-  const engineNumber = str(data.numeroMotor) ?? str(data.engineNumber);
-  const vinOrChassis =
-    str(data.numeroChasis) ?? str(data.vin) ?? str(data.chasis);
+  const infoGen =
+    data.informacionGeneral && typeof data.informacionGeneral === "object"
+      ? (data.informacionGeneral as Record<string, unknown>)
+      : {};
+  const datosTec =
+    data.datosTecnicos && typeof data.datosTecnicos === "object"
+      ? (data.datosTecnicos as Record<string, unknown>)
+      : {};
 
-  const rawSoat = data.soat ?? data.polizaSoat;
-  const rawRtm = data.tecnomecanica ?? data.rtm ?? data.revisionTecnicomecanica;
+  const plate =
+    str(data.plate) ??
+    str(data.placa) ??
+    str(infoGen.placa) ??
+    str(infoGen.plate) ??
+    fallbackPlate;
+
+  const brand =
+    str(data.marca) ??
+    str(data.brand) ??
+    str(infoGen.marca) ??
+    str(infoGen.brand);
+
+  const modelLine =
+    str(data.linea) ??
+    str(data.modelLine) ??
+    str(data.line) ??
+    str(infoGen.linea) ??
+    str(infoGen.modelLine);
+
+  const year =
+    num(data.modelo) ??
+    num(data.year) ??
+    num(infoGen.modelo) ??
+    num(infoGen.year);
+
+  const displacementCc =
+    num(data.cilindraje) ??
+    num(data.displacementCc) ??
+    num(datosTec.cilindrada) ??
+    num(datosTec.cilindraje) ??
+    num(datosTec.displacementCc);
+
+  const color = str(data.color) ?? str(infoGen.color) ?? str(datosTec.color);
+
+  const serviceType =
+    str(data.servicio) ??
+    str(data.serviceType) ??
+    str(infoGen.servicio) ??
+    str(infoGen.tipoServicio);
+
+  const classType =
+    str(data.clase) ??
+    str(data.classType) ??
+    str(infoGen.clase) ??
+    str(infoGen.claseVehiculo);
+
+  const engineNumber =
+    str(data.numeroMotor) ??
+    str(data.engineNumber) ??
+    str(datosTec.numeroMotor) ??
+    str(infoGen.numeroMotor);
+
+  const vinOrChassis =
+    str(data.numeroChasis) ??
+    str(data.vin) ??
+    str(data.chasis) ??
+    str(datosTec.numeroChasis) ??
+    str(datosTec.vin) ??
+    str(infoGen.numeroChasis) ??
+    str(infoGen.vin);
+
+  const rawSoat = data.soat ?? data.polizaSoat ?? infoGen.soat ?? data.soats;
+
+  const rawRtm =
+    data.tecnomecanica ??
+    data.rtm ??
+    data.revisionTecnicomecanica ??
+    data.tecnoMecanica ??
+    infoGen.tecnoMecanica;
 
   return {
     plate,

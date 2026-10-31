@@ -1,6 +1,7 @@
 import {
   Injectable,
   NotFoundException,
+  BadRequestException,
   Logger,
   HttpException,
   HttpStatus,
@@ -44,7 +45,39 @@ import {
   executeCreateMaintenance,
   executeRecordAlliedServiceOrder,
 } from "./garage-maintenance.helpers";
-import { executeVerifyMotorcycleWithRunt } from "./garage-runt.helpers";
+import {
+  executeVerifyMotorcycleWithRunt,
+  executeSyncMotorcycleWithVerifik,
+} from "./garage-runt.helpers";
+
+function parseDateIfValid(val: unknown): Date | null {
+  if (typeof val !== "string" || !val.trim()) return null;
+  const d = new Date(val);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function applyProfileFieldsToMotorcycle(
+  moto: GarageMotorcycleDocument,
+  p: Record<string, unknown>,
+): void {
+  const str = (v: unknown) =>
+    typeof v === "string" && v.trim() ? v.trim() : undefined;
+  moto.brand = str(p.marcaMoto) ?? moto.brand;
+  moto.modelLine = str(p.lineaMoto) ?? moto.modelLine;
+  moto.year = Number(p.anioMoto) || moto.year || new Date().getFullYear();
+  moto.displacementCc = Number(p.cilindraje) || moto.displacementCc || 250;
+  moto.color = str(p.colorMoto) ?? moto.color;
+  moto.motorcycleType = str(p.tipoMoto) ?? moto.motorcycleType;
+  moto.vinOrEngineNumber = str(p.vinMoto) ?? moto.vinOrEngineNumber;
+  moto.insuranceCompany = str(p.seguroTodoRiesgo) ?? moto.insuranceCompany;
+  moto.policyNumber = str(p.polizaNumero) ?? moto.policyNumber;
+
+  const soat = parseDateIfValid(p.soatVigencia);
+  if (soat) moto.soatExpiryDate = soat;
+
+  const rtm = parseDateIfValid(p.tecnomecanicaVigencia);
+  if (rtm) moto.rtmExpiryDate = rtm;
+}
 
 @Injectable()
 export class GarageService {
@@ -282,5 +315,142 @@ export class GarageService {
     } finally {
       await this.recordRuntUserAttempt(userId);
     }
+  }
+
+  async lookupVehicleByVin(vin: string) {
+    const res = await this.verifikService.verifyRuntVehicleByVin(vin);
+    if (!res.ok) {
+      throw new BadRequestException(res.message);
+    }
+    return res.record;
+  }
+
+  async lookupVehicleByPlate(plate: string) {
+    const res = await this.verifikService.verifyRuntVehicleByPlate(plate);
+    if (!res.ok) {
+      throw new BadRequestException(res.message);
+    }
+    return res.record;
+  }
+
+  async getMotorcycleDiagnostic(userId: string, motorcycleId: string) {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new NotFoundException("Usuario no encontrado");
+
+    const moto = await this.motorcycleModel.findOne({
+      _id: motorcycleId,
+      userId,
+    });
+    if (!moto) throw new NotFoundException("Motocicleta no encontrada");
+
+    const personal = user.profile?.["datos-personales"] as
+      Record<string, unknown> | undefined;
+    const docHolder =
+      typeof personal?.numeroDocumento === "string"
+        ? personal.numeroDocumento
+        : undefined;
+    const docType =
+      typeof personal?.tipoDocumento === "string"
+        ? personal.tipoDocumento
+        : "CC";
+
+    return this.verifikService.getFullVehicleDiagnostic(
+      moto.vinOrEngineNumber || moto.plate,
+      docHolder,
+      docType,
+    );
+  }
+
+  async syncMotorcycleWithVerifik(
+    userId: string,
+    motorcycleId: string,
+    dto?: VerifyRuntDto,
+  ) {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new NotFoundException("Usuario no encontrado");
+
+    const moto = await this.motorcycleModel.findOne({
+      _id: motorcycleId,
+      userId,
+    });
+    if (!moto) throw new NotFoundException("Motocicleta no encontrada");
+
+    await this.enforceRuntUserThrottle(userId);
+    try {
+      return await executeSyncMotorcycleWithVerifik(
+        this.verifikService,
+        user,
+        moto,
+        dto,
+        userId,
+        this.logger,
+      );
+    } finally {
+      await this.recordRuntUserAttempt(userId);
+    }
+  }
+
+  private async resolveProfileMotorcycle(
+    userId: string,
+    plate: string,
+    isLegend: boolean,
+  ): Promise<{ moto: GarageMotorcycleDocument | null; isNew: boolean }> {
+    const existing = await this.motorcycleModel.findOne({ userId, plate });
+    if (existing) {
+      return { moto: existing, isNew: false };
+    }
+
+    const count = await this.motorcycleModel.countDocuments({ userId });
+    if (!isLegend && count >= 1) {
+      const primary = await this.motorcycleModel.findOne({
+        userId,
+        isPrimary: true,
+      });
+      return { moto: primary, isNew: false };
+    }
+
+    const newMoto = new this.motorcycleModel({
+      userId,
+      plate,
+      isPrimary: count === 0,
+    });
+    return { moto: newMoto, isNew: true };
+  }
+
+  private extractPlateString(val: unknown): string {
+    if (typeof val === "string") {
+      return val;
+    }
+    if (typeof val === "number") {
+      return `${val}`;
+    }
+    return "";
+  }
+
+  async syncMotorcycleFromProfile(userId: string) {
+    const user = await this.usersService.findById(userId);
+    if (!user?.profile) return null;
+
+    const motoProfile = user.profile["motocicleta"] as
+      Record<string, unknown> | undefined;
+    if (!motoProfile?.placaMoto) return null;
+
+    const plate = this.extractPlateString(motoProfile.placaMoto)
+      .trim()
+      .toUpperCase();
+    if (!plate) return null;
+
+    const isLegend = user.membershipLevel === "Legend";
+    const { moto, isNew } = await this.resolveProfileMotorcycle(
+      userId,
+      plate,
+      isLegend,
+    );
+    if (!moto) return null;
+
+    applyProfileFieldsToMotorcycle(moto, motoProfile);
+    await moto.save();
+
+    return { success: true, isNew, motorcycle: moto };
   }
 }

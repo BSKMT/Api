@@ -226,3 +226,65 @@ export async function executeVerifyMotorcycleWithRunt(
     motorcycle: moto,
   };
 }
+
+export async function executeSyncMotorcycleWithVerifik(
+  verifikService: VerifikService,
+  user: UserDocumentSource,
+  moto: GarageMotorcycleDocument,
+  dto: VerifyRuntDto | undefined,
+  userId: string,
+  logger: Logger,
+) {
+  let docType = "CC";
+  let docNum = "";
+  try {
+    const res = resolveUserDocumentForRunt(user, dto);
+    docType = res.documentType;
+    docNum = res.documentNumber;
+  } catch {
+    // optional document holder
+  }
+
+  const queryKey = moto.vinOrEngineNumber || moto.plate;
+  const diagnostic = await verifikService.getFullVehicleDiagnostic(
+    queryKey,
+    docNum || undefined,
+    docType,
+  );
+
+  applyRuntSync(
+    moto,
+    diagnostic.vehicle,
+    docNum || moto.runtDocumentHolder || "",
+  );
+  moto.fasecoldaCode = diagnostic.valuation.fasecoldaCode ?? moto.fasecoldaCode;
+  moto.fasecoldaValue =
+    diagnostic.valuation.fasecoldaValue ?? moto.fasecoldaValue;
+  moto.sibgaValuation =
+    diagnostic.valuation.sibgaValuation ?? moto.sibgaValuation;
+  moto.finesCount = diagnostic.fines.totalFines;
+  moto.finesTotalAmount = diagnostic.fines.totalAmount;
+  moto.finesLastCheckedAt = new Date(diagnostic.fines.lastCheckedAt);
+  moto.finesDetails = diagnostic.fines.fines as unknown as Record<
+    string,
+    unknown
+  >[];
+  moto.taxesStatus = diagnostic.taxes.status;
+  moto.taxesPendingYears = diagnostic.taxes.pendingYears;
+  moto.sinisterCount = diagnostic.sinister.sinisterCount;
+  moto.sinisterDetails = diagnostic.sinister.records;
+  moto.picoYPlacaRestrictedToday = diagnostic.picoYPlaca.hasRestrictionToday;
+  moto.fullDiagnosticLastSyncedAt = new Date();
+
+  await moto.save();
+
+  logger.log(
+    `Full Verifik diagnostic synced for moto ${moto.plate} (user ${userId})`,
+  );
+
+  return {
+    success: true,
+    diagnostic,
+    motorcycle: moto,
+  };
+}

@@ -60,13 +60,15 @@ export class CreateMotorcycleDto {
   @MaxLength(40)
   motorcycleType?: string;
 
+  @IsOptional()
   @IsEnum(UsageProfile)
-  usageProfile!: UsageProfile;
+  usageProfile?: UsageProfile;
 
+  @IsOptional()
   @IsInt()
   @Min(0)
   @Max(2000000)
-  currentOdometerKm!: number;
+  currentOdometerKm?: number;
 
   @IsOptional()
   @IsString()

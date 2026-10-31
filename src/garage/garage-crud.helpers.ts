@@ -96,8 +96,8 @@ export async function executeCreateMotorcycle(
     nickname: dto.nickname?.trim() ?? null,
     color: dto.color?.trim() ?? "Negro",
     motorcycleType: dto.motorcycleType?.trim() ?? "Naked",
-    usageProfile: dto.usageProfile,
-    currentOdometerKm: dto.currentOdometerKm,
+    usageProfile: dto.usageProfile ?? "daily_urban",
+    currentOdometerKm: dto.currentOdometerKm ?? 0,
     odometerLastUpdatedAt: new Date(),
     soatExpiryDate: parseDateOrNull(dto.soatExpiryDate),
     rtmExpiryDate: parseDateOrNull(dto.rtmExpiryDate),
@@ -112,7 +112,7 @@ export async function executeCreateMotorcycle(
   await odometerModel.create({
     userId,
     motorcycleId: String(saved._id),
-    odometerKm: dto.currentOdometerKm,
+    odometerKm: dto.currentOdometerKm ?? 0,
     recordedAt: new Date(),
     source: OdometerSource.MANUAL_QUICK,
   });
@@ -146,7 +146,7 @@ export async function executeUpdateMotorcycle(
     await odometerModel.create({
       userId,
       motorcycleId,
-      odometerKm: dto.currentOdometerKm,
+      odometerKm: dto.currentOdometerKm ?? 0,
       recordedAt: new Date(),
       source: OdometerSource.MANUAL_QUICK,
     });

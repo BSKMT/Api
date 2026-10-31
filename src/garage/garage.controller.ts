@@ -107,6 +107,70 @@ export class GarageController {
     );
   }
 
+  @Get("lookup-vin")
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  async lookupVinGet(@Query("vin") vin?: string) {
+    if (!vin?.trim()) {
+      return { error: "El número de VIN es requerido" };
+    }
+    return await this.garageService.lookupVehicleByVin(vin);
+  }
+
+  @Post("lookup-vin")
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  async lookupVinPost(@Body("vin") vin?: string) {
+    return await this.lookupVinGet(vin);
+  }
+
+  @Get("lookup-plate")
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  async lookupPlateGet(@Query("plate") plate?: string) {
+    if (!plate?.trim()) {
+      return { error: "La placa es requerida" };
+    }
+    return await this.garageService.lookupVehicleByPlate(plate);
+  }
+
+  @Post("lookup-plate")
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  async lookupPlatePost(@Body("plate") plate?: string) {
+    return await this.lookupPlateGet(plate);
+  }
+
+  @Get("motorcycles/:id/verifik-diagnostic")
+  async getMotorcycleDiagnostic(
+    @Req() req: AuthenticatedRequest,
+    @Param("id", ParseObjectIdPipe) id: string,
+  ) {
+    return await this.garageService.getMotorcycleDiagnostic(
+      req.user.userId,
+      id,
+    );
+  }
+
+  @Post("motorcycles/:id/verifik-sync")
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  async syncMotorcycleWithVerifik(
+    @Req() req: AuthenticatedRequest,
+    @Param("id", ParseObjectIdPipe) id: string,
+    @Body() dto?: VerifyRuntDto,
+  ) {
+    return await this.garageService.syncMotorcycleWithVerifik(
+      req.user.userId,
+      id,
+      dto,
+    );
+  }
+
+  @Post("sync-from-profile")
+  @HttpCode(HttpStatus.OK)
+  async syncFromProfile(@Req() req: AuthenticatedRequest) {
+    return await this.garageService.syncMotorcycleFromProfile(req.user.userId);
+  }
+
   @Public()
   @Post("allied/service-order")
   @HttpCode(HttpStatus.CREATED)
