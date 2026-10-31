@@ -139,7 +139,7 @@ export class GarageController {
     return await this.lookupPlateGet(plate);
   }
 
-  @Get("motorcycles/:id/verifik-diagnostic")
+  @Get(["motorcycles/:id/diagnostic", "motorcycles/:id/verifik-diagnostic"])
   async getMotorcycleDiagnostic(
     @Req() req: AuthenticatedRequest,
     @Param("id", ParseObjectIdPipe) id: string,
@@ -150,7 +150,7 @@ export class GarageController {
     );
   }
 
-  @Post("motorcycles/:id/verifik-sync")
+  @Post(["motorcycles/:id/sync", "motorcycles/:id/verifik-sync"])
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 60000, limit: 5 } })
   async syncMotorcycleWithVerifik(
