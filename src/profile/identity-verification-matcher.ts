@@ -110,3 +110,73 @@ export function namesMatch(declared: string, official: string): boolean {
 
   return diceCoefficient(a, b) >= NAME_SIMILARITY_THRESHOLD;
 }
+
+export function parseOfficialNames(record: {
+  firstName?: string | null;
+  lastName?: string | null;
+  fullName?: string | null;
+  arrayName?: string[];
+}): {
+  primerNombre: string;
+  segundoNombre: string;
+  primerApellido: string;
+  segundoApellido: string;
+} {
+  const cleanTokens = (record.arrayName ?? []).filter(
+    (token): token is string =>
+      typeof token === "string" && token.trim().length > 0,
+  );
+
+  if (cleanTokens.length >= 4) {
+    return {
+      primerNombre: cleanTokens[0],
+      segundoNombre: cleanTokens[1],
+      primerApellido: cleanTokens[2],
+      segundoApellido: cleanTokens.slice(3).join(" "),
+    };
+  }
+
+  if (cleanTokens.length === 3) {
+    return {
+      primerNombre: cleanTokens[0],
+      segundoNombre: "",
+      primerApellido: cleanTokens[1],
+      segundoApellido: cleanTokens[2],
+    };
+  }
+
+  if (cleanTokens.length === 2) {
+    return {
+      primerNombre: cleanTokens[0],
+      segundoNombre: "",
+      primerApellido: cleanTokens[1],
+      segundoApellido: "",
+    };
+  }
+
+  const firstParts = (record.firstName ?? "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const lastParts = (record.lastName ?? "").trim().split(/\s+/).filter(Boolean);
+
+  return {
+    primerNombre: firstParts[0] || (cleanTokens[0] ?? ""),
+    segundoNombre: firstParts.slice(1).join(" ") || "",
+    primerApellido: lastParts[0] || (cleanTokens[1] ?? ""),
+    segundoApellido: lastParts.slice(1).join(" ") || (cleanTokens[2] ?? ""),
+  };
+}
+
+export function mapVerifikTypeToLabel(type: VerifikDocumentType): string {
+  switch (type) {
+    case "CC":
+      return "Cédula de Ciudadanía";
+    case "CE":
+      return "Cédula de Extranjería";
+    case "PPT":
+      return "Permiso de Protección Temporal";
+    case "PEP":
+      return "Permiso Especial de Permanencia";
+  }
+}

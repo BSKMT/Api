@@ -109,23 +109,35 @@ export class IdentityAttemptThrottle {
 
 export function extractAndValidateDocument(
   personal: Record<string, unknown>,
-  expeditionDate?: string,
+  dto?:
+    | {
+        documentType?: string;
+        documentNumber?: string;
+        expeditionDate?: string;
+      }
+    | string,
 ): {
   verifikType: VerifikDocumentType;
   documentNumber: string;
   verifikExpeditionDate: string | null;
 } {
-  const rawType =
-    typeof personal.tipoDocumento === "string" ? personal.tipoDocumento : "";
-  const rawNumber =
-    typeof personal.numeroDocumento === "string"
+  const dtoObj =
+    typeof dto === "string" ? { expeditionDate: dto } : (dto ?? {});
+  const rawType = (
+    dtoObj.documentType?.trim() ||
+    (typeof personal.tipoDocumento === "string" ? personal.tipoDocumento : "")
+  ).trim();
+  const rawNumber = (
+    dtoObj.documentNumber?.trim() ||
+    (typeof personal.numeroDocumento === "string"
       ? personal.numeroDocumento
-      : "";
+      : "")
+  ).trim();
 
   const verifikType = mapDocumentType(rawType);
   if (!verifikType) {
     throw new BadRequestException(
-      "El tipo de documento registrado no admite verificacion automatica. Contacta al equipo BSK.",
+      "El tipo de documento seleccionado no admite verificación automática (CC, CE, PPT o PEP). Contacta al equipo BSK.",
     );
   }
 
@@ -133,17 +145,17 @@ export function extractAndValidateDocument(
   if (!DOCUMENT_NUMBER_PATTERN[verifikType].test(documentNumber)) {
     throw new BadRequestException(
       verifikType === "PEP"
-        ? "El numero de PEP debe tener exactamente 15 digitos."
-        : "El numero de documento no tiene un formato valido. Corrigelo en tu perfil e intenta de nuevo.",
+        ? "El número de PEP debe tener exactamente 15 dígitos."
+        : "El número de documento no tiene un formato válido. Corrígelo e intenta de nuevo.",
     );
   }
 
   let verifikExpeditionDate: string | null = null;
   if (REQUIRES_EXPEDITION_DATE[verifikType]) {
-    verifikExpeditionDate = toVerifikDate(expeditionDate);
+    verifikExpeditionDate = toVerifikDate(dtoObj.expeditionDate);
     if (!verifikExpeditionDate) {
       throw new BadRequestException(
-        "Debes ingresar la fecha de expedicion de tu documento (DD/MM/AAAA).",
+        "Debes ingresar la fecha de expedición de tu documento de extranjería (DD/MM/AAAA).",
       );
     }
   }

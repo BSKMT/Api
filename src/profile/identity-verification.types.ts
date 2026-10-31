@@ -38,12 +38,25 @@ export interface IdentityVerificationStatus {
 export interface IdentityVerifyResult {
   verified: boolean;
   message: string;
-  checks: IdentityCheckResult | null;
+  checks?: IdentityCheckResult | null;
   autoFilledFields: string[];
   officialData: {
     fullName: string;
+    firstName?: string | null;
+    lastName?: string | null;
     dateOfBirth: string | null;
     gender: string | null;
     documentStatus: string | null;
+    documentType?: string;
+    documentNumber?: string;
+    driverLicense?: {
+      number?: string;
+      category?: string;
+      expiryDate?: string | null;
+      status?: string;
+    } | null;
   } | null;
+  profile?: Record<string, unknown>;
+  completedSections?: string[];
+  profileCompleted?: boolean;
 }

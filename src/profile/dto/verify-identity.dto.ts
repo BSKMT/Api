@@ -13,6 +13,16 @@ import { IsOptional, IsString, Matches, MaxLength } from "class-validator";
 export class VerifyIdentityDto {
   @IsOptional()
   @IsString()
+  @MaxLength(60)
+  documentType?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  documentNumber?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(10)
   @Matches(/^\d{4}-\d{2}-\d{2}$/, {
     message: "expeditionDate debe ser una fecha valida YYYY-MM-DD",

@@ -26,19 +26,13 @@ export class IdentityVerificationController {
   constructor(private readonly identityService: IdentityVerificationService) {}
 
   @Get()
-  async getStatus(@Req() req: AuthenticatedRequest) {
+  getStatus(@Req() req: AuthenticatedRequest) {
     return this.identityService.getStatus(req.user.userId);
   }
 
   @Post("verify")
-  @Throttle({ default: { ttl: 60000, limit: 3 } })
-  async verify(
-    @Req() req: AuthenticatedRequest,
-    @Body() dto: VerifyIdentityDto,
-  ) {
-    return this.identityService.verifyIdentity(
-      req.user.userId,
-      dto.expeditionDate,
-    );
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  verify(@Req() req: AuthenticatedRequest, @Body() dto: VerifyIdentityDto) {
+    return this.identityService.verifyIdentity(req.user.userId, dto);
   }
 }

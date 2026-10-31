@@ -59,7 +59,7 @@ export class IdentityVerifiedGuard implements CanActivate {
       statusCode: 403,
       error: "identity_verification_required",
       message:
-        "Debes verificar tu identidad antes de realizar esta accion. Ve a Configuracion > Mi cuenta > Identidad oficial.",
+        "Debes verificar tu identidad antes de realizar esta acción. Ve a tu Ficha de Piloto y Perfil > Datos Personales.",
     });
   }
 }

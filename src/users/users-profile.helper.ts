@@ -143,7 +143,11 @@ export const SECTION_REQUIRED_FIELDS: Record<string, string[]> = {
 export function isSectionValid(
   sectionId: string,
   data: Record<string, unknown>,
+  isIdentityVerified = false,
 ): boolean {
+  if (sectionId === "datos-personales" && !isIdentityVerified) {
+    return false;
+  }
   const reqFields = SECTION_REQUIRED_FIELDS[sectionId];
   if (!reqFields) return true;
   return reqFields.every((f) => {
@@ -179,12 +183,22 @@ export async function executeUpdateProfileSection(
     throw new NotFoundException("Usuario no encontrado");
   }
 
+  if (sectionId === "datos-personales" && !user.identityVerified) {
+    throw new BadRequestException(
+      "Debes verificar tu documento de identidad con el registro oficial antes de guardar los datos personales.",
+    );
+  }
+
   handleSectionPreUpdates(user, sectionId, sanitizedData);
 
   const profile = user.profile ?? {};
   applySectionToProfile(profile, sectionId, sanitizedData);
 
-  const sectionComplete = isSectionValid(sectionId, sanitizedData);
+  const sectionComplete = isSectionValid(
+    sectionId,
+    sanitizedData,
+    Boolean(user.identityVerified),
+  );
   let completedSections = [...(user.completedSections ?? [])];
   if (sectionComplete) {
     if (!completedSections.includes(sectionId)) {
@@ -194,9 +208,9 @@ export async function executeUpdateProfileSection(
     completedSections = completedSections.filter((s) => s !== sectionId);
   }
 
-  const profileCompleted = REQUIRED_PROFILE_SECTIONS.every((s) =>
-    completedSections.includes(s),
-  );
+  const profileCompleted =
+    REQUIRED_PROFILE_SECTIONS.every((s) => completedSections.includes(s)) &&
+    Boolean(user.identityVerified);
 
   if (profileCompleted && !user.profileCompleted) {
     await ensureMembershipSectionOnComplete(userModel, user, profile);

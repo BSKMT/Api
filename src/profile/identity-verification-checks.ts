@@ -49,7 +49,10 @@ export function evaluateNameCheck(
   declared: string,
   official: string,
 ): CheckOutcome {
-  if (normalizeName(declared).length > 0 && namesMatch(declared, official)) {
+  if (!declared || normalizeName(declared).length === 0) {
+    return "auto_filled";
+  }
+  if (namesMatch(declared, official)) {
     return "match";
   }
   return "mismatch";

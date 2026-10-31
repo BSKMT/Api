@@ -31,7 +31,8 @@ export class ProfileCompletedGuard implements CanActivate {
 
     if (
       user?.profileCompleted === true &&
-      user?.legalConsentAccepted === true
+      user?.legalConsentAccepted === true &&
+      user?.identityVerified === true
     ) {
       return true;
     }
