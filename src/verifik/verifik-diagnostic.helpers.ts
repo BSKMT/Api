@@ -1,4 +1,3 @@
-import { randomInt } from "node:crypto";
 import type {
   VerifikFinesRecord,
   VerifikFinesItem,
@@ -6,9 +5,6 @@ import type {
   VerifikValuationRecord,
   VerifikSinisterRecord,
   VerifikPicoYPlacaRecord,
-  VerifikDriverLicenseRecord,
-  VerifikRuntVehicleRecord,
-  VerifikFullDiagnosticRecord,
 } from "./verifik.interfaces";
 
 export function toSafeStr(val: unknown, fallback = ""): string {
@@ -303,124 +299,5 @@ export function calculatePicoYPlaca(
     message: isWeekend
       ? "Sin restricción de fin de semana."
       : "Sujeto a rotación semestral de dígitos de Medellín.",
-  };
-}
-
-export function generateSimulatedVehicleDiagnostic(
-  vinOrPlate: string,
-  userDocHolder?: string,
-): VerifikFullDiagnosticRecord {
-  const isVin =
-    vinOrPlate.length > 8 && /[A-HJ-NPR-Z0-9]{11,17}/i.test(vinOrPlate);
-  const plate = isVin
-    ? "BSK" + vinOrPlate.slice(-3).toUpperCase()
-    : vinOrPlate.toUpperCase().replace(/[^A-Z0-9]/g, "");
-  const vin = isVin ? vinOrPlate.toUpperCase() : `9F2BSKMT${plate}2024`;
-
-  const vehicle: VerifikRuntVehicleRecord = {
-    plate: plate.length === 6 ? plate : "BSK12D",
-    brand: "BMW",
-    modelLine: "R 1250 GS Adventure",
-    year: 2024,
-    displacementCc: 1254,
-    color: "Negro Tormenta Metálico / Triple Black",
-    serviceType: "PARTICULAR",
-    classType: "MOTOCICLETA",
-    engineNumber: `122EJ${randomInt(100000, 999999)}`,
-    vinOrChassis: vin,
-    soat: {
-      status: "VIGENTE",
-      policyNumber: `8410-0923-${randomInt(100000, 999999)}`,
-      insuranceCompany: "Seguros del Estado S.A.",
-      startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-        .toISOString()
-        .slice(0, 10),
-      expiryDate: new Date(Date.now() + 335 * 24 * 60 * 60 * 1000)
-        .toISOString()
-        .slice(0, 10),
-    },
-    rtm: {
-      status: "VIGENTE",
-      certificateNumber: `CDA-BOG-${randomInt(100000, 999999)}`,
-      cdaName: "CDA AUTOMAS SEDE CALLE 127",
-      expeditionDate: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000)
-        .toISOString()
-        .slice(0, 10),
-      expiryDate: new Date(Date.now() + 305 * 24 * 60 * 60 * 1000)
-        .toISOString()
-        .slice(0, 10),
-    },
-    verifikId: "sim_vrk_" + Date.now(),
-  };
-
-  const fines: VerifikFinesRecord = {
-    hasFines: false,
-    totalFines: 0,
-    totalAmount: 0,
-    fines: [],
-    lastCheckedAt: new Date().toISOString(),
-  };
-
-  const taxes: VerifikTaxesRecord = {
-    plate: vehicle.plate,
-    status: "AL_DIA",
-    pendingYears: [],
-    totalAmount: 0,
-    lastPaymentDate: new Date(Date.now() - 120 * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .slice(0, 10),
-    message: "A paz y salvo en el impuesto sobre vehículos automotores.",
-  };
-
-  const valuation: VerifikValuationRecord = {
-    plate: vehicle.plate,
-    fasecoldaCode: "01020492",
-    fasecoldaValue: 124500000,
-    sibgaValuation: 118200000,
-    marketMin: 115000000,
-    marketMax: 132000000,
-    currency: "COP",
-    lastUpdatedYear: 2026,
-  };
-
-  const sinister: VerifikSinisterRecord = {
-    plate: vehicle.plate,
-    hasSinister: false,
-    sinisterCount: 0,
-    records: [],
-    status: "LIMPIO",
-  };
-
-  const picoYPlaca = calculatePicoYPlaca(vehicle.plate, "bogota");
-
-  const license: VerifikDriverLicenseRecord = {
-    documentNumber: userDocHolder || "1090123456",
-    documentType: "CC",
-    status: "ACTIVA",
-    categories: [
-      {
-        category: "A2",
-        validUntil: new Date(Date.now() + 800 * 24 * 60 * 60 * 1000)
-          .toISOString()
-          .slice(0, 10),
-        status: "VIGENTE",
-      },
-    ],
-    expeditionDate: "2018-05-15",
-    expiryDate: new Date(Date.now() + 800 * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .slice(0, 10),
-  };
-
-  return {
-    vehicle,
-    fines,
-    taxes,
-    valuation,
-    sinister,
-    picoYPlaca,
-    license,
-    syncedAt: new Date().toISOString(),
-    source: "SIMULATED_DEV",
   };
 }

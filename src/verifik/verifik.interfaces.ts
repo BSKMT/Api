@@ -150,7 +150,7 @@ export interface VerifikFullDiagnosticRecord {
   picoYPlaca: VerifikPicoYPlacaRecord;
   license?: VerifikDriverLicenseRecord | null;
   syncedAt: string;
-  source: "VERIFIK_OFFICIAL" | "SIMULATED_DEV";
+  source: "VERIFIK_OFFICIAL";
 }
 
 export type VerifikGenericLookupResult<T> =

@@ -145,34 +145,6 @@ export function applyRuntSync(
   return { updatedFields, discrepancies };
 }
 
-export function handleUnconfiguredVerifik(
-  moto: GarageMotorcycleDocument,
-  documentNumber: string,
-) {
-  moto.isRuntVerified = true;
-  moto.runtVerifiedAt = new Date();
-  moto.runtDocumentHolder = documentNumber;
-  moto.runtSoatStatus = "VIGENTE";
-  moto.runtRtmStatus = "VIGENTE";
-  moto.runtCdaName = "CDA AUTOMAS SEDE CALLE 127";
-  moto.soatExpiryDate ??= new Date(Date.now() + 180 * 24 * 60 * 60 * 1000);
-  moto.rtmExpiryDate ??= new Date(Date.now() + 240 * 24 * 60 * 60 * 1000);
-  moto.insuranceCompany ??= "Seguros del Estado";
-
-  return {
-    success: true,
-    verified: true,
-    simulated: true,
-    plate: moto.plate,
-    verifiedAt: moto.runtVerifiedAt,
-    updatedFields: ["isRuntVerified", "runtVerifiedAt", "runtCdaName"],
-    discrepancies: [],
-    motorcycle: moto,
-    message:
-      "Validación simulada en entorno de desarrollo (VERIFIK_API_TOKEN no configurado en .env)",
-  };
-}
-
 export async function executeVerifyMotorcycleWithRunt(
   verifikService: VerifikService,
   user: UserDocumentSource,
@@ -187,9 +159,9 @@ export async function executeVerifyMotorcycleWithRunt(
   );
 
   if (!verifikService.isConfigured()) {
-    const sim = handleUnconfiguredVerifik(moto, documentNumber);
-    await moto.save();
-    return sim;
+    throw new BadRequestException(
+      "El servicio de verificación Verifik no está configurado en el servidor.",
+    );
   }
 
   const runtResult = await verifikService.verifyRuntVehicle(

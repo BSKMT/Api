@@ -21,7 +21,6 @@ import {
   normalizeValuation,
   normalizeSinister,
   calculatePicoYPlaca,
-  generateSimulatedVehicleDiagnostic,
 } from "./verifik-diagnostic.helpers";
 
 function safeStr(val: unknown, fallback = ""): string {
@@ -113,11 +112,6 @@ export class VerifikService {
 
   async verifyRuntVehicleByVin(vin: string): Promise<VerifikRuntLookupResult> {
     const cleanVin = vin.trim().toUpperCase();
-    if (!this.isConfigured()) {
-      const sim = generateSimulatedVehicleDiagnostic(cleanVin);
-      return { ok: true, record: sim.vehicle };
-    }
-
     return this.getRuntVehicle("/v2/co/runt/vehicle-by-vin", {
       vin: cleanVin,
     });
@@ -127,11 +121,6 @@ export class VerifikService {
     plate: string,
   ): Promise<VerifikRuntLookupResult> {
     const cleanPlate = plate.trim().toUpperCase();
-    if (!this.isConfigured()) {
-      const sim = generateSimulatedVehicleDiagnostic(cleanPlate);
-      return { ok: true, record: sim.vehicle };
-    }
-
     return this.getRuntVehicle("/v2/co/runt/vehicle-by-plate-only", {
       plate: cleanPlate,
     });
@@ -139,10 +128,6 @@ export class VerifikService {
 
   async getVehicleFines(plate: string): Promise<VerifikFinesRecord> {
     const cleanPlate = plate.trim().toUpperCase();
-    if (!this.isConfigured()) {
-      return generateSimulatedVehicleDiagnostic(cleanPlate).fines;
-    }
-
     const [simitRes, bogotaRes] = await Promise.allSettled([
       executeVerifikFetch(
         this.configService,
@@ -193,10 +178,6 @@ export class VerifikService {
 
   async getVehicleTaxes(plate: string): Promise<VerifikTaxesRecord> {
     const cleanPlate = plate.trim().toUpperCase();
-    if (!this.isConfigured()) {
-      return generateSimulatedVehicleDiagnostic(cleanPlate).taxes;
-    }
-
     const fetchResult = await executeVerifikFetch(
       this.configService,
       this.logger,
@@ -219,10 +200,6 @@ export class VerifikService {
 
   async getVehicleValuation(plate: string): Promise<VerifikValuationRecord> {
     const cleanPlate = plate.trim().toUpperCase();
-    if (!this.isConfigured()) {
-      return generateSimulatedVehicleDiagnostic(cleanPlate).valuation;
-    }
-
     const [fasecoldaRes, sibgaRes] = await Promise.allSettled([
       executeVerifikFetch(
         this.configService,
@@ -252,10 +229,6 @@ export class VerifikService {
 
   async getVehicleSinister(plate: string): Promise<VerifikSinisterRecord> {
     const cleanPlate = plate.trim().toUpperCase();
-    if (!this.isConfigured()) {
-      return generateSimulatedVehicleDiagnostic(cleanPlate).sinister;
-    }
-
     const fetchResult = await executeVerifikFetch(
       this.configService,
       this.logger,
@@ -283,19 +256,6 @@ export class VerifikService {
     const cleanDocType = documentType.trim().toUpperCase();
     const cleanDocNumber = documentNumber.replace(/\D/g, "");
 
-    if (!this.isConfigured()) {
-      return {
-        documentNumber: cleanDocNumber,
-        documentType: cleanDocType,
-        status: "ACTIVA",
-        categories: [
-          { category: "A2", validUntil: "2030-12-31", status: "VIGENTE" },
-        ],
-        expeditionDate: "2018-05-10",
-        expiryDate: "2030-12-31",
-      };
-    }
-
     const fetchResult = await executeVerifikFetch(
       this.configService,
       this.logger,
@@ -307,8 +267,10 @@ export class VerifikService {
       return {
         documentNumber: cleanDocNumber,
         documentType: cleanDocType,
-        status: "ACTIVA",
-        categories: [{ category: "A2", validUntil: null, status: "VIGENTE" }],
+        status: "NO_REGISTRA",
+        categories: [],
+        expeditionDate: null,
+        expiryDate: null,
       };
     }
 
@@ -325,25 +287,23 @@ export class VerifikService {
         unknown
       >;
       return {
-        category: safeStr(cObj.categoria ?? cObj.category, "A2"),
+        category: safeStr(cObj.categoria ?? cObj.category, ""),
         validUntil:
           typeof cObj.fechaVencimiento === "string"
             ? cObj.fechaVencimiento
             : null,
-        status: safeStr(cObj.estado, "VIGENTE"),
+        status: safeStr(cObj.estado, ""),
       };
     });
 
-    const licenseStatus = safeStr(d.estado, "ACTIVA").toUpperCase();
+    const licenseStatus = safeStr(d.estado, "NO_REGISTRA").toUpperCase();
     return {
       documentNumber: cleanDocNumber,
       documentType: cleanDocType,
       status:
-        (licenseStatus as VerifikDriverLicenseRecord["status"]) || "ACTIVA",
-      categories:
-        categories.length > 0
-          ? categories
-          : [{ category: "A2", validUntil: null, status: "VIGENTE" }],
+        (licenseStatus as VerifikDriverLicenseRecord["status"]) ||
+        "NO_REGISTRA",
+      categories,
       expeditionDate:
         typeof d.fechaExpedicion === "string" ? d.fechaExpedicion : null,
       expiryDate:
@@ -367,9 +327,6 @@ export class VerifikService {
     }
 
     if (!vehicleResult.ok) {
-      if (!this.isConfigured()) {
-        return generateSimulatedVehicleDiagnostic(clean, userDocHolder);
-      }
       throw new BadRequestException(
         `No fue posible consultar el vehículo en Verifik RUNT: ${vehicleResult.message}`,
       );
@@ -405,7 +362,7 @@ export class VerifikService {
       picoYPlaca,
       license,
       syncedAt: new Date().toISOString(),
-      source: this.isConfigured() ? "VERIFIK_OFFICIAL" : "SIMULATED_DEV",
+      source: "VERIFIK_OFFICIAL",
     };
   }
 
