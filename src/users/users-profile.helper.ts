@@ -123,6 +123,7 @@ export const SECTION_REQUIRED_FIELDS: Record<string, string[]> = {
     "contactoEmergenciaTelefono",
   ],
   motocicleta: [
+    "vinMoto",
     "marcaMoto",
     "lineaMoto",
     "anioMoto",
