@@ -6,6 +6,10 @@ import type {
   VerifikRuntVehicleRecord,
   VerifikRuntLookupResult,
 } from "../verifik/verifik.service";
+import {
+  normalizeRuntDocumentType,
+  normalizeRuntDocumentNumber,
+} from "../verifik/verifik-runt.helpers";
 
 export interface UserDocumentSource {
   identityVerification?: {
@@ -22,26 +26,35 @@ export function resolveUserDocumentForRunt(
 ): { documentType: string; documentNumber: string } {
   // 1. Explicitly provided in DTO
   if (dto?.documentNumber?.trim()) {
+    const docType = normalizeRuntDocumentType(dto.documentType);
     return {
-      documentType: (dto.documentType || "CC").trim().toUpperCase(),
-      documentNumber: dto.documentNumber.trim().replace(/\D/g, ""),
+      documentType: docType,
+      documentNumber: normalizeRuntDocumentNumber(docType, dto.documentNumber),
     };
   }
 
   // 2. Owner document saved on the motorcycle (Licencia de Tránsito)
   if (moto?.runtDocumentHolder?.trim()) {
+    const docType = normalizeRuntDocumentType(moto.runtDocumentType);
     return {
-      documentType: (moto.runtDocumentType || "CC").trim().toUpperCase(),
-      documentNumber: moto.runtDocumentHolder.trim().replace(/\D/g, ""),
+      documentType: docType,
+      documentNumber: normalizeRuntDocumentNumber(
+        docType,
+        moto.runtDocumentHolder,
+      ),
     };
   }
 
   // 3. User's officially verified identity (if user is the owner)
   const verified = user.identityVerification;
   if (verified?.documentNumber?.trim()) {
+    const docType = normalizeRuntDocumentType(verified.documentType);
     return {
-      documentType: (verified.documentType || "CC").trim().toUpperCase(),
-      documentNumber: verified.documentNumber.trim().replace(/\D/g, ""),
+      documentType: docType,
+      documentNumber: normalizeRuntDocumentNumber(
+        docType,
+        verified.documentNumber,
+      ),
     };
   }
 
@@ -52,12 +65,12 @@ export function resolveUserDocumentForRunt(
   const tipo = personal?.tipoDocumento;
 
   if (typeof num === "string" && num.trim()) {
+    const docType = normalizeRuntDocumentType(
+      typeof tipo === "string" ? tipo : "CC",
+    );
     return {
-      documentType:
-        typeof tipo === "string" && tipo.trim()
-          ? tipo.trim().toUpperCase()
-          : "CC",
-      documentNumber: num.trim().replace(/\D/g, ""),
+      documentType: docType,
+      documentNumber: normalizeRuntDocumentNumber(docType, num),
     };
   }
 

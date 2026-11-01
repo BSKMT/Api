@@ -49,6 +49,10 @@ import {
   executeVerifyMotorcycleWithRunt,
   executeSyncMotorcycleWithVerifik,
 } from "./garage-runt.helpers";
+import {
+  normalizeRuntDocumentType,
+  normalizeRuntDocumentNumber,
+} from "../verifik/verifik-runt.helpers";
 
 function parseDateIfValid(val: unknown): Date | null {
   if (typeof val !== "string" || !val.trim()) return null;
@@ -71,15 +75,21 @@ function applyProfileFieldsToMotorcycle(
   moto.vinOrEngineNumber = str(p.vinMoto) ?? moto.vinOrEngineNumber;
   moto.insuranceCompany = str(p.seguroTodoRiesgo) ?? moto.insuranceCompany;
   moto.policyNumber = str(p.polizaNumero) ?? moto.policyNumber;
-  moto.runtDocumentHolder =
-    str(p.documentoPropietario)?.replace(/\D/g, "") ??
-    str(p.runtDocumentHolder)?.replace(/\D/g, "") ??
-    moto.runtDocumentHolder;
-  moto.runtDocumentType =
+
+  const rawDocType =
     str(p.tipoDocumentoPropietario) ??
     str(p.runtDocumentType) ??
-    moto.runtDocumentType ??
-    "CC";
+    moto.runtDocumentType;
+  const docType = normalizeRuntDocumentType(rawDocType);
+  const rawHolder =
+    str(p.documentoPropietario) ??
+    str(p.runtDocumentHolder) ??
+    moto.runtDocumentHolder;
+
+  if (rawHolder) {
+    moto.runtDocumentHolder = normalizeRuntDocumentNumber(docType, rawHolder);
+  }
+  moto.runtDocumentType = docType;
 
   const soat = parseDateIfValid(p.soatVigencia);
   if (soat) moto.soatExpiryDate = soat;
@@ -340,11 +350,12 @@ export class GarageService {
     documentType?: string,
   ) {
     const cleanPlate = plate.trim().toUpperCase();
-    const cleanDoc = documentNumber?.trim().replace(/\D/g, "");
+    const cleanType = normalizeRuntDocumentType(documentType);
+    const cleanDoc = normalizeRuntDocumentNumber(cleanType, documentNumber);
 
     if (cleanDoc) {
       const docResult = await this.verifikService.verifyRuntVehicle(
-        documentType ?? "CC",
+        cleanType,
         cleanDoc,
         cleanPlate,
       );
@@ -352,7 +363,7 @@ export class GarageService {
         return docResult.record;
       }
       this.logger.warn(
-        `RUNT query with plate ${cleanPlate} and document ${cleanDoc} did not return record: ${docResult.message}. Falling back to plate-only query.`,
+        `RUNT query with plate ${cleanPlate} and document ${cleanDoc} (${cleanType}) did not return record: ${docResult.message}. Falling back to plate-only query.`,
       );
     }
 

@@ -14,7 +14,11 @@ import type {
   VerifikFullDiagnosticRecord,
   VerifikRawResponse,
 } from "./verifik.interfaces";
-import { normalizeRuntVehicle } from "./verifik-runt.helpers";
+import {
+  normalizeRuntVehicle,
+  normalizeRuntDocumentType,
+  normalizeRuntDocumentNumber,
+} from "./verifik-runt.helpers";
 import { normalizeIdentity } from "./verifik-identity.helpers";
 import { executeVerifikFetch } from "./verifik-fetch.helper";
 import {
@@ -169,9 +173,12 @@ export class VerifikService {
     documentNumber: string,
     plate: string,
   ): Promise<VerifikRuntLookupResult> {
-    const cleanDocNumber = documentNumber.replace(/\D/g, "");
+    const cleanDocType = normalizeRuntDocumentType(documentType);
+    const cleanDocNumber = normalizeRuntDocumentNumber(
+      cleanDocType,
+      documentNumber,
+    );
     const cleanPlate = plate.trim().toUpperCase();
-    const cleanDocType = documentType.trim().toUpperCase();
 
     // 1. Primary: /v2/co/runt/vehiculo
     const result = await this.getRuntVehicle("/v2/co/runt/vehiculo", {
@@ -374,8 +381,11 @@ export class VerifikService {
     documentType: string,
     documentNumber: string,
   ): Promise<VerifikDriverLicenseRecord> {
-    const cleanDocType = documentType.trim().toUpperCase();
-    const cleanDocNumber = documentNumber.replace(/\D/g, "");
+    const cleanDocType = normalizeRuntDocumentType(documentType);
+    const cleanDocNumber = normalizeRuntDocumentNumber(
+      cleanDocType,
+      documentNumber,
+    );
 
     const fetchResult = await executeVerifikFetch(
       this.configService,
@@ -490,8 +500,7 @@ export class VerifikService {
       userDocType,
     );
 
-    const foundPlate =
-      vehicleResult && vehicleResult.ok ? vehicleResult.record.plate : "";
+    const foundPlate = vehicleResult?.ok ? vehicleResult.record.plate : "";
     const plate = resolvedPlate || foundPlate || initialPlate;
 
     let vehicle: VerifikRuntVehicleRecord;

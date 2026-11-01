@@ -251,3 +251,90 @@ export function normalizeRuntVehicle(
     verifikId: str(id),
   };
 }
+
+/**
+ * Normalizes document type to the exact codes accepted by Verifik and Colombian RUNT:
+ * - CC: Cédula de Ciudadanía
+ * - CE: Cédula de Extranjería
+ * - PA: Pasaporte (Verifik requires "PA" instead of "P" or "PASAPORTE")
+ * - CD: Carné Diplomático
+ * - NIT: Número de Identificación Tributaria
+ * - TI: Tarjeta de Identidad
+ * - RC: Registro Civil
+ * - PPT: Permiso por Protección Temporal
+ * - PEP: Permiso Especial de Permanencia
+ */
+export function normalizeRuntDocumentType(rawType?: string | null): string {
+  if (!rawType) return "CC";
+  const clean = rawType.trim().toUpperCase();
+
+  if (
+    clean === "CC" ||
+    clean.includes("CIUDADAN") ||
+    clean.includes("CEDULA DE CIUDADAN")
+  ) {
+    return "CC";
+  }
+  if (clean === "CE" || clean.includes("EXTRANJER")) {
+    return "CE";
+  }
+  if (clean === "PA" || clean === "P" || clean.includes("PASAPORTE")) {
+    return "PA";
+  }
+  if (
+    clean === "CD" ||
+    clean === "D" ||
+    clean.includes("DIPLOMAT") ||
+    clean.includes("CARNE") ||
+    clean.includes("CARNET")
+  ) {
+    return "CD";
+  }
+  if (clean === "NIT" || clean.includes("TRIBUTARI")) {
+    return "NIT";
+  }
+  if (
+    clean === "TI" ||
+    clean.includes("TARJETA DE IDENTIDAD") ||
+    clean === "TARJETA IDENTIDAD"
+  ) {
+    return "TI";
+  }
+  if (clean === "RC" || clean.includes("REGISTRO CIVIL")) {
+    return "RC";
+  }
+  if (clean === "PPT" || clean.includes("PROTECCION TEMPORAL")) {
+    return "PPT";
+  }
+  if (clean === "PEP" || clean.includes("ESPECIAL DE PERMANENCIA")) {
+    return "PEP";
+  }
+
+  return clean;
+}
+
+/**
+ * Normalizes document numbers according to document type.
+ * - CC, TI, RC, NIT: strictly numeric.
+ * - PA (Pasaporte), CD (Carné Diplomático), CE, PPT, PEP: preserves alphanumeric characters.
+ */
+export function normalizeRuntDocumentNumber(
+  docType?: string | null,
+  rawNumber?: string | null,
+): string {
+  if (!rawNumber) return "";
+  const trimmed = rawNumber.trim().toUpperCase();
+  const normalizedType = normalizeRuntDocumentType(docType);
+
+  if (
+    normalizedType === "CC" ||
+    normalizedType === "TI" ||
+    normalizedType === "RC" ||
+    normalizedType === "NIT"
+  ) {
+    return trimmed.replace(/\D/g, "");
+  }
+
+  // Alphanumeric documents (Passports, Carné Diplomático, CE, PPT)
+  return trimmed.replace(/[^A-Z0-9]/g, "");
+}

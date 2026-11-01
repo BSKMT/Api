@@ -9,6 +9,10 @@ import type { CreateMotorcycleDto } from "./dto/create-motorcycle.dto";
 import type { UpdateMotorcycleDto } from "./dto/update-motorcycle.dto";
 import type { UpdateOdometerDto } from "./dto/update-odometer.dto";
 import { parseDateOrNull } from "./garage-calc.helpers";
+import {
+  normalizeRuntDocumentType,
+  normalizeRuntDocumentNumber,
+} from "../verifik/verifik-runt.helpers";
 
 export function applyBasicSpecsUpdates(
   moto: GarageMotorcycleDocument,
@@ -42,12 +46,16 @@ export function applyOptionalDetailsUpdates(
   if (dto.policyNumber !== undefined) {
     moto.policyNumber = dto.policyNumber?.trim() ?? null;
   }
-  if (dto.runtDocumentHolder !== undefined) {
-    moto.runtDocumentHolder =
-      dto.runtDocumentHolder?.trim().replace(/\D/g, "") ?? null;
-  }
   if (dto.runtDocumentType !== undefined) {
-    moto.runtDocumentType = dto.runtDocumentType?.trim().toUpperCase() ?? "CC";
+    moto.runtDocumentType = normalizeRuntDocumentType(dto.runtDocumentType);
+  }
+  if (dto.runtDocumentHolder !== undefined) {
+    moto.runtDocumentHolder = dto.runtDocumentHolder?.trim()
+      ? normalizeRuntDocumentNumber(
+          moto.runtDocumentType,
+          dto.runtDocumentHolder,
+        )
+      : null;
   }
 }
 
@@ -92,6 +100,11 @@ export async function executeCreateMotorcycle(
     );
   }
 
+  const runtDocType = normalizeRuntDocumentType(dto.runtDocumentType);
+  const runtDocHolder = dto.runtDocumentHolder?.trim()
+    ? normalizeRuntDocumentNumber(runtDocType, dto.runtDocumentHolder)
+    : null;
+
   const newMoto = new motorcycleModel({
     userId,
     brand: dto.brand.trim(),
@@ -111,9 +124,8 @@ export async function executeCreateMotorcycle(
     licenseExpiryDate: parseDateOrNull(dto.licenseExpiryDate),
     insuranceCompany: dto.insuranceCompany?.trim() ?? null,
     policyNumber: dto.policyNumber?.trim() ?? null,
-    runtDocumentHolder:
-      dto.runtDocumentHolder?.trim().replace(/\D/g, "") ?? null,
-    runtDocumentType: dto.runtDocumentType?.trim().toUpperCase() ?? "CC",
+    runtDocumentHolder: runtDocHolder,
+    runtDocumentType: runtDocType,
     isPrimary: currentCount === 0,
   });
 

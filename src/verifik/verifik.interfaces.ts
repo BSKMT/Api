@@ -163,7 +163,8 @@ export type VerifikGenericLookupResult<T> =
       message: string;
     };
 
-export type VerifikDocumentType = "CC" | "CE" | "PPT" | "PEP";
+export type VerifikDocumentType =
+  "CC" | "CE" | "PA" | "CD" | "NIT" | "TI" | "RC" | "PPT" | "PEP";
 
 export interface VerifikRawData {
   documentType?: unknown;
