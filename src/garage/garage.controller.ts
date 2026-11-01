@@ -125,18 +125,30 @@ export class GarageController {
 
   @Get("lookup-plate")
   @Throttle({ default: { ttl: 60000, limit: 5 } })
-  async lookupPlateGet(@Query("plate") plate?: string) {
+  async lookupPlateGet(
+    @Query("plate") plate?: string,
+    @Query("documentNumber") documentNumber?: string,
+    @Query("documentType") documentType?: string,
+  ) {
     if (!plate?.trim()) {
       return { error: "La placa es requerida" };
     }
-    return await this.garageService.lookupVehicleByPlate(plate);
+    return await this.garageService.lookupVehicleByPlate(
+      plate,
+      documentNumber,
+      documentType,
+    );
   }
 
   @Post("lookup-plate")
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 60000, limit: 5 } })
-  async lookupPlatePost(@Body("plate") plate?: string) {
-    return await this.lookupPlateGet(plate);
+  async lookupPlatePost(
+    @Body("plate") plate?: string,
+    @Body("documentNumber") documentNumber?: string,
+    @Body("documentType") documentType?: string,
+  ) {
+    return await this.lookupPlateGet(plate, documentNumber, documentType);
   }
 
   @Get(["motorcycles/:id/diagnostic", "motorcycles/:id/verifik-diagnostic"])

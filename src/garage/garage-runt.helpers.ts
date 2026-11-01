@@ -4,6 +4,7 @@ import type { VerifyRuntDto } from "./dto/verify-runt.dto";
 import type {
   VerifikService,
   VerifikRuntVehicleRecord,
+  VerifikRuntLookupResult,
 } from "../verifik/verifik.service";
 
 export interface UserDocumentSource {
@@ -19,27 +20,38 @@ export function resolveUserDocumentForRunt(
   dto?: VerifyRuntDto,
   moto?: GarageMotorcycleDocument,
 ): { documentType: string; documentNumber: string } {
-  if (dto?.documentNumber && dto?.documentType) {
+  // 1. Explicitly provided in DTO
+  if (dto?.documentNumber?.trim()) {
     return {
-      documentType: dto.documentType.trim().toUpperCase(),
+      documentType: (dto.documentType || "CC").trim().toUpperCase(),
       documentNumber: dto.documentNumber.trim().replace(/\D/g, ""),
     };
   }
 
-  const verified = user.identityVerification;
-  if (verified?.documentNumber && verified?.documentType) {
+  // 2. Owner document saved on the motorcycle (Licencia de Tránsito)
+  if (moto?.runtDocumentHolder?.trim()) {
     return {
-      documentType: verified.documentType.trim().toUpperCase(),
+      documentType: (moto.runtDocumentType || "CC").trim().toUpperCase(),
+      documentNumber: moto.runtDocumentHolder.trim().replace(/\D/g, ""),
+    };
+  }
+
+  // 3. User's officially verified identity (if user is the owner)
+  const verified = user.identityVerification;
+  if (verified?.documentNumber?.trim()) {
+    return {
+      documentType: (verified.documentType || "CC").trim().toUpperCase(),
       documentNumber: verified.documentNumber.trim().replace(/\D/g, ""),
     };
   }
 
+  // 4. User's personal profile document
   const personal = user.profile?.["datos-personales"] as
     Record<string, unknown> | undefined;
   const num = personal?.numeroDocumento;
   const tipo = personal?.tipoDocumento;
 
-  if (num && typeof num === "string" && num.trim()) {
+  if (typeof num === "string" && num.trim()) {
     return {
       documentType:
         typeof tipo === "string" && tipo.trim()
@@ -49,16 +61,11 @@ export function resolveUserDocumentForRunt(
     };
   }
 
-  if (moto?.runtDocumentHolder?.trim()) {
-    return {
-      documentType: "CC",
-      documentNumber: moto.runtDocumentHolder.trim().replace(/\D/g, ""),
-    };
-  }
-
-  throw new BadRequestException(
-    "Para consultar el RUNT oficial se requiere el número de identificación del propietario. Por favor ingrésalo o completa tu verificación de identidad.",
-  );
+  // 5. Default fallback (plate-only search will take over)
+  return {
+    documentType: "CC",
+    documentNumber: "",
+  };
 }
 
 export function syncRuntSoat(
@@ -173,14 +180,23 @@ export async function executeVerifyMotorcycleWithRunt(
     );
   }
 
-  let runtResult = await verifikService.verifyRuntVehicle(
-    documentType,
-    documentNumber,
-    moto.plate,
-  );
+  let runtResult: VerifikRuntLookupResult;
+  if (documentNumber) {
+    runtResult = await verifikService.verifyRuntVehicle(
+      documentType,
+      documentNumber,
+      moto.plate,
+    );
+  } else {
+    runtResult = await verifikService.verifyRuntVehicleByPlate(moto.plate);
+  }
 
   // If primary document lookup failed, fallback to plate-only lookup
-  if (!runtResult.ok && runtResult.reason !== "unauthorized") {
+  if (
+    !runtResult.ok &&
+    runtResult.reason !== "unauthorized" &&
+    documentNumber
+  ) {
     const plateResult = await verifikService.verifyRuntVehicleByPlate(
       moto.plate,
     );
@@ -268,7 +284,6 @@ export async function executeSyncMotorcycleWithVerifik(
   const diagnostic = await verifikService.getFullVehicleDiagnostic(
     {
       plate: moto.plate,
-      vin: moto.vinOrEngineNumber ?? undefined,
       fallbackRecord: existingFallback,
     },
     docNum || undefined,

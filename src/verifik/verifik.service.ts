@@ -434,7 +434,6 @@ export class VerifikService {
 
   private async resolveRuntVehicle(
     plate: string,
-    vin: string,
     userDocHolder?: string,
     userDocType?: string,
   ): Promise<{
@@ -442,7 +441,7 @@ export class VerifikService {
     resolvedPlate: string;
   }> {
     let vehicleResult: VerifikRuntLookupResult | null = null;
-    let resolvedPlate = plate;
+    const resolvedPlate = plate;
 
     if (plate && userDocHolder) {
       const docResult = await this.verifyRuntVehicle(
@@ -462,17 +461,6 @@ export class VerifikService {
         return { vehicleResult: plateResult, resolvedPlate };
       }
       vehicleResult ??= plateResult;
-    }
-
-    if (vin && vin.length >= 11 && vin.length <= 17) {
-      const vinResult = await this.verifyRuntVehicleByVin(vin);
-      if (vinResult.ok) {
-        if (!resolvedPlate && vinResult.record.plate) {
-          resolvedPlate = vinResult.record.plate;
-        }
-        return { vehicleResult: vinResult, resolvedPlate };
-      }
-      vehicleResult ??= vinResult;
     }
 
     return { vehicleResult, resolvedPlate };
@@ -498,7 +486,6 @@ export class VerifikService {
 
     const { vehicleResult, resolvedPlate } = await this.resolveRuntVehicle(
       initialPlate,
-      vin,
       userDocHolder,
       userDocType,
     );

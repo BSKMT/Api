@@ -91,4 +91,14 @@ export class CreateMotorcycleDto {
   @IsString()
   @MaxLength(50)
   policyNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  runtDocumentHolder?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  runtDocumentType?: string;
 }

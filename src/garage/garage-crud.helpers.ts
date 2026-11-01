@@ -42,6 +42,13 @@ export function applyOptionalDetailsUpdates(
   if (dto.policyNumber !== undefined) {
     moto.policyNumber = dto.policyNumber?.trim() ?? null;
   }
+  if (dto.runtDocumentHolder !== undefined) {
+    moto.runtDocumentHolder =
+      dto.runtDocumentHolder?.trim().replace(/\D/g, "") ?? null;
+  }
+  if (dto.runtDocumentType !== undefined) {
+    moto.runtDocumentType = dto.runtDocumentType?.trim().toUpperCase() ?? "CC";
+  }
 }
 
 export function applyDocumentDateUpdates(
@@ -104,6 +111,9 @@ export async function executeCreateMotorcycle(
     licenseExpiryDate: parseDateOrNull(dto.licenseExpiryDate),
     insuranceCompany: dto.insuranceCompany?.trim() ?? null,
     policyNumber: dto.policyNumber?.trim() ?? null,
+    runtDocumentHolder:
+      dto.runtDocumentHolder?.trim().replace(/\D/g, "") ?? null,
+    runtDocumentType: dto.runtDocumentType?.trim().toUpperCase() ?? "CC",
     isPrimary: currentCount === 0,
   });
 

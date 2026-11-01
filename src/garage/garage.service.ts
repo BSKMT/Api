@@ -71,6 +71,15 @@ function applyProfileFieldsToMotorcycle(
   moto.vinOrEngineNumber = str(p.vinMoto) ?? moto.vinOrEngineNumber;
   moto.insuranceCompany = str(p.seguroTodoRiesgo) ?? moto.insuranceCompany;
   moto.policyNumber = str(p.polizaNumero) ?? moto.policyNumber;
+  moto.runtDocumentHolder =
+    str(p.documentoPropietario)?.replace(/\D/g, "") ??
+    str(p.runtDocumentHolder)?.replace(/\D/g, "") ??
+    moto.runtDocumentHolder;
+  moto.runtDocumentType =
+    str(p.tipoDocumentoPropietario) ??
+    str(p.runtDocumentType) ??
+    moto.runtDocumentType ??
+    "CC";
 
   const soat = parseDateIfValid(p.soatVigencia);
   if (soat) moto.soatExpiryDate = soat;
@@ -325,8 +334,29 @@ export class GarageService {
     return res.record;
   }
 
-  async lookupVehicleByPlate(plate: string) {
-    const res = await this.verifikService.verifyRuntVehicleByPlate(plate);
+  async lookupVehicleByPlate(
+    plate: string,
+    documentNumber?: string,
+    documentType?: string,
+  ) {
+    const cleanPlate = plate.trim().toUpperCase();
+    const cleanDoc = documentNumber?.trim().replace(/\D/g, "");
+
+    if (cleanDoc) {
+      const docResult = await this.verifikService.verifyRuntVehicle(
+        documentType ?? "CC",
+        cleanDoc,
+        cleanPlate,
+      );
+      if (docResult.ok) {
+        return docResult.record;
+      }
+      this.logger.warn(
+        `RUNT query with plate ${cleanPlate} and document ${cleanDoc} did not return record: ${docResult.message}. Falling back to plate-only query.`,
+      );
+    }
+
+    const res = await this.verifikService.verifyRuntVehicleByPlate(cleanPlate);
     if (!res.ok) {
       throw new BadRequestException(res.message);
     }
@@ -346,18 +376,21 @@ export class GarageService {
     const personal = user.profile?.["datos-personales"] as
       Record<string, unknown> | undefined;
     const docHolder =
-      typeof personal?.numeroDocumento === "string"
+      moto.runtDocumentHolder ||
+      user.identityVerification?.documentNumber ||
+      (typeof personal?.numeroDocumento === "string"
         ? personal.numeroDocumento
-        : moto.runtDocumentHolder || undefined;
+        : undefined);
     const docType =
-      typeof personal?.tipoDocumento === "string"
+      moto.runtDocumentType ||
+      user.identityVerification?.documentType ||
+      (typeof personal?.tipoDocumento === "string"
         ? personal.tipoDocumento
-        : "CC";
+        : "CC");
 
     return this.verifikService.getFullVehicleDiagnostic(
       {
         plate: moto.plate,
-        vin: moto.vinOrEngineNumber ?? undefined,
         fallbackRecord: {
           plate: moto.plate,
           brand: moto.brand,

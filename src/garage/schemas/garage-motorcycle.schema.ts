@@ -91,6 +91,9 @@ export class GarageMotorcycle {
   @Prop({ type: String, default: null })
   runtDocumentHolder!: string | null;
 
+  @Prop({ type: String, default: "CC", trim: true })
+  runtDocumentType!: string | null;
+
   @Prop({ type: String, default: null })
   fasecoldaCode!: string | null;
 
