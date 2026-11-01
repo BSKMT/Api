@@ -31,7 +31,22 @@ export function extractFirstObject(
 }
 
 export function extractSoat(raw: unknown): VerifikSoatRecord | null {
-  const item = extractFirstObject(raw);
+  let item: Record<string, unknown> | null = null;
+  if (Array.isArray(raw) && raw.length > 0) {
+    const active = raw.find((x) => {
+      if (typeof x !== "object" || !x) return false;
+      const status = String(
+        (x as Record<string, unknown>).estado ??
+          (x as Record<string, unknown>).status ??
+          (x as Record<string, unknown>).estadoPoliza ??
+          "",
+      ).toUpperCase();
+      return status === "VIGENTE" || status === "ACTIVO" || status === "ACTIVE";
+    });
+    item = (active as Record<string, unknown>) ?? extractFirstObject(raw);
+  } else {
+    item = extractFirstObject(raw);
+  }
   if (!item) return null;
 
   return {
@@ -55,7 +70,27 @@ export function extractSoat(raw: unknown): VerifikSoatRecord | null {
 }
 
 export function extractRtm(raw: unknown): VerifikRtmRecord | null {
-  const item = extractFirstObject(raw);
+  let item: Record<string, unknown> | null = null;
+  if (Array.isArray(raw) && raw.length > 0) {
+    const active = raw.find((x) => {
+      if (typeof x !== "object" || !x) return false;
+      const status = String(
+        (x as Record<string, unknown>).estado ??
+          (x as Record<string, unknown>).status ??
+          (x as Record<string, unknown>).estadoCertificado ??
+          "",
+      ).toUpperCase();
+      return (
+        status === "VIGENTE" ||
+        status === "ACTIVO" ||
+        status === "APROBADA" ||
+        status === "ACTIVE"
+      );
+    });
+    item = (active as Record<string, unknown>) ?? extractFirstObject(raw);
+  } else {
+    item = extractFirstObject(raw);
+  }
   if (!item) return null;
 
   return {
@@ -82,7 +117,7 @@ export function extractRtm(raw: unknown): VerifikRtmRecord | null {
 }
 
 export function normalizeRuntVehicle(
-  data: Record<string, unknown>,
+  data: Record<string, unknown> | unknown[],
   id: unknown,
   fallbackPlate: string,
 ): VerifikRuntVehicleRecord {
@@ -98,85 +133,103 @@ export function normalizeRuntVehicle(
     return null;
   };
 
+  const d = (extractFirstObject(data) ??
+    (typeof data === "object" && data !== null ? data : {})) as Record<
+    string,
+    unknown
+  >;
+  const unwrapped =
+    d.data && typeof d.data === "object" && !Array.isArray(d.data)
+      ? (d.data as Record<string, unknown>)
+      : d;
+
   const infoGen =
-    data.informacionGeneral && typeof data.informacionGeneral === "object"
-      ? (data.informacionGeneral as Record<string, unknown>)
+    unwrapped.informacionGeneral &&
+    typeof unwrapped.informacionGeneral === "object"
+      ? (unwrapped.informacionGeneral as Record<string, unknown>)
       : {};
   const datosTec =
-    data.datosTecnicos && typeof data.datosTecnicos === "object"
-      ? (data.datosTecnicos as Record<string, unknown>)
+    unwrapped.datosTecnicos && typeof unwrapped.datosTecnicos === "object"
+      ? (unwrapped.datosTecnicos as Record<string, unknown>)
       : {};
 
   const plate =
-    str(data.plate) ??
-    str(data.placa) ??
+    str(unwrapped.plate) ??
+    str(unwrapped.placa) ??
     str(infoGen.placa) ??
     str(infoGen.plate) ??
     fallbackPlate;
 
   const brand =
-    str(data.marca) ??
-    str(data.brand) ??
+    str(unwrapped.marca) ??
+    str(unwrapped.brand) ??
     str(infoGen.marca) ??
     str(infoGen.brand);
 
   const modelLine =
-    str(data.linea) ??
-    str(data.modelLine) ??
-    str(data.line) ??
+    str(unwrapped.linea) ??
+    str(unwrapped.modelLine) ??
+    str(unwrapped.line) ??
     str(infoGen.linea) ??
     str(infoGen.modelLine);
 
   const year =
-    num(data.modelo) ??
-    num(data.year) ??
+    num(unwrapped.modelo) ??
+    num(unwrapped.year) ??
     num(infoGen.modelo) ??
     num(infoGen.year);
 
   const displacementCc =
-    num(data.cilindraje) ??
-    num(data.displacementCc) ??
+    num(unwrapped.cilindraje) ??
+    num(unwrapped.displacementCc) ??
     num(datosTec.cilindrada) ??
     num(datosTec.cilindraje) ??
     num(datosTec.displacementCc);
 
-  const color = str(data.color) ?? str(infoGen.color) ?? str(datosTec.color);
+  const color =
+    str(unwrapped.color) ?? str(infoGen.color) ?? str(datosTec.color);
 
   const serviceType =
-    str(data.servicio) ??
-    str(data.serviceType) ??
+    str(unwrapped.servicio) ??
+    str(unwrapped.serviceType) ??
     str(infoGen.servicio) ??
     str(infoGen.tipoServicio);
 
   const classType =
-    str(data.clase) ??
-    str(data.classType) ??
+    str(unwrapped.clase) ??
+    str(unwrapped.classType) ??
     str(infoGen.clase) ??
     str(infoGen.claseVehiculo);
 
   const engineNumber =
-    str(data.numeroMotor) ??
-    str(data.engineNumber) ??
+    str(unwrapped.numeroMotor) ??
+    str(unwrapped.engineNumber) ??
     str(datosTec.numeroMotor) ??
     str(infoGen.numeroMotor);
 
   const vinOrChassis =
-    str(data.numeroChasis) ??
-    str(data.vin) ??
-    str(data.chasis) ??
+    str(unwrapped.numeroChasis) ??
+    str(unwrapped.vin) ??
+    str(unwrapped.chasis) ??
     str(datosTec.numeroChasis) ??
     str(datosTec.vin) ??
     str(infoGen.numeroChasis) ??
     str(infoGen.vin);
 
-  const rawSoat = data.soat ?? data.polizaSoat ?? infoGen.soat ?? data.soats;
+  const rawSoat =
+    unwrapped.soat ??
+    unwrapped.polizaSoat ??
+    infoGen.soat ??
+    unwrapped.soats ??
+    infoGen.soats;
 
   const rawRtm =
-    data.tecnomecanica ??
-    data.rtm ??
-    data.revisionTecnicomecanica ??
-    data.tecnoMecanica ??
-    infoGen.tecnoMecanica;
+    unwrapped.tecnomecanica ??
+    unwrapped.rtm ??
+    unwrapped.revisionTecnicomecanica ??
+    unwrapped.tecnoMecanica ??
+    infoGen.tecnoMecanica ??
+    infoGen.rtm;
 
   return {
     plate,

@@ -151,6 +151,8 @@ export interface VerifikFullDiagnosticRecord {
   license?: VerifikDriverLicenseRecord | null;
   syncedAt: string;
   source: "VERIFIK_OFFICIAL";
+  runtUnavailable?: boolean;
+  runtMessage?: string;
 }
 
 export type VerifikGenericLookupResult<T> =
@@ -185,4 +187,6 @@ export interface VerifikRawResponse {
   id?: unknown;
   message?: unknown;
   code?: unknown;
+  error?: unknown;
+  details?: unknown;
 }

@@ -348,14 +348,26 @@ export class GarageService {
     const docHolder =
       typeof personal?.numeroDocumento === "string"
         ? personal.numeroDocumento
-        : undefined;
+        : moto.runtDocumentHolder || undefined;
     const docType =
       typeof personal?.tipoDocumento === "string"
         ? personal.tipoDocumento
         : "CC";
 
     return this.verifikService.getFullVehicleDiagnostic(
-      moto.vinOrEngineNumber || moto.plate,
+      {
+        plate: moto.plate,
+        vin: moto.vinOrEngineNumber,
+        fallbackRecord: {
+          plate: moto.plate,
+          brand: moto.brand,
+          modelLine: moto.modelLine,
+          year: moto.year,
+          displacementCc: moto.displacementCc,
+          color: moto.color,
+          vinOrChassis: moto.vinOrEngineNumber,
+        },
+      },
       docHolder,
       docType,
     );

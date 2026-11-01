@@ -17,6 +17,7 @@ export interface UserDocumentSource {
 export function resolveUserDocumentForRunt(
   user: UserDocumentSource,
   dto?: VerifyRuntDto,
+  moto?: GarageMotorcycleDocument,
 ): { documentType: string; documentNumber: string } {
   if (dto?.documentNumber && dto?.documentType) {
     return {
@@ -45,6 +46,13 @@ export function resolveUserDocumentForRunt(
           ? tipo.trim().toUpperCase()
           : "CC",
       documentNumber: num.trim().replace(/\D/g, ""),
+    };
+  }
+
+  if (moto?.runtDocumentHolder && moto.runtDocumentHolder.trim()) {
+    return {
+      documentType: "CC",
+      documentNumber: moto.runtDocumentHolder.trim().replace(/\D/g, ""),
     };
   }
 
@@ -156,6 +164,7 @@ export async function executeVerifyMotorcycleWithRunt(
   const { documentType, documentNumber } = resolveUserDocumentForRunt(
     user,
     dto,
+    moto,
   );
 
   if (!verifikService.isConfigured()) {
@@ -164,11 +173,19 @@ export async function executeVerifyMotorcycleWithRunt(
     );
   }
 
-  const runtResult = await verifikService.verifyRuntVehicle(
+  let runtResult = await verifikService.verifyRuntVehicle(
     documentType,
     documentNumber,
     moto.plate,
   );
+
+  // If primary document lookup failed, fallback to plate-only lookup
+  if (!runtResult.ok && runtResult.reason !== "unauthorized") {
+    const plateResult = await verifikService.verifyRuntVehicleByPlate(moto.plate);
+    if (plateResult.ok) {
+      runtResult = plateResult;
+    }
+  }
 
   if (!runtResult.ok) {
     logger.warn(
@@ -210,25 +227,70 @@ export async function executeSyncMotorcycleWithVerifik(
   let docType = "CC";
   let docNum = "";
   try {
-    const res = resolveUserDocumentForRunt(user, dto);
+    const res = resolveUserDocumentForRunt(user, dto, moto);
     docType = res.documentType;
     docNum = res.documentNumber;
   } catch {
-    // optional document holder
+    docNum = moto.runtDocumentHolder || "";
   }
 
-  const queryKey = moto.vinOrEngineNumber || moto.plate;
+  const existingFallback: Partial<VerifikRuntVehicleRecord> = {
+    plate: moto.plate,
+    brand: moto.brand,
+    modelLine: moto.modelLine,
+    year: moto.year,
+    displacementCc: moto.displacementCc,
+    color: moto.color,
+    vinOrChassis: moto.vinOrEngineNumber,
+    classType: moto.motorcycleType,
+    soat: moto.soatExpiryDate
+      ? {
+          status: moto.runtSoatStatus || "VIGENTE",
+          policyNumber: moto.policyNumber || null,
+          insuranceCompany: moto.insuranceCompany || null,
+          startDate: null,
+          expiryDate: moto.soatExpiryDate.toISOString().slice(0, 10),
+        }
+      : null,
+    rtm: moto.rtmExpiryDate
+      ? {
+          status: moto.runtRtmStatus || "VIGENTE",
+          certificateNumber: null,
+          cdaName: moto.runtCdaName || null,
+          expeditionDate: null,
+          expiryDate: moto.rtmExpiryDate.toISOString().slice(0, 10),
+        }
+      : null,
+  };
+
   const diagnostic = await verifikService.getFullVehicleDiagnostic(
-    queryKey,
+    {
+      plate: moto.plate,
+      vin: moto.vinOrEngineNumber,
+      fallbackRecord: existingFallback,
+    },
     docNum || undefined,
     docType,
+    existingFallback,
   );
 
-  applyRuntSync(
-    moto,
-    diagnostic.vehicle,
-    docNum || moto.runtDocumentHolder || "",
-  );
+  let updatedFields: string[] = [];
+  let discrepancies: string[] = [];
+
+  if (!diagnostic.runtUnavailable) {
+    const syncRes = applyRuntSync(
+      moto,
+      diagnostic.vehicle,
+      docNum || moto.runtDocumentHolder || "",
+    );
+    updatedFields = syncRes.updatedFields;
+    discrepancies = syncRes.discrepancies;
+  } else {
+    logger.warn(
+      `Motorcycle ${moto.plate} synced with partial data (RUNT offline: ${diagnostic.runtMessage})`,
+    );
+  }
+
   moto.fasecoldaCode = diagnostic.valuation.fasecoldaCode ?? moto.fasecoldaCode;
   moto.fasecoldaValue =
     diagnostic.valuation.fasecoldaValue ?? moto.fasecoldaValue;
@@ -251,12 +313,18 @@ export async function executeSyncMotorcycleWithVerifik(
   await moto.save();
 
   logger.log(
-    `Full Verifik diagnostic synced for moto ${moto.plate} (user ${userId})`,
+    `Full Verifik diagnostic synced for moto ${moto.plate} (user ${userId}) [RUNT: ${
+      diagnostic.runtUnavailable ? "OFFLINE" : "OK"
+    }]`,
   );
 
   return {
     success: true,
     diagnostic,
     motorcycle: moto,
+    runtUnavailable: Boolean(diagnostic.runtUnavailable),
+    runtMessage: diagnostic.runtMessage,
+    updatedFields,
+    discrepancies,
   };
 }
