@@ -357,7 +357,7 @@ export class GarageService {
     return this.verifikService.getFullVehicleDiagnostic(
       {
         plate: moto.plate,
-        vin: moto.vinOrEngineNumber,
+        vin: moto.vinOrEngineNumber ?? undefined,
         fallbackRecord: {
           plate: moto.plate,
           brand: moto.brand,
@@ -365,7 +365,7 @@ export class GarageService {
           year: moto.year,
           displacementCc: moto.displacementCc,
           color: moto.color,
-          vinOrChassis: moto.vinOrEngineNumber,
+          vinOrChassis: moto.vinOrEngineNumber ?? undefined,
         },
       },
       docHolder,

@@ -49,7 +49,7 @@ export function resolveUserDocumentForRunt(
     };
   }
 
-  if (moto?.runtDocumentHolder && moto.runtDocumentHolder.trim()) {
+  if (moto?.runtDocumentHolder?.trim()) {
     return {
       documentType: "CC",
       documentNumber: moto.runtDocumentHolder.trim().replace(/\D/g, ""),
@@ -181,7 +181,9 @@ export async function executeVerifyMotorcycleWithRunt(
 
   // If primary document lookup failed, fallback to plate-only lookup
   if (!runtResult.ok && runtResult.reason !== "unauthorized") {
-    const plateResult = await verifikService.verifyRuntVehicleByPlate(moto.plate);
+    const plateResult = await verifikService.verifyRuntVehicleByPlate(
+      moto.plate,
+    );
     if (plateResult.ok) {
       runtResult = plateResult;
     }
@@ -266,7 +268,7 @@ export async function executeSyncMotorcycleWithVerifik(
   const diagnostic = await verifikService.getFullVehicleDiagnostic(
     {
       plate: moto.plate,
-      vin: moto.vinOrEngineNumber,
+      vin: moto.vinOrEngineNumber ?? undefined,
       fallbackRecord: existingFallback,
     },
     docNum || undefined,

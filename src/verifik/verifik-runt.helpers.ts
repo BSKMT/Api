@@ -30,20 +30,26 @@ export function extractFirstObject(
   return typeof raw === "object" ? (raw as Record<string, unknown>) : null;
 }
 
+function extractStatusString(obj: unknown): string {
+  if (typeof obj !== "object" || obj === null) return "";
+  const rec = obj as Record<string, unknown>;
+  const val =
+    rec.estado ?? rec.status ?? rec.estadoPoliza ?? rec.estadoCertificado;
+  return typeof val === "string" ? val.toUpperCase() : "";
+}
+
 export function extractSoat(raw: unknown): VerifikSoatRecord | null {
   let item: Record<string, unknown> | null = null;
   if (Array.isArray(raw) && raw.length > 0) {
-    const active = raw.find((x) => {
-      if (typeof x !== "object" || !x) return false;
-      const status = String(
-        (x as Record<string, unknown>).estado ??
-          (x as Record<string, unknown>).status ??
-          (x as Record<string, unknown>).estadoPoliza ??
-          "",
-      ).toUpperCase();
+    const list: unknown[] = raw;
+    const active = list.find((x) => {
+      const status = extractStatusString(x);
       return status === "VIGENTE" || status === "ACTIVO" || status === "ACTIVE";
     });
-    item = (active as Record<string, unknown>) ?? extractFirstObject(raw);
+    item =
+      typeof active === "object" && active !== null
+        ? (active as Record<string, unknown>)
+        : extractFirstObject(raw);
   } else {
     item = extractFirstObject(raw);
   }
@@ -72,14 +78,9 @@ export function extractSoat(raw: unknown): VerifikSoatRecord | null {
 export function extractRtm(raw: unknown): VerifikRtmRecord | null {
   let item: Record<string, unknown> | null = null;
   if (Array.isArray(raw) && raw.length > 0) {
-    const active = raw.find((x) => {
-      if (typeof x !== "object" || !x) return false;
-      const status = String(
-        (x as Record<string, unknown>).estado ??
-          (x as Record<string, unknown>).status ??
-          (x as Record<string, unknown>).estadoCertificado ??
-          "",
-      ).toUpperCase();
+    const list: unknown[] = raw;
+    const active = list.find((x) => {
+      const status = extractStatusString(x);
       return (
         status === "VIGENTE" ||
         status === "ACTIVO" ||
@@ -87,7 +88,10 @@ export function extractRtm(raw: unknown): VerifikRtmRecord | null {
         status === "ACTIVE"
       );
     });
-    item = (active as Record<string, unknown>) ?? extractFirstObject(raw);
+    item =
+      typeof active === "object" && active !== null
+        ? (active as Record<string, unknown>)
+        : extractFirstObject(raw);
   } else {
     item = extractFirstObject(raw);
   }

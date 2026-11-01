@@ -5,12 +5,14 @@ import { sanitizeForLog } from "../common/utils/log-redact.util";
 import type {
   VerifikLookupResult,
   VerifikRuntLookupResult,
+  VerifikRuntVehicleRecord,
   VerifikFinesRecord,
   VerifikTaxesRecord,
   VerifikValuationRecord,
   VerifikSinisterRecord,
   VerifikDriverLicenseRecord,
   VerifikFullDiagnosticRecord,
+  VerifikRawResponse,
 } from "./verifik.interfaces";
 import { normalizeRuntVehicle } from "./verifik-runt.helpers";
 import { normalizeIdentity } from "./verifik-identity.helpers";
@@ -27,6 +29,74 @@ function safeStr(val: unknown, fallback = ""): string {
   if (typeof val === "string") return val;
   if (typeof val === "number" || typeof val === "boolean") return `${val}`;
   return fallback;
+}
+
+interface DiagnosticTargetParams {
+  plate: string;
+  vin: string;
+  fallbackRecord?: Partial<VerifikRuntVehicleRecord>;
+}
+
+function parseDiagnosticTarget(
+  queryKeyOrOptions:
+    | string
+    | {
+        plate: string;
+        vin?: string;
+        fallbackRecord?: Partial<VerifikRuntVehicleRecord>;
+      },
+  existingFallback?: Partial<VerifikRuntVehicleRecord>,
+): DiagnosticTargetParams {
+  if (typeof queryKeyOrOptions === "object" && queryKeyOrOptions !== null) {
+    return {
+      plate: (queryKeyOrOptions.plate || "").trim().toUpperCase(),
+      vin: (queryKeyOrOptions.vin || "").trim().toUpperCase(),
+      fallbackRecord: queryKeyOrOptions.fallbackRecord || existingFallback,
+    };
+  }
+
+  const clean = String(queryKeyOrOptions || "")
+    .trim()
+    .toUpperCase();
+  const isVin = clean.length > 8 && /[A-HJ-NPR-Z0-9]{11,17}/i.test(clean);
+  return {
+    plate: isVin ? "" : clean,
+    vin: isVin ? clean : "",
+    fallbackRecord: existingFallback,
+  };
+}
+
+function buildFallbackVehicleRecord(
+  plate: string,
+  vin: string,
+  fallbackRecord?: Partial<VerifikRuntVehicleRecord>,
+): VerifikRuntVehicleRecord {
+  return {
+    plate,
+    brand: fallbackRecord?.brand ?? null,
+    modelLine: fallbackRecord?.modelLine ?? null,
+    year: fallbackRecord?.year ?? null,
+    displacementCc: fallbackRecord?.displacementCc ?? null,
+    color: fallbackRecord?.color ?? null,
+    serviceType: fallbackRecord?.serviceType ?? "PARTICULAR",
+    classType: fallbackRecord?.classType ?? "MOTOCICLETA",
+    engineNumber: fallbackRecord?.engineNumber ?? null,
+    vinOrChassis: fallbackRecord?.vinOrChassis ?? (vin || null),
+    soat: fallbackRecord?.soat ?? null,
+    rtm: fallbackRecord?.rtm ?? null,
+    verifikId: null,
+  };
+}
+
+function extractRawErrorMessage(body: VerifikRawResponse): string | null {
+  if (typeof body.message === "string" && body.message.trim()) {
+    return body.message.trim();
+  }
+  const bodyRec = body as Record<string, unknown>;
+  if (typeof bodyRec.error === "string" && bodyRec.error.trim()) {
+    return bodyRec.error.trim();
+  }
+  return null;
 }
 
 export type {
@@ -104,7 +174,7 @@ export class VerifikService {
     const cleanDocType = documentType.trim().toUpperCase();
 
     // 1. Primary: /v2/co/runt/vehiculo
-    let result = await this.getRuntVehicle("/v2/co/runt/vehiculo", {
+    const result = await this.getRuntVehicle("/v2/co/runt/vehiculo", {
       documentType: cleanDocType,
       documentNumber: cleanDocNumber,
       plate: cleanPlate,
@@ -112,11 +182,14 @@ export class VerifikService {
 
     // 2. Secondary fallback: /v2/co/runt/vehicle-by-plate (full history with document)
     if (!result.ok && result.reason !== "unauthorized") {
-      const altResult = await this.getRuntVehicle("/v2/co/runt/vehicle-by-plate", {
-        documentType: cleanDocType,
-        documentNumber: cleanDocNumber,
-        plate: cleanPlate,
-      });
+      const altResult = await this.getRuntVehicle(
+        "/v2/co/runt/vehicle-by-plate",
+        {
+          documentType: cleanDocType,
+          documentNumber: cleanDocNumber,
+          plate: cleanPlate,
+        },
+      );
       if (altResult.ok) {
         return altResult;
       }
@@ -143,7 +216,9 @@ export class VerifikService {
     });
   }
 
-  async verifyRuntVehicleOwners(plate: string): Promise<VerifikRuntLookupResult> {
+  async verifyRuntVehicleOwners(
+    plate: string,
+  ): Promise<VerifikRuntLookupResult> {
     const cleanPlate = plate.trim().toUpperCase();
     return this.getRuntVehicle("/v2/co/runt/propietarios", {
       plate: cleanPlate,
@@ -357,6 +432,52 @@ export class VerifikService {
     };
   }
 
+  private async resolveRuntVehicle(
+    plate: string,
+    vin: string,
+    userDocHolder?: string,
+    userDocType?: string,
+  ): Promise<{
+    vehicleResult: VerifikRuntLookupResult | null;
+    resolvedPlate: string;
+  }> {
+    let vehicleResult: VerifikRuntLookupResult | null = null;
+    let resolvedPlate = plate;
+
+    if (plate && userDocHolder) {
+      const docResult = await this.verifyRuntVehicle(
+        userDocType ?? "CC",
+        userDocHolder,
+        plate,
+      );
+      if (docResult.ok) {
+        return { vehicleResult: docResult, resolvedPlate };
+      }
+      vehicleResult = docResult;
+    }
+
+    if (plate) {
+      const plateResult = await this.verifyRuntVehicleByPlate(plate);
+      if (plateResult.ok) {
+        return { vehicleResult: plateResult, resolvedPlate };
+      }
+      vehicleResult ??= plateResult;
+    }
+
+    if (vin && vin.length >= 11 && vin.length <= 17) {
+      const vinResult = await this.verifyRuntVehicleByVin(vin);
+      if (vinResult.ok) {
+        if (!resolvedPlate && vinResult.record.plate) {
+          resolvedPlate = vinResult.record.plate;
+        }
+        return { vehicleResult: vinResult, resolvedPlate };
+      }
+      vehicleResult ??= vinResult;
+    }
+
+    return { vehicleResult, resolvedPlate };
+  }
+
   async getFullVehicleDiagnostic(
     queryKeyOrOptions:
       | string
@@ -369,66 +490,22 @@ export class VerifikService {
     userDocType?: string,
     existingFallback?: Partial<VerifikRuntVehicleRecord>,
   ): Promise<VerifikFullDiagnosticRecord> {
-    let plate = "";
-    let vin = "";
-    let fallbackRecord: Partial<VerifikRuntVehicleRecord> | undefined =
-      existingFallback;
+    const {
+      plate: initialPlate,
+      vin,
+      fallbackRecord,
+    } = parseDiagnosticTarget(queryKeyOrOptions, existingFallback);
 
-    if (typeof queryKeyOrOptions === "object" && queryKeyOrOptions !== null) {
-      plate = (queryKeyOrOptions.plate || "").trim().toUpperCase();
-      vin = (queryKeyOrOptions.vin || "").trim().toUpperCase();
-      fallbackRecord = queryKeyOrOptions.fallbackRecord || fallbackRecord;
-    } else {
-      const clean = String(queryKeyOrOptions || "").trim().toUpperCase();
-      const isVin = clean.length > 8 && /[A-HJ-NPR-Z0-9]{11,17}/i.test(clean);
-      if (isVin) {
-        vin = clean;
-      } else {
-        plate = clean;
-      }
-    }
+    const { vehicleResult, resolvedPlate } = await this.resolveRuntVehicle(
+      initialPlate,
+      vin,
+      userDocHolder,
+      userDocType,
+    );
 
-    let vehicleResult: VerifikRuntLookupResult | null = null;
-
-    // Strategy 1: If plate is known and owner document is provided, query official RUNT with document
-    if (plate && userDocHolder) {
-      const docResult = await this.verifyRuntVehicle(
-        userDocType ?? "CC",
-        userDocHolder,
-        plate,
-      );
-      if (docResult.ok) {
-        vehicleResult = docResult;
-      }
-    }
-
-    // Strategy 2: If not resolved yet and plate is known, query by plate
-    if (!vehicleResult?.ok && plate) {
-      const plateResult = await this.verifyRuntVehicleByPlate(plate);
-      if (plateResult.ok) {
-        vehicleResult = plateResult;
-      } else if (!vehicleResult) {
-        vehicleResult = plateResult;
-      }
-    }
-
-    // Strategy 3: If not resolved yet and valid VIN is provided, query by VIN
-    if (!vehicleResult?.ok && vin && vin.length >= 11 && vin.length <= 17) {
-      const vinResult = await this.verifyRuntVehicleByVin(vin);
-      if (vinResult.ok) {
-        vehicleResult = vinResult;
-        if (!plate && vinResult.record.plate) {
-          plate = vinResult.record.plate;
-        }
-      } else if (!vehicleResult) {
-        vehicleResult = vinResult;
-      }
-    }
-
-    // Determine plate from result if not previously determined
-    if (!plate && vehicleResult?.ok && vehicleResult.record.plate) {
-      plate = vehicleResult.record.plate;
-    }
+    const foundPlate =
+      vehicleResult && vehicleResult.ok ? vehicleResult.record.plate : "";
+    const plate = resolvedPlate || foundPlate || initialPlate;
 
     let vehicle: VerifikRuntVehicleRecord;
     let runtUnavailable = false;
@@ -436,38 +513,22 @@ export class VerifikService {
 
     if (vehicleResult?.ok) {
       vehicle = vehicleResult.record;
-      plate = vehicle.plate || plate;
     } else {
       runtUnavailable = true;
       runtMessage =
         vehicleResult?.message ||
         "La verificación con el RUNT no está disponible en este momento.";
 
-      // If plate is available, apply graceful degradation with fallback record
-      if (plate) {
-        this.logger.warn(
-          `Verifik RUNT lookup failed for plate ${plate}: ${runtMessage}. Fallback record used to continue diagnostics.`,
-        );
-        vehicle = {
-          plate,
-          brand: fallbackRecord?.brand ?? null,
-          modelLine: fallbackRecord?.modelLine ?? null,
-          year: fallbackRecord?.year ?? null,
-          displacementCc: fallbackRecord?.displacementCc ?? null,
-          color: fallbackRecord?.color ?? null,
-          serviceType: fallbackRecord?.serviceType ?? "PARTICULAR",
-          classType: fallbackRecord?.classType ?? "MOTOCICLETA",
-          engineNumber: fallbackRecord?.engineNumber ?? null,
-          vinOrChassis: fallbackRecord?.vinOrChassis ?? (vin || null),
-          soat: fallbackRecord?.soat ?? null,
-          rtm: fallbackRecord?.rtm ?? null,
-          verifikId: null,
-        };
-      } else {
+      if (!plate) {
         throw new BadRequestException(
           `No fue posible consultar el vehículo en Verifik RUNT: ${runtMessage}`,
         );
       }
+
+      this.logger.warn(
+        `Verifik RUNT lookup failed for plate ${plate}: ${runtMessage}. Fallback record used to continue diagnostics.`,
+      );
+      vehicle = buildFallbackVehicleRecord(plate, vin, fallbackRecord);
     }
 
     const [fines, taxes, valuation, sinister, license] = await Promise.all([
@@ -611,13 +672,7 @@ export class VerifikService {
       };
     }
 
-    const rawError =
-      typeof body.message === "string" && body.message.trim()
-        ? body.message.trim()
-        : typeof (body as Record<string, unknown>).error === "string" &&
-          (body as Record<string, unknown>).error
-        ? String((body as Record<string, unknown>).error).trim()
-        : null;
+    const rawError = extractRawErrorMessage(body);
 
     if (!response.ok || !body.data) {
       this.logger.error(
@@ -625,17 +680,17 @@ export class VerifikService {
           rawError || "unknown",
         )}`,
       );
+      const isUnavailable = response.status === 409 || response.status >= 500;
+      let fallbackMessage =
+        "La verificación con el RUNT no está disponible en este momento.";
+      if (response.status >= 500) {
+        fallbackMessage =
+          "La verificación con el RUNT no está disponible en este momento por mantenimiento de la fuente oficial.";
+      }
       return {
         ok: false,
-        reason:
-          response.status === 409 || response.status >= 500
-            ? "unavailable"
-            : "invalid_input",
-        message:
-          rawError ||
-          (response.status >= 500
-            ? "La verificación con el RUNT no está disponible en este momento por mantenimiento de la fuente oficial."
-            : "La verificación con el RUNT no está disponible en este momento."),
+        reason: isUnavailable ? "unavailable" : "invalid_input",
+        message: rawError ?? fallbackMessage,
       };
     }
 
@@ -645,11 +700,7 @@ export class VerifikService {
 
     return {
       ok: true,
-      record: normalizeRuntVehicle(
-        payloadData,
-        body.id,
-        params.plate || "",
-      ),
+      record: normalizeRuntVehicle(payloadData, body.id, params.plate || ""),
     };
   }
 }
