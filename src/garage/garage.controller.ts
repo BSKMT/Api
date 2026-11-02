@@ -107,22 +107,6 @@ export class GarageController {
     );
   }
 
-  @Get("lookup-vin")
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
-  async lookupVinGet(@Query("vin") vin?: string) {
-    if (!vin?.trim()) {
-      return { error: "El número de VIN es requerido" };
-    }
-    return await this.garageService.lookupVehicleByVin(vin);
-  }
-
-  @Post("lookup-vin")
-  @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
-  async lookupVinPost(@Body("vin") vin?: string) {
-    return await this.lookupVinGet(vin);
-  }
-
   @Get("lookup-plate")
   @Throttle({ default: { ttl: 60000, limit: 5 } })
   async lookupPlateGet(

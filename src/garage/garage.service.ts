@@ -53,6 +53,12 @@ import {
   normalizeRuntDocumentType,
   normalizeRuntDocumentNumber,
 } from "../verifik/verifik-runt.helpers";
+import { isSectionValid } from "../users/users-profile.helper";
+import { REQUIRED_PROFILE_SECTIONS } from "../users/schemas/user.schema";
+import type {
+  VerifikRuntLookupResult,
+  VerifikRuntVehicleRecord,
+} from "../verifik/verifik.interfaces";
 
 function parseDateIfValid(val: unknown): Date | null {
   if (typeof val !== "string" || !val.trim()) return null;
@@ -72,7 +78,6 @@ function applyProfileFieldsToMotorcycle(
   moto.displacementCc = Number(p.cilindraje) || moto.displacementCc || 250;
   moto.color = str(p.colorMoto) ?? moto.color;
   moto.motorcycleType = str(p.tipoMoto) ?? moto.motorcycleType;
-  moto.vinOrEngineNumber = str(p.vinMoto) ?? moto.vinOrEngineNumber;
   moto.insuranceCompany = str(p.seguroTodoRiesgo) ?? moto.insuranceCompany;
   moto.policyNumber = str(p.polizaNumero) ?? moto.policyNumber;
 
@@ -96,6 +101,48 @@ function applyProfileFieldsToMotorcycle(
 
   const rtm = parseDateIfValid(p.tecnomecanicaVigencia);
   if (rtm) moto.rtmExpiryDate = rtm;
+}
+
+function buildVerifiedMotoProfile(
+  existingMoto: Record<string, unknown>,
+  record: VerifikRuntVehicleRecord,
+  cleanDocNumber: string,
+  cleanDocType: string,
+): Record<string, unknown> {
+  const motoProfile: Record<string, unknown> = {
+    ...existingMoto,
+    placaMoto: record.plate,
+    marcaMoto: record.brand ?? existingMoto.marcaMoto ?? "",
+    lineaMoto: record.modelLine ?? existingMoto.lineaMoto ?? "",
+    anioMoto: record.year ? String(record.year) : (existingMoto.anioMoto ?? ""),
+    cilindraje: record.displacementCc
+      ? String(record.displacementCc)
+      : (existingMoto.cilindraje ?? ""),
+    colorMoto: record.color ?? existingMoto.colorMoto ?? "",
+    tipoMoto:
+      record.classType ||
+      record.serviceType ||
+      existingMoto.tipoMoto ||
+      "Naked",
+    documentoPropietario:
+      cleanDocNumber || existingMoto.documentoPropietario || "",
+    tipoDocumentoPropietario:
+      cleanDocType || existingMoto.tipoDocumentoPropietario || "CC",
+    verificadaRunt: "true",
+    verificadaAt: new Date().toISOString(),
+    estadoRunt: "ACTIVO",
+  };
+
+  if (record.soat?.expiryDate) {
+    motoProfile.soatVigencia = String(record.soat.expiryDate).slice(0, 10);
+  }
+  if (record.rtm?.expiryDate) {
+    motoProfile.tecnomecanicaVigencia = String(record.rtm.expiryDate).slice(
+      0,
+      10,
+    );
+  }
+  return motoProfile;
 }
 
 @Injectable()
@@ -336,14 +383,6 @@ export class GarageService {
     }
   }
 
-  async lookupVehicleByVin(vin: string) {
-    const res = await this.verifikService.verifyRuntVehicleByVin(vin);
-    if (!res.ok) {
-      throw new BadRequestException(res.message);
-    }
-    return res.record;
-  }
-
   async lookupVehicleByPlate(
     plate: string,
     documentNumber?: string,
@@ -508,5 +547,164 @@ export class GarageService {
     await moto.save();
 
     return { success: true, isNew, motorcycle: moto };
+  }
+
+  private async resolveRuntLookup(
+    userId: string,
+    cleanPlate: string,
+    cleanDocNumber: string,
+    cleanDocType: string,
+  ): Promise<VerifikRuntLookupResult> {
+    await this.enforceRuntUserThrottle(userId);
+    try {
+      if (cleanDocNumber) {
+        const docResult = await this.verifikService.verifyRuntVehicle(
+          cleanDocType,
+          cleanDocNumber,
+          cleanPlate,
+        );
+        if (docResult.ok) {
+          return docResult;
+        }
+        this.logger.warn(
+          `RUNT query with plate ${cleanPlate} and document ${cleanDocNumber} (${cleanDocType}) did not return vehicle: ${docResult.message}. Falling back to plate-only query.`,
+        );
+      }
+      return await this.verifikService.verifyRuntVehicleByPlate(cleanPlate);
+    } finally {
+      await this.recordRuntUserAttempt(userId);
+    }
+  }
+
+  private async syncPrimaryMotorcycle(
+    userId: string,
+    record: VerifikRuntVehicleRecord,
+    motoProfile: Record<string, unknown>,
+    cleanDocNumber: string,
+    cleanDocType: string,
+  ): Promise<GarageMotorcycleDocument> {
+    await this.motorcycleModel.updateMany(
+      { userId, plate: { $ne: record.plate }, isPrimary: true },
+      { $set: { isPrimary: false } },
+    );
+
+    let moto = await this.motorcycleModel.findOne({
+      userId,
+      plate: record.plate,
+    });
+    if (!moto) {
+      moto = new this.motorcycleModel({
+        userId,
+        plate: record.plate,
+        isPrimary: true,
+      });
+    } else {
+      moto.isPrimary = true;
+    }
+
+    applyProfileFieldsToMotorcycle(moto, motoProfile);
+    moto.isRuntVerified = true;
+    moto.runtVerifiedAt = new Date();
+    if (record.soat?.status) {
+      moto.runtSoatStatus = record.soat.status;
+    }
+    if (record.rtm?.status) {
+      moto.runtRtmStatus = record.rtm.status;
+    }
+    if (cleanDocNumber) {
+      moto.runtDocumentHolder = cleanDocNumber;
+    }
+    if (cleanDocType) {
+      moto.runtDocumentType = cleanDocType;
+    }
+    if (record.rtm?.cdaName) {
+      moto.runtCdaName = record.rtm.cdaName;
+    }
+    await moto.save();
+    return moto;
+  }
+
+  async verifyAndSyncProfileMotorcycle(
+    userId: string,
+    dto: { plate: string; documentNumber?: string; documentType?: string },
+  ) {
+    const cleanPlate = (dto.plate || "").trim().toUpperCase();
+    if (!cleanPlate) {
+      throw new BadRequestException("La placa de la motocicleta es requerida.");
+    }
+
+    const cleanDocType = normalizeRuntDocumentType(dto.documentType);
+    const cleanDocNumber = normalizeRuntDocumentNumber(
+      cleanDocType,
+      dto.documentNumber,
+    );
+
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException("Usuario no encontrado.");
+    }
+
+    const vehicleResult = await this.resolveRuntLookup(
+      userId,
+      cleanPlate,
+      cleanDocNumber,
+      cleanDocType,
+    );
+
+    if (!vehicleResult.ok) {
+      throw new BadRequestException(
+        vehicleResult.message ||
+          "No se encontraron registros de la motocicleta en el RUNT oficial.",
+      );
+    }
+
+    const record = vehicleResult.record;
+    const profile = user.profile ?? {};
+    const existingMoto =
+      (profile["motocicleta"] as Record<string, unknown> | undefined) ?? {};
+
+    const motoProfile = buildVerifiedMotoProfile(
+      existingMoto,
+      record,
+      cleanDocNumber,
+      cleanDocType,
+    );
+
+    profile["motocicleta"] = motoProfile;
+    user.profile = profile;
+
+    const isComplete = isSectionValid(
+      "motocicleta",
+      motoProfile,
+      Boolean(user.identityVerified),
+    );
+    const completedSections = [...(user.completedSections ?? [])];
+    if (isComplete && !completedSections.includes("motocicleta")) {
+      completedSections.push("motocicleta");
+    }
+    user.completedSections = completedSections;
+    user.profileCompleted =
+      REQUIRED_PROFILE_SECTIONS.every((s) => completedSections.includes(s)) &&
+      Boolean(user.identityVerified);
+
+    user.markModified("profile");
+    await user.save();
+
+    const moto = await this.syncPrimaryMotorcycle(
+      userId,
+      record,
+      motoProfile,
+      cleanDocNumber,
+      cleanDocType,
+    );
+
+    return {
+      ok: true,
+      message: `¡Motocicleta verificada y sincronizada exitosamente con RUNT! ${record.brand ?? ""} ${record.modelLine ?? ""} (Placa: ${record.plate}). Registrada como tu motocicleta principal en el Garaje.`,
+      profile: user.profile,
+      completedSections: user.completedSections,
+      profileCompleted: user.profileCompleted,
+      motorcycle: moto,
+    };
   }
 }

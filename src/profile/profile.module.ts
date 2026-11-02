@@ -8,6 +8,7 @@ import { User, UserSchema } from "../users/schemas/user.schema";
 import { BirdVerifyModule } from "../bird-verify/bird-verify.module";
 import { BirdModule } from "../bird/bird.module";
 import { VerifikModule } from "../verifik/verifik.module";
+import { GarageModule } from "../garage/garage.module";
 import { ChannelVerificationService } from "./channel-verification.service";
 import { IdentityVerificationService } from "./identity-verification.service";
 
@@ -17,6 +18,7 @@ import { IdentityVerificationService } from "./identity-verification.service";
     BirdModule,
     BirdVerifyModule,
     VerifikModule,
+    GarageModule,
     ThrottlerModule,
   ],
   controllers: [

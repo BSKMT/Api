@@ -24,6 +24,8 @@ import {
 } from "./dto/verify-channel.dto";
 import { IsIn } from "class-validator";
 import { ChannelVerificationService } from "./channel-verification.service";
+import { GarageService } from "../garage/garage.service";
+import { VerifyProfileMotorcycleDto } from "./dto/verify-profile-motorcycle.dto";
 import { REQUIRED_PROFILE_SECTIONS } from "../users/schemas/user.schema";
 
 export class RespondFriendRequestDto {
@@ -41,7 +43,20 @@ export class ProfileController {
   constructor(
     private readonly usersService: UsersService,
     private readonly verificationService: ChannelVerificationService,
+    private readonly garageService: GarageService,
   ) {}
+
+  @Post("motorcycle/verify")
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  async verifyMotorcycle(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: VerifyProfileMotorcycleDto,
+  ) {
+    return this.garageService.verifyAndSyncProfileMotorcycle(
+      req.user.userId,
+      dto,
+    );
+  }
 
   @Get()
   async getProfile(@Req() req: AuthenticatedRequest) {

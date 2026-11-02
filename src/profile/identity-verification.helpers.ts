@@ -141,7 +141,14 @@ export function extractAndValidateDocument(
     );
   }
 
-  const documentNumber = rawNumber.replace(/\D/g, "");
+  const documentNumber =
+    verifikType === "CC" ||
+    verifikType === "NIT" ||
+    verifikType === "TI" ||
+    verifikType === "PEP" ||
+    verifikType === "RC"
+      ? rawNumber.replace(/\D/g, "")
+      : rawNumber.toUpperCase().replace(/[^A-Z0-9-]/g, "");
   if (!DOCUMENT_NUMBER_PATTERN[verifikType].test(documentNumber)) {
     throw new BadRequestException(
       verifikType === "PEP"
@@ -193,5 +200,37 @@ export async function callVerifikService(
       return verifikService.verifyPpt(documentNumber, expeditionDate ?? "");
     case "PEP":
       return verifikService.verifyPep(documentNumber, expeditionDate ?? "");
+    default: {
+      const lic = await verifikService.getDriverLicense(
+        verifikType,
+        documentNumber,
+      );
+      if (lic && lic.status !== "NO_REGISTRA") {
+        return {
+          ok: true,
+          record: {
+            documentType: verifikType,
+            documentNumber,
+            firstName: null,
+            lastName: null,
+            fullName: null,
+            arrayName: [],
+            dateOfBirth: null,
+            gender: null,
+            isAlive: null,
+            expeditionDate: null,
+            expeditionPlace: null,
+            status: lic.status,
+            expirationDate: lic.expiryDate ?? null,
+            verifikId: null,
+          },
+        };
+      }
+      return {
+        ok: false,
+        reason: "not_found",
+        message: `No fue posible validar el documento ${verifikType} ${documentNumber} en el registro oficial.`,
+      };
+    }
   }
 }

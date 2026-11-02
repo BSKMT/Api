@@ -12,13 +12,27 @@ export const DOCUMENT_TYPE_MAP: Array<{
   { label: /PROTECCION TEMPORAL/, verifik: "PPT" },
   { label: /^PEP$/, verifik: "PEP" },
   { label: /PERMANENCIA/, verifik: "PEP" },
+  { label: /^PASAPORTE$/, verifik: "PA" },
+  { label: /^PA$/, verifik: "PA" },
+  { label: /^CARNE DIPLOMATICO$/, verifik: "CD" },
+  { label: /^CD$/, verifik: "CD" },
+  { label: /^NIT$/, verifik: "NIT" },
+  { label: /^TARJETA DE IDENTIDAD$/, verifik: "TI" },
+  { label: /^TI$/, verifik: "TI" },
+  { label: /^REGISTRO CIVIL$/, verifik: "RC" },
+  { label: /^RC$/, verifik: "RC" },
 ];
 
 export const DOCUMENT_NUMBER_PATTERN: Record<VerifikDocumentType, RegExp> = {
   CC: /^\d{5,10}$/,
-  CE: /^\d{4,10}$/,
-  PPT: /^\d{3,10}$/,
+  CE: /^[A-Z0-9]{4,12}$/i,
+  PPT: /^[A-Z0-9]{3,12}$/i,
   PEP: /^\d{15}$/,
+  PA: /^[A-Z0-9]{5,20}$/i,
+  CD: /^[A-Z0-9]{3,20}$/i,
+  NIT: /^\d{8,11}$/,
+  TI: /^\d{10,11}$/,
+  RC: /^\d{10,11}$/,
 };
 
 export const REQUIRES_EXPEDITION_DATE: Record<VerifikDocumentType, boolean> = {
@@ -26,6 +40,11 @@ export const REQUIRES_EXPEDITION_DATE: Record<VerifikDocumentType, boolean> = {
   CE: true,
   PPT: true,
   PEP: true,
+  PA: false,
+  CD: false,
+  NIT: false,
+  TI: false,
+  RC: false,
 };
 
 export const NAME_SIMILARITY_THRESHOLD = 0.75;
@@ -178,5 +197,17 @@ export function mapVerifikTypeToLabel(type: VerifikDocumentType): string {
       return "Permiso de Protección Temporal";
     case "PEP":
       return "Permiso Especial de Permanencia";
+    case "PA":
+      return "Pasaporte";
+    case "CD":
+      return "Carné Diplomático";
+    case "NIT":
+      return "NIT";
+    case "TI":
+      return "Tarjeta de Identidad";
+    case "RC":
+      return "Registro Civil";
+    default:
+      return type;
   }
 }

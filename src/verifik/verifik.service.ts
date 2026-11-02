@@ -37,7 +37,6 @@ function safeStr(val: unknown, fallback = ""): string {
 
 interface DiagnosticTargetParams {
   plate: string;
-  vin: string;
   fallbackRecord?: Partial<VerifikRuntVehicleRecord>;
 }
 
@@ -46,7 +45,6 @@ function parseDiagnosticTarget(
     | string
     | {
         plate: string;
-        vin?: string;
         fallbackRecord?: Partial<VerifikRuntVehicleRecord>;
       },
   existingFallback?: Partial<VerifikRuntVehicleRecord>,
@@ -54,7 +52,6 @@ function parseDiagnosticTarget(
   if (typeof queryKeyOrOptions === "object" && queryKeyOrOptions !== null) {
     return {
       plate: (queryKeyOrOptions.plate || "").trim().toUpperCase(),
-      vin: (queryKeyOrOptions.vin || "").trim().toUpperCase(),
       fallbackRecord: queryKeyOrOptions.fallbackRecord || existingFallback,
     };
   }
@@ -62,17 +59,14 @@ function parseDiagnosticTarget(
   const clean = String(queryKeyOrOptions || "")
     .trim()
     .toUpperCase();
-  const isVin = clean.length > 8 && /[A-HJ-NPR-Z0-9]{11,17}/i.test(clean);
   return {
-    plate: isVin ? "" : clean,
-    vin: isVin ? clean : "",
+    plate: clean,
     fallbackRecord: existingFallback,
   };
 }
 
 function buildFallbackVehicleRecord(
   plate: string,
-  vin: string,
   fallbackRecord?: Partial<VerifikRuntVehicleRecord>,
 ): VerifikRuntVehicleRecord {
   return {
@@ -85,7 +79,7 @@ function buildFallbackVehicleRecord(
     serviceType: fallbackRecord?.serviceType ?? "PARTICULAR",
     classType: fallbackRecord?.classType ?? "MOTOCICLETA",
     engineNumber: fallbackRecord?.engineNumber ?? null,
-    vinOrChassis: fallbackRecord?.vinOrChassis ?? (vin || null),
+    vinOrChassis: fallbackRecord?.vinOrChassis ?? null,
     soat: fallbackRecord?.soat ?? null,
     rtm: fallbackRecord?.rtm ?? null,
     verifikId: null,
@@ -214,13 +208,6 @@ export class VerifikService {
     }
 
     return result;
-  }
-
-  async verifyRuntVehicleByVin(vin: string): Promise<VerifikRuntLookupResult> {
-    const cleanVin = vin.trim().toUpperCase();
-    return this.getRuntVehicle("/v2/co/runt/vehicle-by-vin", {
-      vin: cleanVin,
-    });
   }
 
   async verifyRuntVehicleOwners(
@@ -481,18 +468,16 @@ export class VerifikService {
       | string
       | {
           plate: string;
-          vin?: string;
           fallbackRecord?: Partial<VerifikRuntVehicleRecord>;
         },
     userDocHolder?: string,
     userDocType?: string,
     existingFallback?: Partial<VerifikRuntVehicleRecord>,
   ): Promise<VerifikFullDiagnosticRecord> {
-    const {
-      plate: initialPlate,
-      vin,
-      fallbackRecord,
-    } = parseDiagnosticTarget(queryKeyOrOptions, existingFallback);
+    const { plate: initialPlate, fallbackRecord } = parseDiagnosticTarget(
+      queryKeyOrOptions,
+      existingFallback,
+    );
 
     const { vehicleResult, resolvedPlate } = await this.resolveRuntVehicle(
       initialPlate,
@@ -524,7 +509,7 @@ export class VerifikService {
       this.logger.warn(
         `Verifik RUNT lookup failed for plate ${plate}: ${runtMessage}. Fallback record used to continue diagnostics.`,
       );
-      vehicle = buildFallbackVehicleRecord(plate, vin, fallbackRecord);
+      vehicle = buildFallbackVehicleRecord(plate, fallbackRecord);
     }
 
     const [fines, taxes, valuation, sinister, license] = await Promise.all([

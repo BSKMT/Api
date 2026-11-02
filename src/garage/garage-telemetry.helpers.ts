@@ -85,7 +85,7 @@ export async function autoSeedFromProfile(
     rtmExpiryDate: parseDateOrNull(profileMoto.tecnomecanicaVigencia),
     insuranceCompany: profileMoto.seguroTodoRiesgo?.trim() ?? null,
     policyNumber: profileMoto.polizaNumero?.trim() ?? null,
-    vinOrEngineNumber: profileMoto.vinMoto?.trim() ?? null,
+    vinOrEngineNumber: null,
     isPrimary: true,
   });
 
