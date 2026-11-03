@@ -11,8 +11,39 @@ export async function generateTicketNumber(
   ticketModel: Model<TicketDocument>,
 ): Promise<string> {
   const year = new Date().getFullYear();
-  const count = await ticketModel.countDocuments().exec();
-  const sequence = String(Number(count) + 1001).padStart(5, "0");
+  let nextSeq = 1001;
+
+  if (typeof ticketModel.findOne === "function") {
+    try {
+      const query = ticketModel
+        .findOne({ ticketNumber: new RegExp(`^TK-${year}-`) })
+        .sort({ createdAt: -1, _id: -1 })
+        .select("ticketNumber");
+      const lastTicket = (
+        typeof query?.lean === "function" ? await query.lean() : await query
+      ) as { ticketNumber?: string } | null;
+
+      if (lastTicket?.ticketNumber) {
+        const parts = lastTicket.ticketNumber.split("-");
+        const parsed = Number.parseInt(parts[2], 10);
+        if (!Number.isNaN(parsed)) {
+          nextSeq = parsed + 1;
+          const sequence = String(nextSeq).padStart(5, "0");
+          return `TK-${year}-${sequence}`;
+        }
+      }
+    } catch {
+      // Fallback to countDocuments
+    }
+  }
+
+  if (typeof ticketModel.countDocuments === "function") {
+    const res = ticketModel.countDocuments();
+    const count =
+      typeof res?.exec === "function" ? await res.exec() : await res;
+    nextSeq = Number(count) + 1001;
+  }
+  const sequence = String(nextSeq).padStart(5, "0");
   return `TK-${year}-${sequence}`;
 }
 

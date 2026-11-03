@@ -40,6 +40,19 @@ import {
 } from "../services/gestion-eventos.helpers";
 import { processEventScanCheckIn } from "../services/gestion-eventos-scan.helpers";
 import type { GestionActor } from "../services/gestion-cursos.helpers";
+import { IsString, IsNotEmpty, IsOptional, MaxLength } from "class-validator";
+
+export class ScanEventCheckInDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  eventId?: string;
+
+  @IsNotEmpty()
+  @IsString()
+  @MaxLength(500)
+  codeOrQr!: string;
+}
 
 interface AuthenticatedGestionRequest extends Request {
   user: GestionActor;
@@ -93,7 +106,7 @@ export class GestionEventosController {
   @HttpCode(HttpStatus.OK)
   async scanCheckIn(
     @Req() req: AuthenticatedGestionRequest,
-    @Body() dto: { eventId?: string; codeOrQr: string },
+    @Body() dto: ScanEventCheckInDto,
   ) {
     const orClauses = buildCheckInOrClauses(dto.codeOrQr);
     const reg = await this.registrationModel.findOne({ $or: orClauses });

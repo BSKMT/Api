@@ -53,7 +53,7 @@ export class ShopController {
     // M2: Sanitize collection param — public endpoint, prevent NoSQL injection
     const safeCollection = ensureString(collectionName ?? collection);
     return this.shopService.getProducts(
-      limit ? Number.parseInt(limit, 10) : 20,
+      Math.min(Math.max(limit ? Number.parseInt(limit, 10) : 20, 1), 100),
       featured === "true",
       safeCollection,
     );
@@ -63,7 +63,7 @@ export class ShopController {
   @Get("upcoming")
   async getUpcomingReleases(@Query("limit") limit?: string) {
     return this.shopService.getUpcomingReleases(
-      limit ? Number.parseInt(limit, 10) : 10,
+      Math.min(Math.max(limit ? Number.parseInt(limit, 10) : 10, 1), 100),
     );
   }
 
@@ -90,7 +90,10 @@ export class ShopController {
   ) {
     const { userId } = req.user;
     const fullUser = await this.usersService.findById(userId);
-    const membershipLevel = fullUser?.membershipLevel ?? null;
+    const membershipLevel =
+      fullUser && !fullUser.membershipExpired
+        ? (fullUser.membershipLevel ?? null)
+        : null;
     return this.shopService.createOrder(userId, dto, membershipLevel);
   }
 

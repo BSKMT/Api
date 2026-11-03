@@ -132,7 +132,7 @@ export class CreateAdministratorDto {
   role?: string;
 
   @IsString()
-  @MinLength(8)
+  @MinLength(12)
   @MaxLength(128)
   password!: string;
 }

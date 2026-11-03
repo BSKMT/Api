@@ -23,7 +23,17 @@ export function applyBasicSpecsUpdates(
   if (dto.year !== undefined) moto.year = dto.year;
   if (dto.displacementCc !== undefined)
     moto.displacementCc = dto.displacementCc;
-  if (dto.plate !== undefined) moto.plate = dto.plate.trim().toUpperCase();
+  if (dto.plate !== undefined) {
+    const newPlate = dto.plate.trim().toUpperCase();
+    if (newPlate !== moto.plate) {
+      moto.plate = newPlate;
+      moto.isRuntVerified = false;
+      moto.runtVerifiedAt = null;
+      moto.runtCdaName = null;
+      moto.runtSoatStatus = null;
+      moto.runtRtmStatus = null;
+    }
+  }
   if (dto.color !== undefined) moto.color = dto.color.trim();
   if (dto.motorcycleType !== undefined)
     moto.motorcycleType = dto.motorcycleType.trim();
@@ -163,6 +173,14 @@ export async function executeUpdateMotorcycle(
     dto.currentOdometerKm !== undefined &&
     dto.currentOdometerKm !== moto.currentOdometerKm
   ) {
+    if (
+      typeof moto.currentOdometerKm === "number" &&
+      dto.currentOdometerKm < moto.currentOdometerKm
+    ) {
+      throw new BadRequestException(
+        "El kilometraje no puede ser menor al registrado actualmente",
+      );
+    }
     moto.currentOdometerKm = dto.currentOdometerKm;
     moto.odometerLastUpdatedAt = new Date();
     await odometerModel.create({

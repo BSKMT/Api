@@ -310,6 +310,23 @@ export class IdentityVerificationService {
       };
     }
 
+    const duplicateVerifiedUser = await this.userModel
+      .findOne({
+        _id: { $ne: user._id },
+        identityVerified: true,
+        "identityVerification.documentNumber": documentNumber,
+      })
+      .lean();
+
+    if (duplicateVerifiedUser) {
+      this.logger.warn(
+        `Duplicate document verification attempted for doc ${maskDocument(documentNumber)} by user ${userId}`,
+      );
+      throw new BadRequestException(
+        "Este número de documento ya se encuentra registrado y verificado por otro usuario.",
+      );
+    }
+
     await this.throttle.enforce(userId);
 
     let lookup: Awaited<ReturnType<typeof callVerifikService>>;

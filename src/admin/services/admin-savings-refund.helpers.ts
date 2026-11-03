@@ -1,5 +1,9 @@
 import { randomInt } from "node:crypto";
-import { NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from "@nestjs/common";
 import { Model } from "mongoose";
 import {
   SavingsPlanDocument,
@@ -41,6 +45,22 @@ export async function executeReviewRefundFinance(
   const req = await refundRequestModel.findById(requestId);
   if (!req)
     throw new NotFoundException("Solicitud de reembolso no encontrada.");
+
+  if (req.status !== SavingsRefundStatus.PENDING_FINANCE_APPROVAL) {
+    throw new BadRequestException(
+      "La solicitud debe ser aprobada en primera instancia antes de la revisión financiera",
+    );
+  }
+
+  if (
+    req.consoleReview?.reviewedBy &&
+    actorId &&
+    String(req.consoleReview.reviewedBy) === String(actorId)
+  ) {
+    throw new ForbiddenException(
+      "El aprobador de segunda instancia no puede ser el mismo que aprobó en primera instancia",
+    );
+  }
 
   const now = new Date();
   const docRadicado =
@@ -144,6 +164,12 @@ export async function executeReviewLegalEscalation(
 ) {
   const req = await refundRequestModel.findById(requestId);
   if (!req) throw new NotFoundException("Solicitud no encontrada.");
+
+  if (req.status !== SavingsRefundStatus.LEGAL_ESCALATED) {
+    throw new BadRequestException(
+      "La solicitud no se encuentra escalada a revisión jurídica",
+    );
+  }
 
   const now = new Date();
   const legalRadicado =

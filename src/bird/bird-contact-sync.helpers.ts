@@ -163,7 +163,10 @@ export async function executeSyncAllUsersHelper<T extends { email?: string }>(
       synced++;
     } else {
       failed++;
-      errors.push({ email: res.email, error: res.error || "Desconocido" });
+      errors.push({
+        email: maskEmail(res.email),
+        error: res.error || "Desconocido",
+      });
     }
   }
 

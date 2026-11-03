@@ -43,7 +43,10 @@ export async function createCoursePaymentHelper(
   }
 
   const fullUser = await deps.usersService.findById(userId);
-  const membershipLevel = fullUser?.membershipLevel ?? null;
+  const membershipLevel =
+    fullUser && !fullUser.membershipExpired
+      ? (fullUser.membershipLevel ?? null)
+      : null;
   const expectedPricing = deps.eventsService.calculateCoursePricing(
     course,
     membershipLevel,

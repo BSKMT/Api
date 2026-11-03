@@ -6,14 +6,8 @@ import { OrderDocument } from "./schemas/order.schema";
 
 export function isShopMember(membershipLevel: string | null): boolean {
   if (!membershipLevel) return false;
-  const lvl = membershipLevel.toLowerCase();
-  return (
-    lvl === "active" ||
-    lvl === "member" ||
-    lvl === "vip" ||
-    lvl === "pro" ||
-    lvl.startsWith("tier")
-  );
+  const lvl = membershipLevel.toLowerCase().trim();
+  return lvl !== "none" && lvl !== "friend" && lvl.length > 0;
 }
 
 export function generateOrderNumber(): string {

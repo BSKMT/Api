@@ -34,6 +34,22 @@ async function loadFromNodeHeaders(): Promise<FromNodeHeadersFn> {
   return fromNodeHeadersPromise;
 }
 
+interface SessionUserCache {
+  _id: string;
+  role: string;
+  subrol?: string | null;
+  adminPermissions?: string[];
+  isActive: boolean;
+  accountDeletionRequested: boolean;
+}
+
+const ALLOWED_DURING_DELETION = new Set([
+  "/api/settings/deletion-status",
+  "/api/settings/cancel-deletion",
+  "/api/settings/delete-account",
+  "/api/auth/sign-out",
+]);
+
 /**
  * SessionGuard — replaces the old JwtAuthGuard.
  *
@@ -52,6 +68,59 @@ export class SessionGuard {
     private readonly usersService: UsersService,
     private readonly kvCache: KvCacheService,
   ) {}
+
+  private async resolveMongooseUser(
+    betterAuthUserId: string,
+  ): Promise<SessionUserCache | null> {
+    const cacheKey = `user:ba:${betterAuthUserId}`;
+    const cached = await this.kvCache.get<SessionUserCache>(cacheKey, true);
+    if (cached) {
+      return cached;
+    }
+
+    const mongooseUser =
+      await this.usersService.findByBetterAuthId(betterAuthUserId);
+    if (!mongooseUser) {
+      return null;
+    }
+
+    const userData: SessionUserCache = {
+      _id: String(mongooseUser._id),
+      role: mongooseUser.role,
+      subrol: mongooseUser.subrol ?? null,
+      adminPermissions: mongooseUser.adminPermissions ?? [],
+      isActive: mongooseUser.isActive,
+      accountDeletionRequested: mongooseUser.accountDeletionRequested ?? false,
+    };
+
+    await this.kvCache.set(cacheKey, userData, 120, true);
+    return userData;
+  }
+
+  private assertAccountActiveAndNotDeleted(
+    user: SessionUserCache,
+    request: Request,
+  ): void {
+    if (user.isActive === false) {
+      throw new UnauthorizedException(
+        "Tu cuenta ha sido desactivada. Contacta al administrador.",
+      );
+    }
+    if (user.accountDeletionRequested === true) {
+      let rawPath = (request.originalUrl || request.url || "")
+        .split("?")[0]
+        .toLowerCase()
+        .trim();
+      while (rawPath.length > 1 && rawPath.endsWith("/")) {
+        rawPath = rawPath.slice(0, -1);
+      }
+      if (!ALLOWED_DURING_DELETION.has(rawPath)) {
+        throw new UnauthorizedException(
+          "Tu cuenta está marcada para eliminación. Puedes consultar o cancelar la solicitud desde configuración.",
+        );
+      }
+    }
+  }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
@@ -82,67 +151,14 @@ export class SessionGuard {
       );
     }
 
-    const betterAuthUserId: string = session.user.id;
-
-    const cacheKey = `user:ba:${betterAuthUserId}`;
-    const cached = await this.kvCache.get<{
-      _id: string;
-      role: string;
-      subrol?: string | null;
-      adminPermissions?: string[];
-      isActive: boolean;
-      accountDeletionRequested: boolean;
-    }>(cacheKey, true);
-
-    let mongooseUser: Awaited<ReturnType<UsersService["findByBetterAuthId"]>> =
-      null;
-
-    if (cached) {
-      mongooseUser = cached as unknown as Awaited<
-        ReturnType<UsersService["findByBetterAuthId"]>
-      >;
-    } else {
-      mongooseUser =
-        await this.usersService.findByBetterAuthId(betterAuthUserId);
-      if (mongooseUser) {
-        await this.kvCache.set(
-          cacheKey,
-          {
-            _id: String(mongooseUser._id),
-            role: mongooseUser.role,
-            subrol: mongooseUser.subrol ?? null,
-            adminPermissions: mongooseUser.adminPermissions ?? [],
-            isActive: mongooseUser.isActive,
-            accountDeletionRequested:
-              mongooseUser.accountDeletionRequested ?? false,
-          },
-          120,
-          true,
-        );
-      }
-    }
-
+    const mongooseUser = await this.resolveMongooseUser(session.user.id);
     if (!mongooseUser) {
       throw new UnauthorizedException(
         "Usuario no encontrado en la base de datos",
       );
     }
 
-    // A-2: Reject deactivated users and users with a pending deletion
-    // request. Previously they kept working off the cached session
-    // cookie for up to `session.expiresIn` (7 days). This check is the
-    // authoritative gate — the session token may still exist in
-    // MongoDB but it is no longer accepted here.
-    if (mongooseUser.isActive === false) {
-      throw new UnauthorizedException(
-        "Tu cuenta ha sido desactivada. Contacta al administrador.",
-      );
-    }
-    if (mongooseUser.accountDeletionRequested === true) {
-      throw new UnauthorizedException(
-        "Tu cuenta está marcada para eliminación. Contacta al administrador.",
-      );
-    }
+    this.assertAccountActiveAndNotDeleted(mongooseUser, request);
 
     (
       request as Request & {

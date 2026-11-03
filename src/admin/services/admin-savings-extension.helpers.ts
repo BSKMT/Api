@@ -134,6 +134,15 @@ export async function executeReviewRefundConsole(
   if (!req)
     throw new NotFoundException("Solicitud de reembolso no encontrada.");
 
+  if (
+    req.status !== SavingsRefundStatus.PENDING_CONSOLE_REVIEW &&
+    req.status !== SavingsRefundStatus.APPEALED
+  ) {
+    throw new BadRequestException(
+      "La solicitud no está pendiente de revisión en primera instancia",
+    );
+  }
+
   const now = new Date();
   if (dto.approved) {
     req.status = SavingsRefundStatus.PENDING_FINANCE_APPROVAL;

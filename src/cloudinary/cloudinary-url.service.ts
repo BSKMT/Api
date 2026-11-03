@@ -121,11 +121,18 @@ export class CloudinaryUrlService {
   ): string {
     if (!publicIdOrUrl) return "";
 
-    if (
-      publicIdOrUrl.startsWith("http") &&
-      !publicIdOrUrl.includes("cloudinary.com")
-    ) {
-      return publicIdOrUrl;
+    if (publicIdOrUrl.startsWith("http")) {
+      try {
+        const parsed = new URL(publicIdOrUrl);
+        if (
+          parsed.protocol !== "https:" ||
+          !parsed.hostname.endsWith("cloudinary.com")
+        ) {
+          return "";
+        }
+      } catch {
+        return "";
+      }
     }
 
     let publicId = publicIdOrUrl;

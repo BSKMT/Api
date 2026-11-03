@@ -24,8 +24,8 @@ function resolveAuthClientIp(req: Request): string {
   const verifiedReq = req as Request & { cfOriginVerified?: boolean };
   const canTrustCf =
     verifiedReq.cfOriginVerified === true ||
-    process.env.NODE_ENV !== "production" ||
-    Boolean(process.env.CF_ORIGIN_SECRET?.trim());
+    (process.env.NODE_ENV !== "production" &&
+      !process.env.CF_ORIGIN_SECRET?.trim());
   const cfIp = canTrustCf ? req.headers["cf-connecting-ip"] : undefined;
   const realIp = Array.isArray(cfIp) ? cfIp[0] : cfIp;
   if (typeof realIp === "string" && realIp.trim().length > 0) {
@@ -81,11 +81,14 @@ export async function createBetterAuthMiddleware(auth: AuthInstance) {
 
   return (req: Request, res: Response, next: NextFunction) => {
     const rawPath = req.path.replace(/\/{2,}/g, "/");
-    const path = rawPath.length > 1 ? rawPath.replace(/\/+$/, "") : rawPath;
+    let path = rawPath;
+    while (path.length > 1 && path.endsWith("/")) {
+      path = path.slice(0, -1);
+    }
     if (shouldSkipAuthRoute(rawPath)) {
       return next();
     }
-    if (path === "/sign-in/email") {
+    if (path === "/sign-in/email" || path.startsWith("/sign-in/social")) {
       return res.status(404).json({ message: "Not Found" });
     }
     if (SENSITIVE_AUTH_PATHS.has(path)) {

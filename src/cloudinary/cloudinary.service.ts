@@ -184,6 +184,21 @@ export class CloudinaryService {
       );
     }
 
+    const matches = base64Data.match(/^data:([^;]+);base64,(.+)$/);
+    if (!matches) {
+      throw new BadRequestException(
+        "Formato inválido: solo se aceptan cadenas Data URI base64 válidas.",
+      );
+    }
+    const mimeType = matches[1];
+    const buffer = Buffer.from(matches[2], "base64");
+    if (buffer.length > 10 * 1024 * 1024) {
+      throw new BadRequestException(
+        "El archivo excede el tamaño máximo permitido de 10 MB.",
+      );
+    }
+    validateFileMagicBytes(buffer, mimeType);
+
     try {
       const result = await this.withTimeout(
         this.cloudinary.uploader.upload(

@@ -233,6 +233,7 @@ export async function createShopPaymentHelper(
   if (amount === 0) {
     transaction.status = "APPROVED";
     await transaction.save();
+    await deps.shopService.linkOrderPayment(orderNumber, reference);
     await deps.processAlegraInvoicing(transaction);
     return {
       reference,

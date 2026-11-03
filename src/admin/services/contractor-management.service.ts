@@ -141,6 +141,7 @@ export class ContractorManagementService {
       })
       .select("email username role subrol contractorInfo isActive createdAt")
       .sort({ createdAt: -1 })
+      .limit(500)
       .lean();
   }
 
@@ -156,6 +157,7 @@ export class ContractorManagementService {
         "email username role subrol adminPermissions contractorInfo isActive createdAt",
       )
       .sort({ createdAt: -1 })
+      .limit(500)
       .lean();
   }
 
@@ -171,6 +173,7 @@ export class ContractorManagementService {
         "email username role subrol adminPermissions contractorInfo isActive createdAt",
       )
       .sort({ createdAt: -1 })
+      .limit(500)
       .lean();
   }
 }

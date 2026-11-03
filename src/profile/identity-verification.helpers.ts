@@ -200,37 +200,11 @@ export async function callVerifikService(
       return verifikService.verifyPpt(documentNumber, expeditionDate ?? "");
     case "PEP":
       return verifikService.verifyPep(documentNumber, expeditionDate ?? "");
-    default: {
-      const lic = await verifikService.getDriverLicense(
-        verifikType,
-        documentNumber,
-      );
-      if (lic && lic.status !== "NO_REGISTRA") {
-        return {
-          ok: true,
-          record: {
-            documentType: verifikType,
-            documentNumber,
-            firstName: null,
-            lastName: null,
-            fullName: null,
-            arrayName: [],
-            dateOfBirth: null,
-            gender: null,
-            isAlive: null,
-            expeditionDate: null,
-            expeditionPlace: null,
-            status: lic.status,
-            expirationDate: lic.expiryDate ?? null,
-            verifikId: null,
-          },
-        };
-      }
+    default:
       return {
         ok: false,
-        reason: "not_found",
-        message: `No fue posible validar el documento ${verifikType} ${documentNumber} en el registro oficial.`,
+        reason: "invalid_input",
+        message: `El tipo de documento '${verifikType}' no es admitido para verificación automática de identidad.`,
       };
-    }
   }
 }

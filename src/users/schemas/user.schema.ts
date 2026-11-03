@@ -215,6 +215,17 @@ UserSchema.post("find", (docs: unknown[]) => {
 UserSchema.post("findOne", (doc: unknown) =>
   decryptSensitiveProfileFields(doc),
 );
+UserSchema.pre("findOneAndUpdate", function () {
+  const update = this.getUpdate() as Record<string, unknown> | null;
+  if (!update) return;
+  if (update.profile && typeof update.profile === "object") {
+    encryptUserProfileSensitiveFields(update.profile);
+  }
+  const setObj = update.$set as Record<string, unknown> | undefined;
+  if (setObj?.profile && typeof setObj.profile === "object") {
+    encryptUserProfileSensitiveFields(setObj.profile);
+  }
+});
 UserSchema.post("findOneAndUpdate", (doc: unknown) =>
   decryptSensitiveProfileFields(doc),
 );

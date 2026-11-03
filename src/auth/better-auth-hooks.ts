@@ -48,7 +48,6 @@ export function createBetterAuthHooks(
     "mac.com",
     "yahoo.com",
     "yahoo.es",
-    "bskmt.com",
   ]);
 
   return {

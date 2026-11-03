@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { EnvironmentConfig } from "../config/config.interface";
@@ -78,7 +79,9 @@ export class KvCacheService {
       const expectedTag = await this.hmac.computeTag(
         `${key}:${JSON.stringify(sealed.v)}`,
       );
-      if (sealed.h !== expectedTag) {
+      const bufA = Buffer.from(sealed.h, "utf8");
+      const bufB = Buffer.from(expectedTag, "utf8");
+      if (bufA.length !== bufB.length || !timingSafeEqual(bufA, bufB)) {
         this.logger.warn(`KV integrity check failed for key: ${key}`);
         return null;
       }

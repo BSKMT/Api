@@ -49,9 +49,14 @@ export function isVoucherAmountMismatch(
   transaction: TransactionDocument,
   body: Record<string, unknown>,
 ): boolean {
-  const voucherAmount = parseBoldAmount(body["amount"]);
-  if (voucherAmount === undefined) return false;
   if (transaction.amount <= 0) return false;
+  const voucherAmount = parseBoldAmount(body["amount"]);
+  if (voucherAmount === undefined) {
+    logger.warn(
+      `Missing or invalid amount in Bold voucher sync for ref ${transaction.reference}: expected ${transaction.amount}. Skipping approval.`,
+    );
+    return true;
+  }
   if (voucherAmount === transaction.amount) return false;
   logger.warn(
     `Amount mismatch in Bold voucher sync for ref ${transaction.reference}: expected ${transaction.amount}, received ${voucherAmount}. Skipping approval.`,

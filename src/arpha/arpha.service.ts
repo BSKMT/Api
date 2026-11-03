@@ -163,6 +163,7 @@ export class ArphaService {
     const requests = await this.arphaRequestModel
       .find({ userId })
       .sort({ createdAt: -1 })
+      .limit(100)
       .lean();
     const active = requests.filter((r) =>
       (ACTIVE_ARPHA_STATUSES as readonly string[]).includes(r.status),

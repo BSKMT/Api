@@ -206,18 +206,25 @@ export async function executeVerifyOtp(params: {
     sessionEncKey,
     logger,
   } = params;
-  const otpRecord = await otpModel.findOne({ requestId, status: "pending" });
+  const otpRecord = await otpModel.findOneAndUpdate(
+    { requestId, status: "pending", attempts: { $lt: 5 } },
+    { $inc: { attempts: 1 } },
+    { new: true },
+  );
   if (!otpRecord) {
+    const existing = await otpModel.findOne({ requestId });
+    if (existing && (existing.attempts >= 5 || existing.status === "expired")) {
+      if (existing.status !== "expired") {
+        existing.status = "expired";
+        await existing.save();
+      }
+      await revokeEncryptedOtpSession(existing, sessionEncKey, logger);
+      throw new GoneException(
+        "Has superado el máximo de intentos permitidos. Solicita un nuevo código.",
+      );
+    }
     throw new GoneException(
       "El código de verificación no existe, ya fue utilizado o ha expirado.",
-    );
-  }
-  if (otpRecord.attempts >= 5) {
-    otpRecord.status = "expired";
-    await otpRecord.save();
-    await revokeEncryptedOtpSession(otpRecord, sessionEncKey, logger);
-    throw new GoneException(
-      "Has superado el máximo de intentos permitidos. Solicita un nuevo código.",
     );
   }
 

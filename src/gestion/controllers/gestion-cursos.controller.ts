@@ -31,6 +31,19 @@ import {
   CourseEnrollmentDocument,
 } from "../../events/schemas/course-enrollment.schema";
 import { ParseObjectIdPipe } from "../../common/pipes/parse-object-id.pipe";
+import { IsString, IsNotEmpty, IsOptional, MaxLength } from "class-validator";
+
+export class ScanCourseCheckInDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  courseSlug?: string;
+
+  @IsNotEmpty()
+  @IsString()
+  @MaxLength(500)
+  codeOrQr!: string;
+}
 import {
   buildCheckInOrClauses,
   deriveGestionAttendee,
@@ -91,7 +104,7 @@ export class GestionCursosController {
   @HttpCode(HttpStatus.OK)
   async scanCheckIn(
     @Req() req: AuthenticatedGestionRequest,
-    @Body() dto: { courseSlug?: string; codeOrQr: string },
+    @Body() dto: ScanCourseCheckInDto,
   ) {
     const orClauses = buildCheckInOrClauses(dto.codeOrQr);
     const enrollment = await this.enrollmentModel.findOne({ $or: orClauses });

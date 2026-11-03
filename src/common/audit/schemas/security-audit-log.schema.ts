@@ -73,9 +73,18 @@ SecurityAuditLogSchema.index(
   { expireAfterSeconds: 15552000 },
 ); // Retención de 180 días
 
-// Enforce inmutabilidad (RS.AN-06): Bloquear mutaciones sobre registros existentes
+// Enforce inmutabilidad (RS.AN-06): Bloquear mutaciones y eliminaciones sobre registros existentes
 SecurityAuditLogSchema.pre(
-  ["updateOne", "updateMany", "findOneAndUpdate"],
+  [
+    "updateOne",
+    "updateMany",
+    "findOneAndUpdate",
+    "deleteOne",
+    "deleteMany",
+    "findOneAndDelete",
+    "findOneAndReplace",
+    "replaceOne",
+  ],
   function () {
     throw new Error(
       "Violación de integridad: los registros de auditoría de seguridad son inmutables (RS.AN-06).",

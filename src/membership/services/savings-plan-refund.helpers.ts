@@ -157,6 +157,12 @@ export async function executeAppealRefund(
     throw new NotFoundException("Solicitud de reembolso no encontrada.");
   }
 
+  if (req.status !== SavingsRefundStatus.REJECTED) {
+    throw new BadRequestException(
+      "Solo puedes apelar solicitudes que hayan sido rechazadas",
+    );
+  }
+
   if (req.appealCount >= req.maxAppeals) {
     throw new BadRequestException(
       "Has alcanzado el límite máximo de 3 apelaciones. Puedes elevar tu caso formalmente ante el Comité de Asuntos Legales y Protección del Consumidor de BSKMT.",
@@ -217,7 +223,7 @@ export async function executeEscalateToLegal(
   }
 
   if (
-    req.appealCount < req.maxAppeals &&
+    req.appealCount < req.maxAppeals ||
     req.status !== SavingsRefundStatus.REJECTED
   ) {
     throw new BadRequestException(

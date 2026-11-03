@@ -249,6 +249,11 @@ export async function executeDeleteProfileSection(
 
   user.profile = profile;
   user.completedSections = completedSections;
+  if (sectionId === "datos-personales") {
+    user.identityVerified = false;
+    user.identityVerifiedAt = undefined;
+    user.identityVerification = undefined;
+  }
   user.profileCompleted = profileCompleted;
   user.markModified("profile");
 

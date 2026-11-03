@@ -22,8 +22,11 @@ const CSRF_EXEMPT_PATHS = new Set([
   "/api/garage/allied/service-order",
 ]);
 
-function isCsrfExemptPath(path: string): boolean {
-  const normalized = (path || "").replace(/\/+$/, "");
+function isCsrfExemptPath(path = ""): boolean {
+  let normalized = path;
+  while (normalized.length > 1 && normalized.endsWith("/")) {
+    normalized = normalized.slice(0, -1);
+  }
   return (
     CSRF_EXEMPT_PATHS.has(normalized) ||
     normalized.startsWith("/api/internal/cron/")
@@ -48,6 +51,15 @@ function isOriginAllowed(
 const NATIVE_UA_SUBSTRINGS = ["BSK", "Expo", "okhttp", "CFNetwork"];
 
 function isNativeAppClient(req: Request): boolean {
+  const cookieHeader = req.headers.cookie ?? "";
+  if (
+    req.headers["sec-fetch-site"] ||
+    req.headers["sec-fetch-mode"] ||
+    cookieHeader.includes("better-auth.session_token") ||
+    cookieHeader.includes("bskmt.csrf")
+  ) {
+    return false;
+  }
   const platform = req.headers["x-device-platform"];
   if (platform !== "android" && platform !== "ios") return false;
   const userAgent = (req.headers["user-agent"] as string) ?? "";
@@ -58,12 +70,32 @@ function validateCsrfHeaderIfPresent(req: Request, secret: string): boolean {
   const csrfHeader = Array.isArray(req.headers["x-csrf-token"])
     ? req.headers["x-csrf-token"][0]
     : req.headers["x-csrf-token"];
-  if (!csrfHeader) return true;
 
   const cookieHeader = req.headers.cookie ?? "";
   const match = /(?:^|;\s*)bskmt\.csrf=([^;]*)/.exec(cookieHeader);
   const csrfCookie = match ? decodeURIComponent(match[1]) : undefined;
-  return validateDoubleSubmitCsrf(csrfHeader, csrfCookie, secret);
+
+  if (csrfHeader) {
+    return validateDoubleSubmitCsrf(csrfHeader, csrfCookie, secret);
+  }
+
+  // If a CSRF cookie is present in browser request, the matching x-csrf-token header is strictly mandatory
+  if (csrfCookie) {
+    return false;
+  }
+
+  // If the request carries session cookies without a CSRF token, require verified CF origin (BFF proxy)
+  const isSessionCookie = cookieHeader.includes("better-auth.session_token");
+  if (isSessionCookie) {
+    const isCfVerified =
+      (req as Request & { cfOriginVerified?: boolean }).cfOriginVerified ===
+      true;
+    if (!isCfVerified) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 const VERCEL_INTERNAL_PATHS = new Set([
@@ -73,8 +105,11 @@ const VERCEL_INTERNAL_PATHS = new Set([
   "/api/shop/internal/cron/expire-pending",
 ]);
 
-function isVercelInternalCronOrHealthPath(rawPath: string): boolean {
-  const normalizedPath = (rawPath || "").replace(/\/+$/, "");
+function isVercelInternalCronOrHealthPath(rawPath = ""): boolean {
+  let normalizedPath = rawPath;
+  while (normalizedPath.length > 1 && normalizedPath.endsWith("/")) {
+    normalizedPath = normalizedPath.slice(0, -1);
+  }
   return (
     VERCEL_INTERNAL_PATHS.has(normalizedPath) ||
     normalizedPath.startsWith("/api/internal/cron/")

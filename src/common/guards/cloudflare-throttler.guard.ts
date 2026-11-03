@@ -16,8 +16,8 @@ export class CloudflareThrottlerGuard extends ThrottlerGuard {
     >;
     const canTrustCfHeader =
       req.cfOriginVerified === true ||
-      process.env.NODE_ENV !== "production" ||
-      Boolean(process.env.CF_ORIGIN_SECRET?.trim());
+      (process.env.NODE_ENV !== "production" &&
+        !process.env.CF_ORIGIN_SECRET?.trim());
 
     if (canTrustCfHeader) {
       const cfIpRaw = headers["cf-connecting-ip"];

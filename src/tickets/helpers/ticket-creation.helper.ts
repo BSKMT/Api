@@ -48,13 +48,16 @@ export async function executeCreateTicket(
     throw new BadRequestException("El correo del cliente es obligatorio");
   }
 
+  const isSelf = customerEmail === actor?.email?.toLowerCase().trim();
+  const customerUserId = isSelf ? actor?.userId : undefined;
+
   const birdContactId = await syncTicketCustomerWithBird(
     ctx.birdContactService,
     {
       name: customerName,
       email: customerEmail,
       phone: dto.customerPhone,
-      userId: actor?.userId,
+      userId: customerUserId,
     },
     ctx.logger,
   );
@@ -81,7 +84,7 @@ export async function executeCreateTicket(
       name: customerName,
       email: customerEmail,
       phone: dto.customerPhone || null,
-      userId: actor?.userId || null,
+      userId: customerUserId || null,
       birdContactId: birdContactId || null,
     },
     messages: [initialMessage],

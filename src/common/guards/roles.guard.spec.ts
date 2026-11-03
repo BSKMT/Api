@@ -109,4 +109,32 @@ describe("RolesGuard (NIST CSF 2.0 PR.AA-05)", () => {
       checkAdminModulePermissions(["events"], "/api/admin/arpha/cases"),
     ).not.toThrow();
   });
+
+  it("normaliza slashes duplicados y percent-encoding bloqueando accesos sin permiso", () => {
+    jest.spyOn(reflector, "getAllAndOverride").mockReturnValue([Role.ADMIN]);
+    const ctxSlashes = createMockContext(
+      { userId: "a1", role: Role.ADMIN, adminPermissions: ["events"] },
+      "//api//admin//users",
+    );
+    expect(() => guard.canActivate(ctxSlashes)).toThrow(
+      "No tienes permisos asignados para el módulo administrativo 'users'",
+    );
+
+    const ctxEncoded = createMockContext(
+      { userId: "a1", role: Role.ADMIN, adminPermissions: ["events"] },
+      "/%61pi/admin/%75sers",
+    );
+    expect(() => guard.canActivate(ctxEncoded)).toThrow(
+      "No tienes permisos asignados para el módulo administrativo 'users'",
+    );
+  });
+
+  it("bloquea rutas con segmentos de path traversal '..'", () => {
+    jest.spyOn(reflector, "getAllAndOverride").mockReturnValue([Role.ADMIN]);
+    const ctx = createMockContext(
+      { userId: "a1", role: Role.ADMIN, adminPermissions: ["users"] },
+      "/api/admin/users/../config",
+    );
+    expect(() => guard.canActivate(ctx)).toThrow("Ruta no permitida");
+  });
 });

@@ -15,8 +15,26 @@ interface AuthenticatedGestionRequest extends Request {
     email?: string;
     role?: string;
     subrol?: string | null;
+    adminPermissions?: string[];
   };
 }
+
+const SUBROLE_TO_ADMIN_MODULE: Record<string, string> = {
+  [UserSubrole.LIDER_CURSOS]: "courses",
+  [UserSubrole.GESTOR_CURSOS]: "courses",
+  [UserSubrole.LIDER_EVENTOS]: "events",
+  [UserSubrole.GESTOR_EVENTOS]: "events",
+  [UserSubrole.LIDER_TIENDA]: "store",
+  [UserSubrole.GESTOR_TIENDA]: "store",
+  [UserSubrole.LIDER_ARPHA]: "arpha",
+  [UserSubrole.GESTOR_CAMPO_ARPHA]: "arpha",
+  [UserSubrole.GESTOR_MESA_ARPHA]: "arpha",
+  [UserSubrole.LIDER_MEMBRESIAS]: "membership",
+  [UserSubrole.GESTOR_MEMBRESIAS]: "membership",
+  [UserSubrole.LIDER_ATENCION_MIEMBRO]: "support",
+  [UserSubrole.GESTOR_ATENCION_MIEMBRO]: "support",
+  [UserSubrole.LIDER_COMUNIDAD]: "support",
+};
 
 @Injectable()
 export class GestionGuard implements CanActivate {
@@ -39,12 +57,30 @@ export class GestionGuard implements CanActivate {
       throw new ForbiddenException("Acceso denegado — sesión no autenticada");
     }
 
-    // Role 'admin' and 'superadmin' have complete access
-    if (
-      request.user.role === UserRole.ADMIN ||
-      request.user.role === UserRole.SUPERADMIN
-    ) {
+    // Role 'superadmin' has unconditional complete access
+    if (request.user.role === UserRole.SUPERADMIN) {
       return true;
+    }
+
+    // Role 'admin' has access if unrestricted or if permission matches required module
+    if (request.user.role === UserRole.ADMIN) {
+      const adminPerms = request.user.adminPermissions;
+      if (!Array.isArray(adminPerms) || adminPerms.includes("*")) {
+        return true;
+      }
+      if (!requiredSubroles || requiredSubroles.length === 0) {
+        return true;
+      }
+      const hasPerm = requiredSubroles.some((reqSub) => {
+        const mod = SUBROLE_TO_ADMIN_MODULE[reqSub];
+        return mod ? adminPerms.includes(mod) : false;
+      });
+      if (hasPerm) {
+        return true;
+      }
+      throw new ForbiddenException(
+        "Acceso denegado: tu rol de administrador no posee permisos para este módulo de gestión",
+      );
     }
 
     const userSubrole = request.user.subrol;

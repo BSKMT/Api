@@ -23,7 +23,23 @@ const ADMIN_MODULE_MAP: Record<string, string> = {
 
 function getPathWithoutQuery(rawUrl: string): string {
   const qIdx = rawUrl.indexOf("?");
-  return (qIdx === -1 ? rawUrl : rawUrl.slice(0, qIdx)).toLowerCase().trim();
+  const pathPart = qIdx === -1 ? rawUrl : rawUrl.slice(0, qIdx);
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(pathPart);
+  } catch {
+    throw new ForbiddenException("Ruta inválida");
+  }
+  const normalized = decoded.replace(/\/+/g, "/").toLowerCase().trim();
+  const cleanPath =
+    normalized.length > 1 && normalized.endsWith("/")
+      ? normalized.slice(0, -1)
+      : normalized;
+
+  if (cleanPath.split("/").includes("..")) {
+    throw new ForbiddenException("Ruta no permitida");
+  }
+  return cleanPath;
 }
 
 function resolveRequiredPermission(cleanPath: string): string | null {

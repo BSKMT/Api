@@ -16,6 +16,10 @@ export async function verifyTurnstileToken(
 ): Promise<void> {
   const secret = process.env.TURNSTILE_SECRET_KEY?.trim();
   if (!secret) {
+    if (process.env.NODE_ENV === "production") {
+      logger?.error("TURNSTILE_SECRET_KEY missing in production environment");
+      throw new BadRequestException("Error de configuración de seguridad");
+    }
     return;
   }
 

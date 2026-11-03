@@ -190,8 +190,16 @@ export async function processBirdCheckResult(
   logger: Logger,
 ): Promise<{ cookies: string[]; setCookieHeaders: string[] }> {
   if (birdResult.success) {
-    otpRecord.status = "verified";
-    await otpRecord.save();
+    const updated = await otpRecord
+      .model("LoginOtp")
+      .findOneAndUpdate(
+        { _id: otpRecord._id, status: "pending" },
+        { $set: { status: "verified", verifiedAt: new Date() } },
+        { new: true },
+      );
+    if (!updated) {
+      throw new GoneException("El código de verificación ya fue procesado.");
+    }
 
     const rawCookies = decryptSessionCookies(
       otpRecord.sessionCookies,
@@ -218,7 +226,6 @@ export async function processBirdCheckResult(
     return { cookies, setCookieHeaders };
   }
 
-  otpRecord.attempts += 1;
   await assertNotTerminalOrThrow(
     otpRecord,
     requestId,

@@ -94,7 +94,7 @@ export async function getTransactionStatusHelper(
   userId: string,
   reference: string,
 ) {
-  const statusCacheKey = `pay:status:${reference}`;
+  const statusCacheKey = `pay:status:${userId}:${reference}`;
   const cached = await deps.kvCache.get<{
     status: string;
     requiresPayment: boolean;

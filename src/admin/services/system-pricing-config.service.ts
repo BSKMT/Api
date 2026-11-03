@@ -220,12 +220,22 @@ export class SystemPricingConfigService {
       );
     }
 
+    const {
+      _id: _ignoredId,
+      id: _ignoredAltId,
+      key: _ignoredKey,
+      createdAt: _ignoredCreatedAt,
+      updatedAt: _ignoredUpdatedAt,
+      __v: _ignoredV,
+      ...safeDto
+    } = dto as unknown as Record<string, unknown>;
+
     const updated = await this.configModel
       .findOneAndUpdate(
         { seasonYear: dto.seasonYear },
         {
           $set: {
-            ...dto,
+            ...safeDto,
             isCurrentSeason: isCurrent,
             updatedBy: adminUserId,
           },

@@ -14,6 +14,7 @@ import { Throttle } from "@nestjs/throttler";
 import type { Request } from "express";
 import { SessionGuard } from "../../auth/session.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
+import { SuperAdminGuard } from "../../common/guards/superadmin.guard";
 import { Roles, Role } from "../../common/decorators";
 import { AdminMembershipService } from "../services/admin-membership.service";
 import { RejectRefundDto } from "../dto/reject-refund.dto";
@@ -192,11 +193,13 @@ export class AdminMembershipController {
   }
 
   @Get("savings/finance-refunds")
+  @UseGuards(SuperAdminGuard)
   async listSavingsRefundsFinance() {
     return this.adminMembershipService.listSavingsRefundsFinance();
   }
 
   @Post("savings/refunds/:requestId/finance-review")
+  @UseGuards(SuperAdminGuard)
   @Throttle({ medium: { ttl: 60000, limit: 10 } })
   @HttpCode(HttpStatus.OK)
   async reviewSavingsRefundFinance(
@@ -212,11 +215,13 @@ export class AdminMembershipController {
   }
 
   @Get("savings/legal-escalations")
+  @UseGuards(SuperAdminGuard)
   async listSavingsLegalEscalations() {
     return this.adminMembershipService.listSavingsLegalEscalations();
   }
 
   @Post("savings/refunds/:requestId/legal-review")
+  @UseGuards(SuperAdminGuard)
   @Throttle({ medium: { ttl: 60000, limit: 10 } })
   @HttpCode(HttpStatus.OK)
   async reviewSavingsLegal(

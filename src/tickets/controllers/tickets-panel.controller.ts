@@ -102,6 +102,7 @@ export class TicketsPanelController {
       isAgent: false,
     };
     dto.isInternalNote = false;
-    return this.ticketsService.replyTicket(id, dto, actor);
+    await this.ticketsService.replyTicket(id, dto, actor);
+    return this.ticketsService.findById(id, false);
   }
 }
