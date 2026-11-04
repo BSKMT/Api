@@ -1,6 +1,7 @@
 import { Logger } from "@nestjs/common";
 import type { BirdWebhookEvent } from "./bird-realtime.interfaces";
 import type { TicketsService } from "../tickets/tickets.service";
+import type { BirdBotAccountService } from "./bird-bot-account.service";
 import { TicketChannel } from "../tickets/schemas/ticket.schema";
 import { maskEmail, maskPhone } from "../common/utils/log-redact.util";
 
@@ -30,6 +31,7 @@ export function extractInboundMessageFromWebhook(event: BirdWebhookEvent): {
   to: string;
   text: string;
   senderName?: string;
+  senderPhone?: string;
   messageId?: string;
 } | null {
   const eventName = (event.type || event.event || "").toLowerCase();
@@ -94,8 +96,14 @@ export function extractInboundMessageFromWebhook(event: BirdWebhookEvent): {
     getNestedProperty(entity, "text") ||
     getNestedProperty(entity, "content.text") ||
     getNestedProperty(entity, "message") ||
+    getNestedProperty(entity, "interactive_reply.button.text") ||
+    getNestedProperty(entity, "interactive_reply.button.slug") ||
     getNestedProperty(entity, "interactive_reply.title") ||
     getNestedProperty(entity, "interactive.body_text") ||
+    getNestedProperty(entity, "interactive.button_reply.title") ||
+    getNestedProperty(entity, "interactive.button_reply.id") ||
+    getNestedProperty(entity, "interactive.list_reply.title") ||
+    getNestedProperty(entity, "interactive.list_reply.id") ||
     getNestedProperty(entity, "image.caption") ||
     getNestedProperty(entity, "document.caption") ||
     "";
@@ -112,6 +120,14 @@ export function extractInboundMessageFromWebhook(event: BirdWebhookEvent): {
     getNestedProperty(entity, "senderName") ||
     undefined;
 
+  const senderPhone =
+    getNestedProperty(entity, "from.phone_number") ||
+    getNestedProperty(entity, "from.phoneNumber") ||
+    getNestedProperty(entity, "contact.phone_number") ||
+    (typeof entity["from"] === "string" && entity["from"].startsWith("+")
+      ? entity["from"]
+      : undefined);
+
   const messageId =
     (entity["id"] as string | undefined) ||
     (entity["messageId"] as string | undefined) ||
@@ -123,18 +139,58 @@ export function extractInboundMessageFromWebhook(event: BirdWebhookEvent): {
     to,
     text,
     senderName,
+    senderPhone,
     messageId,
   };
+}
+
+async function tryProcessBotInquiry(
+  extracted: NonNullable<ReturnType<typeof extractInboundMessageFromWebhook>>,
+  botAccountService: BirdBotAccountService | undefined,
+  maskedSender: string,
+  logger: Logger,
+): Promise<boolean> {
+  if (
+    !botAccountService ||
+    extracted.channel !== TicketChannel.WHATSAPP ||
+    !botAccountService.isAccountInquiry(extracted.text)
+  ) {
+    return false;
+  }
+
+  logger.log(
+    `Delegando consulta de autogestión de cuenta WhatsApp al Bot BSKMT para ${maskedSender}`,
+  );
+  try {
+    const handled = await botAccountService.handleAccountInquiry({
+      from: extracted.from,
+      text: extracted.text,
+      senderPhone: extracted.senderPhone,
+    });
+
+    if (handled) {
+      logger.log(
+        `Consulta de cuenta procesada y respondida exitosamente por el Bot BSKMT a ${maskedSender}`,
+      );
+      return true;
+    }
+  } catch (botErr: unknown) {
+    logger.error(
+      `Error en BirdBotAccountService al procesar consulta: ${botErr instanceof Error ? botErr.message : String(botErr)}`,
+    );
+  }
+  return false;
 }
 
 export async function handleWebhookInboundMessage(
   event: BirdWebhookEvent,
   ticketsService: TicketsService | undefined,
   logger: Logger,
+  botAccountService?: BirdBotAccountService,
 ): Promise<void> {
-  if (!ticketsService) {
+  if (!ticketsService && !botAccountService) {
     logger.debug(
-      "TicketsService no está disponible para procesar mensaje entrante de webhook",
+      "Ni TicketsService ni BirdBotAccountService están disponibles para procesar mensaje entrante de webhook",
     );
     return;
   }
@@ -155,14 +211,26 @@ export async function handleWebhookInboundMessage(
       `Mensaje entrante detectado vía Webhook Bird (${extracted.channel}) de ${maskedSender} (len=${extracted.text.length})`,
     );
 
-    await ticketsService.handleInboundMessage({
-      channel: extracted.channel,
-      from: extracted.from,
-      to: extracted.to,
-      text: extracted.text,
-      senderName: extracted.senderName,
-      messageId: extracted.messageId,
-    });
+    const handledByBot = await tryProcessBotInquiry(
+      extracted,
+      botAccountService,
+      maskedSender,
+      logger,
+    );
+    if (handledByBot) {
+      return;
+    }
+
+    if (ticketsService) {
+      await ticketsService.handleInboundMessage({
+        channel: extracted.channel,
+        from: extracted.from,
+        to: extracted.to,
+        text: extracted.text,
+        senderName: extracted.senderName,
+        messageId: extracted.messageId,
+      });
+    }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.error(
@@ -175,6 +243,12 @@ export async function processBirdWebhookEvent(
   logger: Logger,
   event: BirdWebhookEvent,
   ticketsService?: TicketsService,
+  botAccountService?: BirdBotAccountService,
 ): Promise<void> {
-  return handleWebhookInboundMessage(event, ticketsService, logger);
+  return handleWebhookInboundMessage(
+    event,
+    ticketsService,
+    logger,
+    botAccountService,
+  );
 }

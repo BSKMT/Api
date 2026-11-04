@@ -6,6 +6,7 @@ import {
 import { TicketChannel } from "../tickets/schemas/ticket.schema";
 import type { BirdWebhookEvent } from "./bird-realtime.interfaces";
 import type { TicketsService } from "../tickets/tickets.service";
+import type { BirdBotAccountService } from "./bird-bot-account.service";
 
 describe("BirdRealtimeWebhookHelpers", () => {
   const logger = new Logger("TestLogger");
@@ -98,6 +99,33 @@ describe("BirdRealtimeWebhookHelpers", () => {
       expect(result?.text).toBe("Membresías Legend");
     });
 
+    it("should extract interactive button reply text from nested button object", () => {
+      const event: BirdWebhookEvent = {
+        type: "whatsapp.received",
+        data: {
+          id: "wam_interactive_button",
+          direction: "inbound",
+          from: {
+            bsuid: "CO.2041512499849757",
+          },
+          to: {
+            phone_number: "+573169588444",
+          },
+          interactive_reply: {
+            button: {
+              text: "Gestionar mi cuenta",
+              slug: "gestionar_mi_cuenta",
+            },
+          },
+        },
+      };
+
+      const result = extractInboundMessageFromWebhook(event);
+
+      expect(result).not.toBeNull();
+      expect(result?.text).toBe("Gestionar mi cuenta");
+    });
+
     it("should return null for outbound or non-message webhook events", () => {
       const outboundEvent: BirdWebhookEvent = {
         type: "whatsapp.delivered",
@@ -142,7 +170,48 @@ describe("BirdRealtimeWebhookHelpers", () => {
       });
     });
 
-    it("should do nothing if ticketsService is undefined", async () => {
+    it("should delegate to BirdBotAccountService and return early if inquiry is handled", async () => {
+      const handleInboundMock = jest.fn().mockResolvedValue({});
+      const mockTicketsService = {
+        handleInboundMessage: handleInboundMock,
+      } as unknown as TicketsService;
+
+      const isAccountInquiryMock = jest.fn().mockReturnValue(true);
+      const handleAccountInquiryMock = jest.fn().mockResolvedValue(true);
+      const mockBotAccountService = {
+        isAccountInquiry: isAccountInquiryMock,
+        handleAccountInquiry: handleAccountInquiryMock,
+      } as unknown as BirdBotAccountService;
+
+      const event: BirdWebhookEvent = {
+        type: "whatsapp.received",
+        data: {
+          id: "wam_bot_inquiry",
+          direction: "inbound",
+          from: { bsuid: "CO.2041512499849757", phone_number: "+573001234567" },
+          to: { phone_number: "+573169588444" },
+          text: { body: "1020304050" },
+        },
+      };
+
+      await handleWebhookInboundMessage(
+        event,
+        mockTicketsService,
+        logger,
+        mockBotAccountService,
+      );
+
+      expect(isAccountInquiryMock).toHaveBeenCalledWith("1020304050");
+      expect(handleAccountInquiryMock).toHaveBeenCalledWith({
+        from: "+573001234567",
+        text: "1020304050",
+        senderPhone: "+573001234567",
+      });
+      // Should NOT have created a ticket
+      expect(handleInboundMock).not.toHaveBeenCalled();
+    });
+
+    it("should do nothing if ticketsService is undefined and botAccountService is undefined", async () => {
       const event: BirdWebhookEvent = {
         type: "whatsapp.received",
         data: {
@@ -152,7 +221,7 @@ describe("BirdRealtimeWebhookHelpers", () => {
       };
 
       await expect(
-        handleWebhookInboundMessage(event, undefined, logger),
+        handleWebhookInboundMessage(event, undefined, logger, undefined),
       ).resolves.toBeUndefined();
     });
   });
