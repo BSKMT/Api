@@ -3,6 +3,10 @@ import { BirdBotAccountService } from "./bird-bot-account.service";
 import type { BirdWhatsappService } from "./bird-whatsapp.service";
 import type { UserDocument } from "../users/schemas/user.schema";
 import type { GarageMotorcycleDocument } from "../garage/schemas/garage-motorcycle.schema";
+import type { EventDocument } from "../events/schemas/event.schema";
+import type { CourseDocument } from "../events/schemas/course.schema";
+import type { ProductDocument } from "../shop/schemas/product.schema";
+import type { ArphaRequestDocument } from "../arpha/schemas/arpha-request.schema";
 
 interface OutboundWhatsappMessage {
   to: string;
@@ -17,6 +21,18 @@ describe("BirdBotAccountService", () => {
   let mockMotorcycleModel: {
     find: jest.Mock;
   };
+  let mockEventModel: {
+    find: jest.Mock;
+  };
+  let mockCourseModel: {
+    find: jest.Mock;
+  };
+  let mockProductModel: {
+    find: jest.Mock;
+  };
+  let mockArphaModel: {
+    findOne: jest.Mock;
+  };
   let mockWhatsappService: {
     sendDirectWhatsapp: jest.Mock;
   };
@@ -30,6 +46,67 @@ describe("BirdBotAccountService", () => {
       find: jest.fn(),
     };
 
+    mockEventModel = {
+      find: jest.fn().mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          limit: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([
+              {
+                title: "Rodada Alto de Letras",
+                date: new Date(Date.now() + 86400000 * 5),
+                meetingPoint: "Bomba Mobil Calle 80",
+                meetingTime: "6:00 AM",
+                departureTime: "6:30 AM",
+                difficulty: "Alta",
+                slug: "rodada-alto-de-letras",
+              },
+            ]),
+          }),
+        }),
+      }),
+    };
+
+    mockCourseModel = {
+      find: jest.fn().mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          limit: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([
+              {
+                title: "Conducción Defensiva Urbana",
+                level: "principiante",
+                format: "presencial",
+                subtitle: "Técnicas de frenado y evasión",
+              },
+            ]),
+          }),
+        }),
+      }),
+    };
+
+    mockProductModel = {
+      find: jest.fn().mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          limit: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([
+              {
+                name: "Chaqueta Oficial BSKMT",
+                publicPrice: 350000,
+                memberDiscountPercent: 20,
+              },
+            ]),
+          }),
+        }),
+      }),
+    };
+
+    mockArphaModel = {
+      findOne: jest.fn().mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue(null),
+        }),
+      }),
+    };
+
     mockWhatsappService = {
       sendDirectWhatsapp: jest.fn().mockResolvedValue({ id: "wam_sent_123" }),
     };
@@ -37,6 +114,10 @@ describe("BirdBotAccountService", () => {
     service = new BirdBotAccountService(
       mockUserModel as unknown as Model<UserDocument>,
       mockMotorcycleModel as unknown as Model<GarageMotorcycleDocument>,
+      mockEventModel as unknown as Model<EventDocument>,
+      mockCourseModel as unknown as Model<CourseDocument>,
+      mockProductModel as unknown as Model<ProductDocument>,
+      mockArphaModel as unknown as Model<ArphaRequestDocument>,
       mockWhatsappService as unknown as BirdWhatsappService,
     );
   });
@@ -54,26 +135,31 @@ describe("BirdBotAccountService", () => {
       expect(service.isAccountInquiry("doc 12345678")).toBe(true);
     });
 
-    it("should recognize account management commands", () => {
-      expect(service.isAccountInquiry("mi cuenta")).toBe(true);
-      expect(service.isAccountInquiry("Gestionar mi cuenta")).toBe(true);
-      expect(service.isAccountInquiry("consultar mi cuenta")).toBe(true);
-      expect(service.isAccountInquiry("mi membresia")).toBe(true);
-      expect(service.isAccountInquiry("estado de cuenta")).toBe(true);
+    it("should recognize numeric options and keywords", () => {
+      expect(service.isAccountInquiry("0")).toBe(true);
+      expect(service.isAccountInquiry("1")).toBe(true);
+      expect(service.isAccountInquiry("2")).toBe(true);
+      expect(service.isAccountInquiry("3")).toBe(true);
+      expect(service.isAccountInquiry("4")).toBe(true);
+      expect(service.isAccountInquiry("5")).toBe(true);
+      expect(service.isAccountInquiry("6")).toBe(true);
+      expect(service.isAccountInquiry("7")).toBe(true);
+      expect(service.isAccountInquiry("8")).toBe(true);
+      expect(service.isAccountInquiry("garage")).toBe(true);
+      expect(service.isAccountInquiry("arpha")).toBe(true);
+      expect(service.isAccountInquiry("rutas")).toBe(true);
+      expect(service.isAccountInquiry("tienda")).toBe(true);
     });
 
     it("should return false for unrelated text", () => {
-      expect(service.isAccountInquiry("Hola buenas tardes")).toBe(false);
-      expect(service.isAccountInquiry("Quiero información sobre rutas")).toBe(
-        false,
-      );
-      expect(service.isAccountInquiry("Gracias")).toBe(false);
+      expect(service.isAccountInquiry("Hola como te va")).toBe(false);
+      expect(service.isAccountInquiry("Quiero pizza")).toBe(false);
       expect(service.isAccountInquiry("")).toBe(false);
     });
   });
 
   describe("handleAccountInquiry", () => {
-    it("should send account report when user is found by document", async () => {
+    it("should send account report when user is found by document and cache session", async () => {
       const mockUser = {
         _id: "usr_mock_123",
         username: "jacivy",
@@ -101,7 +187,9 @@ describe("BirdBotAccountService", () => {
           {
             brand: "Yamaha",
             modelLine: "MT-09",
+            year: 2024,
             plate: "ABC12D",
+            color: "Negro",
             soatExpiryDate: new Date(Date.now() + 86400000 * 30),
           },
         ]),
@@ -119,54 +207,89 @@ describe("BirdBotAccountService", () => {
       const payload = calls[0][0];
 
       expect(payload.to).toBe("CO.2041512499849757");
-      expect(payload.text).toContain("ESTADO DE TU CUENTA BSKMT");
+      expect(payload.text).toContain("RESUMEN DE TU CUENTA BSKMT");
       expect(payload.text).toContain("James Andres");
-      expect(payload.text).toContain("102****50"); // Enmascaramiento PII
+      expect(payload.text).toContain("102****50");
       expect(payload.text).toContain("Legend");
       expect(payload.text).toContain("#007");
-      expect(payload.text).toContain("Yamaha MT-09 [ABC12D]");
-      expect(payload.text).toContain("SOAT: Vigente ✅");
-      expect(payload.text).toContain("https://bskmt.com/login");
+
+      // Now test that subsequent numeric query '1' uses cached session for detailed garage view
+      const garageResult = await service.handleAccountInquiry({
+        from: "CO.2041512499849757",
+        text: "1",
+      });
+      expect(garageResult).toBe(true);
+      const secondCall = mockWhatsappService.sendDirectWhatsapp.mock
+        .calls as unknown as [unknown, [OutboundWhatsappMessage]];
+      const garagePayload = secondCall[1][0];
+      expect(garagePayload.text).toContain("ESTADO DE TU GARAGE BSKMT");
+      expect(garagePayload.text).toContain("Yamaha MT-09 (2024)");
+      expect(garagePayload.text).toContain("Pico y Placa");
     });
 
-    it("should send not-found message when document is provided but user does not exist", async () => {
-      mockUserModel.findOne.mockReturnValue({
-        lean: jest.fn().mockResolvedValue(null),
-      });
-
+    it("should return upcoming events when user queries 'rutas'", async () => {
       const result = await service.handleAccountInquiry({
         from: "+573001234567",
-        text: "999999999",
+        text: "rutas",
       });
 
       expect(result).toBe(true);
-      expect(mockWhatsappService.sendDirectWhatsapp).toHaveBeenCalledTimes(1);
       const calls = mockWhatsappService.sendDirectWhatsapp.mock
         .calls as unknown as [[OutboundWhatsappMessage]];
       const payload = calls[0][0];
-
-      expect(payload.text).toContain("Cuenta no encontrada en BSKMT");
-      expect(payload.text).toContain("https://bskmt.com/registro");
+      expect(payload.text).toContain("PRÓXIMAS RODADAS OFICIALES BSKMT");
+      expect(payload.text).toContain("Rodada Alto de Letras");
+      expect(payload.text).toContain("Bomba Mobil Calle 80");
     });
 
-    it("should send prompt message when general command is received without document/email", async () => {
-      mockUserModel.findOne.mockReturnValue({
-        lean: jest.fn().mockResolvedValue(null),
-      });
-
+    it("should return courses when user queries 'academia'", async () => {
       const result = await service.handleAccountInquiry({
         from: "+573001234567",
-        text: "Gestionar mi cuenta",
+        text: "academia",
       });
 
       expect(result).toBe(true);
-      expect(mockWhatsappService.sendDirectWhatsapp).toHaveBeenCalledTimes(1);
       const calls = mockWhatsappService.sendDirectWhatsapp.mock
         .calls as unknown as [[OutboundWhatsappMessage]];
       const payload = calls[0][0];
+      expect(payload.text).toContain("CURSOS ACADEMIA BSKMT");
+      expect(payload.text).toContain("Conducción Defensiva Urbana");
+    });
 
-      expect(payload.text).toContain("Gestión y Consulta de Cuenta BSKMT");
-      expect(payload.text).toContain("Número de Cédula");
+    it("should return main menu when user queries '0' or 'menu'", async () => {
+      const result = await service.handleAccountInquiry({
+        from: "+573001234567",
+        text: "0",
+      });
+
+      expect(result).toBe(true);
+      const calls = mockWhatsappService.sendDirectWhatsapp.mock
+        .calls as unknown as [[OutboundWhatsappMessage]];
+      const payload = calls[0][0];
+      expect(payload.text).toContain(
+        "Centro de Autogestión BSK Motorcycle Team",
+      );
+      expect(payload.text).toContain("1️⃣ 👤 *Mi Cuenta y Garage*");
+      expect(payload.text).toContain("3️⃣ 🚨 *Asistencia Vial ARPHA*");
+    });
+
+    it("should return ARPHA emergency triage when user queries 'arpha'", async () => {
+      const result = await service.handleAccountInquiry({
+        from: "+573001234567",
+        text: "arpha",
+      });
+
+      expect(result).toBe(true);
+      const calls = mockWhatsappService.sendDirectWhatsapp.mock
+        .calls as unknown as [[OutboundWhatsappMessage]];
+      const payload = calls[0][0];
+      expect(payload.text).toContain(
+        "ÁREA 3: CENTRO DE ASISTENCIA VIAL ARPHA 24/7",
+      );
+      expect(payload.text).toContain("1️⃣ 🚜 *Solicitar Grúa en Ruta*");
+      expect(payload.text).toContain(
+        "5️⃣ 📞 *Línea Telefónica de Emergencia Directa*",
+      );
     });
   });
 });

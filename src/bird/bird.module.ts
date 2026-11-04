@@ -5,6 +5,13 @@ import {
   GarageMotorcycle,
   GarageMotorcycleSchema,
 } from "../garage/schemas/garage-motorcycle.schema";
+import { Event as BskEvent, EventSchema } from "../events/schemas/event.schema";
+import { Course, CourseSchema } from "../events/schemas/course.schema";
+import { Product, ProductSchema } from "../shop/schemas/product.schema";
+import {
+  ArphaRequest,
+  ArphaRequestSchema,
+} from "../arpha/schemas/arpha-request.schema";
 import { BirdService } from "./bird.service";
 import { BirdEmailService } from "./bird-email.service";
 import { BirdSmsService } from "./bird-sms.service";
@@ -36,6 +43,10 @@ import { BirdBotAccountService } from "./bird-bot-account.service";
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: GarageMotorcycle.name, schema: GarageMotorcycleSchema },
+      { name: BskEvent.name, schema: EventSchema },
+      { name: Course.name, schema: CourseSchema },
+      { name: Product.name, schema: ProductSchema },
+      { name: ArphaRequest.name, schema: ArphaRequestSchema },
     ]),
   ],
   controllers: [BirdRealtimeController],
