@@ -16,7 +16,6 @@ import {
 import type { Request } from "express";
 import { BirdRealtimeService } from "./bird-realtime.service";
 import { BirdService } from "./bird.service";
-import { BirdBotAccountService } from "./bird-bot-account.service";
 import { TicketsService } from "../tickets/tickets.service";
 import { Public } from "../common/decorators/public.decorator";
 import { sanitizeForLog } from "../common/utils/log-redact.util";
@@ -40,8 +39,6 @@ export class BirdRealtimeController {
     @Optional()
     @Inject(forwardRef(() => TicketsService))
     private readonly ticketsService?: TicketsService,
-    @Optional()
-    private readonly botAccountService?: BirdBotAccountService,
   ) {}
 
   @Public()
@@ -174,12 +171,7 @@ export class BirdRealtimeController {
     }
 
     try {
-      await processBirdWebhookEvent(
-        this.logger,
-        event,
-        this.ticketsService,
-        this.botAccountService,
-      );
+      await processBirdWebhookEvent(this.logger, event, this.ticketsService);
     } catch (err: unknown) {
       this.logger.error(
         `processWebhookEvent failed (type=${event.type}): ${sanitizeForLog(err instanceof Error ? err.message : String(err))}`,
