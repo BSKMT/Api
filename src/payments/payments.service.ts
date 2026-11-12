@@ -118,6 +118,45 @@ export class PaymentsService {
     return handleWebhookHelper(this.getStatusDeps(), rawBody, signature);
   }
 
+  /**
+   * handleWebhookBatch - Procesa en lote eventos de webhooks provenientes
+   * del amortiguador perimetral de Cloudflare Queues (bskmt-webhooks-queue).
+   */
+  async handleWebhookBatch(
+    items: Array<{ id: string; body: { rawBody: string; signature: string } }>,
+  ): Promise<{ processed: number; failed: number }> {
+    const results = await Promise.allSettled(
+      items.map(async (item) => {
+        if (!item?.body?.rawBody || !item?.body?.signature) {
+          throw new Error(`Invalid item payload for ${item?.id}`);
+        }
+        const rawBuf = Buffer.from(item.body.rawBody, "utf-8");
+        return handleWebhookHelper(
+          this.getStatusDeps(),
+          rawBuf,
+          item.body.signature,
+        );
+      }),
+    );
+
+    let processed = 0;
+    let failed = 0;
+
+    for (let i = 0; i < results.length; i++) {
+      const res = results[i];
+      if (res.status === "fulfilled") {
+        processed++;
+      } else {
+        failed++;
+        this.logger.error(
+          `Failed to process batched webhook ${items[i]?.id}: ${res.reason instanceof Error ? res.reason.message : String(res.reason)}`,
+        );
+      }
+    }
+
+    return { processed, failed };
+  }
+
   async getTransactionStatus(
     userId: string,
     reference: string,

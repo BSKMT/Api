@@ -20,6 +20,20 @@ import { SessionGuard } from "../auth/session.guard";
 import { IdentityVerifiedGuard } from "../common/guards/identity-verified.guard";
 import { Public } from "../common/decorators";
 import { ensureString } from "../common/utils/sanitize-query.util";
+import { ConfigService } from "@nestjs/config";
+import type { EnvironmentConfig } from "../config/config.interface";
+
+interface WebhookBatchItemDto {
+  id: string;
+  body: {
+    rawBody: string;
+    signature: string;
+  };
+}
+
+interface WebhookBatchPayloadDto {
+  batch: WebhookBatchItemDto[];
+}
 
 interface AuthenticatedRequest extends Request {
   user: { userId: string };
@@ -27,7 +41,10 @@ interface AuthenticatedRequest extends Request {
 
 @Controller("payments")
 export class PaymentsController {
-  constructor(private readonly paymentsService: PaymentsService) {}
+  constructor(
+    private readonly paymentsService: PaymentsService,
+    private readonly configService: ConfigService<EnvironmentConfig>,
+  ) {}
 
   @UseGuards(SessionGuard, IdentityVerifiedGuard)
   @Post("create")
@@ -59,6 +76,33 @@ export class PaymentsController {
     await this.paymentsService.handleWebhook(rawBody, signature);
 
     return { received: true };
+  }
+
+  /**
+   * Endpoint de ingesta por lotes invocado de forma segura por el consumidor de
+   * Cloudflare Queues (bskmt-webhooks-queue).
+   */
+  @Public()
+  @Post("webhook/batch")
+  @HttpCode(HttpStatus.OK)
+  async handleWebhookBatch(
+    @Headers("x-edge-secret") edgeSecret: string | undefined,
+    @Body() payload: WebhookBatchPayloadDto,
+  ) {
+    const expectedSecret =
+      this.configService.get<string>("INTERNAL_EDGE_SECRET", { infer: true }) ||
+      "bskmt-edge-shared-secret";
+
+    if (!edgeSecret || edgeSecret !== expectedSecret) {
+      throw new BadRequestException("Unauthorized edge webhook batch delivery");
+    }
+
+    if (!payload?.batch || !Array.isArray(payload.batch)) {
+      throw new BadRequestException("Invalid batch format");
+    }
+
+    const result = await this.paymentsService.handleWebhookBatch(payload.batch);
+    return { received: true, ...result };
   }
 
   @UseGuards(SessionGuard)

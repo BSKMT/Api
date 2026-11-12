@@ -6,6 +6,7 @@ import {
 } from "./schemas/security-audit-log.schema";
 import { SecurityAuditService } from "./security-audit.service";
 import { BirdModule } from "../../bird/bird.module";
+import { BatchIngestController } from "./batch-ingest.controller";
 
 /**
  * Módulo Global de Auditoría de Ciberseguridad.
@@ -19,6 +20,7 @@ import { BirdModule } from "../../bird/bird.module";
     ]),
     BirdModule,
   ],
+  controllers: [BatchIngestController],
   providers: [SecurityAuditService],
   exports: [SecurityAuditService, MongooseModule],
 })
