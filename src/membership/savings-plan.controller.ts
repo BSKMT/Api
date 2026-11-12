@@ -75,7 +75,7 @@ export class SavingsPlanController {
 
   @UseGuards(SessionGuard, IdentityVerifiedGuard)
   @Throttle({ medium: { ttl: 60000, limit: 5 } })
-  @Post("refund-request")
+  @Post(["refund-request", "request-refund"])
   @HttpCode(HttpStatus.CREATED)
   async requestSavingsRefund(
     @Req() req: AuthenticatedRequest,
@@ -86,7 +86,7 @@ export class SavingsPlanController {
 
   @UseGuards(SessionGuard, IdentityVerifiedGuard)
   @Throttle({ medium: { ttl: 60000, limit: 5 } })
-  @Post("refund-appeal")
+  @Post(["refund-appeal", "appeal-refund"])
   @HttpCode(HttpStatus.OK)
   async appealSavingsRefund(
     @Req() req: AuthenticatedRequest,
@@ -97,7 +97,7 @@ export class SavingsPlanController {
 
   @UseGuards(SessionGuard, IdentityVerifiedGuard)
   @Throttle({ medium: { ttl: 60000, limit: 5 } })
-  @Post("refund-legal-escalation")
+  @Post(["refund-legal-escalation", "escalate-legal"])
   @HttpCode(HttpStatus.OK)
   async escalateSavingsLegal(
     @Req() req: AuthenticatedRequest,

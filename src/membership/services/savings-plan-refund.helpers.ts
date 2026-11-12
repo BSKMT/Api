@@ -149,10 +149,18 @@ export async function executeAppealRefund(
   userId: string,
   dto: AppealSavingsRefundDto,
 ) {
-  const req = await refundRequestModel.findOne({
-    _id: dto.refundRequestId,
-    userId,
-  });
+  const req = dto.refundRequestId
+    ? await refundRequestModel.findOne({
+        _id: dto.refundRequestId,
+        userId,
+      })
+    : await refundRequestModel
+        .findOne({
+          userId,
+          status: SavingsRefundStatus.REJECTED,
+        })
+        .sort({ createdAt: -1 });
+
   if (!req) {
     throw new NotFoundException("Solicitud de reembolso no encontrada.");
   }
@@ -214,10 +222,18 @@ export async function executeEscalateToLegal(
   userId: string,
   dto: EscalateSavingsLegalDto,
 ) {
-  const req = await refundRequestModel.findOne({
-    _id: dto.refundRequestId,
-    userId,
-  });
+  const req = dto.refundRequestId
+    ? await refundRequestModel.findOne({
+        _id: dto.refundRequestId,
+        userId,
+      })
+    : await refundRequestModel
+        .findOne({
+          userId,
+          status: SavingsRefundStatus.REJECTED,
+        })
+        .sort({ createdAt: -1 });
+
   if (!req) {
     throw new NotFoundException("Solicitud de reembolso no encontrada.");
   }

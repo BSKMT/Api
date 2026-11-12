@@ -47,9 +47,9 @@ export class RequestSavingsRefundDto {
 }
 
 export class AppealSavingsRefundDto {
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  refundRequestId!: string;
+  refundRequestId?: string;
 
   @IsString()
   @IsNotEmpty()
@@ -60,9 +60,9 @@ export class AppealSavingsRefundDto {
 }
 
 export class EscalateSavingsLegalDto {
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  refundRequestId!: string;
+  refundRequestId?: string;
 
   @IsString()
   @IsNotEmpty()
