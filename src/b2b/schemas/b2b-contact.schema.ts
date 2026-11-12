@@ -22,6 +22,12 @@ export class B2bContact {
       "Intercambio de datos",
       "Activación de marca",
       "Otro",
+      "Patrocinio Comercial",
+      "Marca Compartida (Co-Branding)",
+      "Alianza de Datos & Feedback",
+      "Activación de Experiencias / Demo Day",
+      "Proveedor Técnico Oficial",
+      "Otro modelo personalizado",
     ],
   })
   interest!: string;

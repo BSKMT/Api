@@ -41,6 +41,12 @@ export class B2bContactDto {
       "Intercambio de datos",
       "Activación de marca",
       "Otro",
+      "Patrocinio Comercial",
+      "Marca Compartida (Co-Branding)",
+      "Alianza de Datos & Feedback",
+      "Activación de Experiencias / Demo Day",
+      "Proveedor Técnico Oficial",
+      "Otro modelo personalizado",
     ],
     { message: "Tipo de alianza invalido" },
   )
