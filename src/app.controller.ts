@@ -5,7 +5,7 @@ import { ConfigService } from "@nestjs/config";
 import { SkipThrottle } from "@nestjs/throttler";
 import type { Response } from "express";
 import { Public } from "./common/decorators";
-import { generateCsrfToken } from "./common/csrf/csrf.helper";
+import { issueCsrfCookie } from "./common/csrf/csrf-cookie.helper";
 import type { EnvironmentConfig } from "./config/config.interface";
 
 @Controller()
@@ -44,29 +44,11 @@ export class AppController {
   @Public()
   @Get(["csrf-token", "api/csrf-token"])
   getCsrfToken(@Res({ passthrough: true }) res: Response) {
-    const isProd = process.env.NODE_ENV === "production";
-    const configuredSecret =
-      this.configService.get<string>("CSRF_SECRET", { infer: true }) ||
-      this.configService.get<string>("BETTER_AUTH_SECRET", { infer: true }) ||
-      process.env.CSRF_SECRET ||
-      process.env.BETTER_AUTH_SECRET;
-    if (!configuredSecret && isProd) {
-      throw new Error(
-        "CSRF_SECRET or BETTER_AUTH_SECRET is required in production",
-      );
-    }
-    const secret = configuredSecret || `dev-test-csrf-${process.pid}`;
-
-    const token = generateCsrfToken(secret);
-
-    res.cookie("bskmt.csrf", token, {
-      httpOnly: false, // Accesible por JS para enviar en encabezado X-CSRF-Token
-      secure: isProd,
-      sameSite: "lax",
-      domain: isProd ? ".bskmt.com" : undefined,
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    const token = issueCsrfCookie(
+      res,
+      this.configService.get<string>("CSRF_SECRET", { infer: true }),
+      this.configService.get<string>("BETTER_AUTH_SECRET", { infer: true }),
+    );
 
     return { csrfToken: token };
   }

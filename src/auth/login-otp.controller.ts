@@ -19,6 +19,7 @@ import {
   LoginOtpResendDto,
 } from "./dto/login-otp.dto";
 import { Public } from "../common/decorators";
+import { issueCsrfCookie } from "../common/csrf/csrf-cookie.helper";
 
 /**
  * LoginOtpController — Endpoints para el flujo de verificacion de login
@@ -132,7 +133,7 @@ export class LoginOtpController {
   async verify(
     @Body() dto: LoginOtpVerifyDto,
     @Res({ passthrough: true }) res: Response,
-  ): Promise<{ cookies: string[]; message?: string }> {
+  ): Promise<{ cookies: string[]; csrfToken: string; message?: string }> {
     const result = await this.loginOtpService.verifyOtp(
       dto.requestId,
       dto.code,
@@ -143,8 +144,11 @@ export class LoginOtpController {
       }
     }
 
+    const csrfToken = issueCsrfCookie(res);
+
     return {
       cookies: result.cookies ?? [],
+      csrfToken,
       message: "Sesión iniciada exitosamente",
     };
   }

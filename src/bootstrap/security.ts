@@ -4,6 +4,10 @@ import type { ConfigService } from "@nestjs/config";
 import type { Request, Response, NextFunction } from "express";
 import type { EnvironmentConfig } from "../config/config.interface";
 import { validateDoubleSubmitCsrf } from "../common/csrf/csrf.helper";
+import {
+  extractCsrfCookieTokens,
+  resolveCsrfSecret,
+} from "../common/csrf/csrf-cookie.helper";
 
 function isConstantTimeMatch(provided: string, expected: string): boolean {
   const bufA = Buffer.from(provided, "utf8");
@@ -72,15 +76,17 @@ function validateCsrfHeaderIfPresent(req: Request, secret: string): boolean {
     : req.headers["x-csrf-token"];
 
   const cookieHeader = req.headers.cookie ?? "";
-  const match = /(?:^|;\s*)bskmt\.csrf=([^;]*)/.exec(cookieHeader);
-  const csrfCookie = match ? decodeURIComponent(match[1]) : undefined;
+  const { tokens: csrfCookies, hasCookieEntry } =
+    extractCsrfCookieTokens(cookieHeader);
 
   if (csrfHeader) {
-    return validateDoubleSubmitCsrf(csrfHeader, csrfCookie, secret);
+    return csrfCookies.some((csrfCookie) =>
+      validateDoubleSubmitCsrf(csrfHeader, csrfCookie, secret),
+    );
   }
 
   // If a CSRF cookie is present in browser request, the matching x-csrf-token header is strictly mandatory
-  if (csrfCookie) {
+  if (hasCookieEntry) {
     return false;
   }
 
@@ -264,17 +270,10 @@ export function setupSecurityMiddleware(
   });
 
   const allowedOrigins = new Set(allowedOriginsList);
-  const configuredCsrfSecret =
-    configService.get<string>("CSRF_SECRET", { infer: true }) ||
-    configService.get<string>("BETTER_AUTH_SECRET", { infer: true }) ||
-    process.env.CSRF_SECRET ||
-    process.env.BETTER_AUTH_SECRET;
-  if (!configuredCsrfSecret && isProduction) {
-    throw new Error(
-      "CSRF_SECRET or BETTER_AUTH_SECRET is required in production",
-    );
-  }
-  const csrfSecret = configuredCsrfSecret || `dev-test-csrf-${process.pid}`;
+  const csrfSecret = resolveCsrfSecret(
+    configService.get<string>("CSRF_SECRET", { infer: true }),
+    configService.get<string>("BETTER_AUTH_SECRET", { infer: true }),
+  );
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) return next();
