@@ -192,6 +192,19 @@ export class AdminMembershipController {
     );
   }
 
+  @Get(["savings/refunds/queue", "savings/queue"])
+  @UseGuards(SuperAdminGuard)
+  async getSavingsRefundsQueue() {
+    const [financeReviewPending, legalEscalationsPending] = await Promise.all([
+      this.adminMembershipService.listSavingsRefundsFinance(),
+      this.adminMembershipService.listSavingsLegalEscalations(),
+    ]);
+    return {
+      financeReviewPending,
+      legalEscalationsPending,
+    };
+  }
+
   @Get("savings/finance-refunds")
   @UseGuards(SuperAdminGuard)
   async listSavingsRefundsFinance() {
