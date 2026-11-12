@@ -17,6 +17,8 @@ function isConstantTimeMatch(provided: string, expected: string): boolean {
 
 const CSRF_EXEMPT_PATHS = new Set([
   "/api/payments/webhook",
+  "/api/payments/webhook/batch",
+  "/api/internal/batch-ingest",
   "/api/membership/webhook",
   "/api/alegra/webhook",
   "/api/membership/internal/cron/sweep-pending",
