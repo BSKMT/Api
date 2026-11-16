@@ -35,6 +35,13 @@ export interface AlegraContactCreate {
   mobile?: string;
   type: string[];
   status?: string;
+  kindOfPerson?: "PERSON_ENTITY" | "LEGAL_ENTITY";
+  regime?: "SIMPLIFIED_REGIME" | "COMMON_REGIME";
+  identificationObject?: {
+    type: string;
+    number: string;
+    dv?: string | null;
+  };
   address?: {
     city?: string;
     address?: string;
@@ -70,13 +77,18 @@ export interface AlegraInvoiceCreate {
   stamp?: {
     generateStamp?: boolean;
   };
+  numberTemplate?: {
+    id: string;
+  };
 }
 
 export interface AlegraInvoiceResponse {
   id: string;
   numberTemplate?: {
     id: string;
-    fullNumber: string;
+    fullNumber?: string;
+    prefix?: string;
+    number?: string;
   };
   date: string;
   dueDate: string;

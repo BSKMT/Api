@@ -12,6 +12,7 @@ import { maskReference, maskAmount } from "../common/utils/log-redact.util";
 import {
   discoverDefaultItemId,
   discoverDefaultBankAccountId,
+  discoverDefaultSellerId,
   buildInvoicePayload,
   buildPaymentPayload,
 } from "./alegra-invoice.helpers";
@@ -30,10 +31,12 @@ export async function executeCreateInvoice(
   contactId: string,
   logger: Logger,
 ): Promise<CreatedInvoiceData | null> {
-  const sellerId =
-    configService.get<string>("ALEGRA_SELLER_ID", { infer: true }) ||
-    process.env.ALEGRA_SELLER_ID ||
-    "";
+  const sellerId = await discoverDefaultSellerId(
+    configService,
+    kvCache,
+    makeRequest,
+    logger,
+  );
   const itemId = await discoverDefaultItemId(
     configService,
     kvCache,
@@ -62,9 +65,15 @@ export async function executeCreateInvoice(
     return null;
   }
 
+  const invoiceNumber =
+    invoice.numberTemplate?.fullNumber ??
+    (invoice.numberTemplate?.prefix
+      ? `${invoice.numberTemplate.prefix}${invoice.numberTemplate.number ?? ""}`
+      : null);
+
   const result: CreatedInvoiceData = {
     invoiceId: String(invoice.id),
-    invoiceNumber: invoice.numberTemplate?.fullNumber ?? null,
+    invoiceNumber: invoiceNumber ?? null,
     cufe: invoice.stamp?.cufe ?? null,
     stampStatus: invoice.stamp?.legalStatus ?? null,
   };
@@ -82,6 +91,7 @@ export async function executeCreatePayment(
   invoiceId: string,
   amount: number,
   logger: Logger,
+  paymentMethod?: string | null,
 ): Promise<string | null> {
   if (amount <= 0) return null;
 
@@ -99,7 +109,12 @@ export async function executeCreatePayment(
     return null;
   }
 
-  const payload = buildPaymentPayload(invoiceId, amount, bankAccountId);
+  const payload = buildPaymentPayload(
+    invoiceId,
+    amount,
+    bankAccountId,
+    paymentMethod,
+  );
   const payment = await makeRequest<AlegraPaymentResponse>(
     "POST",
     "/payments",

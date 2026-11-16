@@ -23,6 +23,7 @@ export async function processAlegraInvoicingHelper(
       purpose: "membership",
       amount: transaction.amount,
       description,
+      paymentMethod: transaction.paymentMethod,
     };
 
     await deps.alegraService.processApprovedPayment(context);

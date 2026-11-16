@@ -50,13 +50,26 @@ export interface AlegraWebhookPayload {
   message: {
     invoice?: {
       id: string;
-      date: string;
-      dueDate: string;
-      status: string;
-      client: { id: string };
-      total: number;
-      totalPaid: number;
-      balance: number;
+      date?: string;
+      dueDate?: string;
+      status?: string;
+      client?: { id: string };
+      total?: number;
+      totalPaid?: number;
+      balance?: number;
+      numberTemplate?: {
+        id?: string;
+        fullNumber?: string;
+        prefix?: string;
+        number?: string;
+      };
+      stamp?: {
+        legalStatus?: string;
+        cufe?: string;
+        date?: string;
+        warnings?: string[];
+      };
+      pdf?: string;
     };
     client?: {
       id: string;

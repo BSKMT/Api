@@ -81,8 +81,16 @@ export async function makeAlegraRequest<T>(
       return null;
     }
 
-    if (res.status === 204) return null;
-    return (await res.json()) as T;
+    if (res.status === 204) return {} as T;
+
+    const text = await res.text().catch(() => "");
+    if (!text.trim()) return {} as T;
+
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      return text as unknown as T;
+    }
   } catch (err: unknown) {
     if (err instanceof Error && err.name === "AbortError") {
       logger.warn(`Alegra API ${method} ${path} timed out (${timeoutMs}ms)`);

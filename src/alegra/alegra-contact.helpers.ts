@@ -15,6 +15,31 @@ export type AlegraRequestFn = <T>(
   path: string,
 ) => Promise<T | null>;
 
+export function mapDocumentTypeToAlegra(rawType?: string | null): {
+  type: string;
+  kindOfPerson: "PERSON_ENTITY" | "LEGAL_ENTITY";
+} {
+  const clean = (rawType ?? "CC").trim().toUpperCase();
+  if (clean === "NIT") {
+    return { type: "NIT", kindOfPerson: "LEGAL_ENTITY" };
+  }
+  if (
+    [
+      "CC",
+      "CE",
+      "TI",
+      "PASSPORT",
+      "PEP",
+      "DIE",
+      "FOREIGN_NIT",
+      "PPT",
+    ].includes(clean)
+  ) {
+    return { type: clean, kindOfPerson: "PERSON_ENTITY" };
+  }
+  return { type: "CC", kindOfPerson: "PERSON_ENTITY" };
+}
+
 export function buildContactData(user: {
   email: string;
   phone?: string | null;
@@ -29,39 +54,62 @@ export function buildContactData(user: {
   const dp = user.profile?.["datos-personales"] ?? {};
   const ct = user.profile?.["contacto"] ?? {};
 
-  const fullName =
-    iv?.fullName ??
-    [dp["primerNombre"], dp["primerApellido"]].filter(Boolean).join(" ") ??
-    user.email;
+  const nameParts = [dp["primerNombre"], dp["primerApellido"]]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  const rawFullName = iv?.fullName?.trim() || nameParts || user.email;
+  const fullName = rawFullName.trim() ? rawFullName.trim() : user.email;
 
   const identification =
-    iv?.documentNumber ??
+    iv?.documentNumber?.trim() ||
     (typeof dp["numeroDocumento"] === "string"
-      ? dp["numeroDocumento"]
+      ? dp["numeroDocumento"].trim()
       : undefined);
 
+  const rawDocType =
+    iv?.documentType?.trim() ||
+    (typeof dp["tipoDocumento"] === "string"
+      ? dp["tipoDocumento"].trim()
+      : undefined);
+
+  const docMapping = mapDocumentTypeToAlegra(rawDocType);
+
   const phone =
-    user.phone ??
-    (typeof ct["telefono"] === "string" ? ct["telefono"] : undefined);
+    user.phone?.trim() ||
+    (typeof ct["telefono"] === "string" ? ct["telefono"].trim() : undefined);
 
-  const city = typeof ct["ciudad"] === "string" ? ct["ciudad"] : undefined;
+  const city =
+    typeof ct["ciudad"] === "string" ? ct["ciudad"].trim() : undefined;
   const addr =
-    typeof ct["direccion"] === "string" ? ct["direccion"] : undefined;
+    typeof ct["direccion"] === "string" ? ct["direccion"].trim() : undefined;
 
-  return {
+  const contactData: AlegraContactCreate = {
     name: String(fullName).slice(0, 100),
-    identification: identification
-      ? String(identification).slice(0, 20)
-      : undefined,
     email: user.email,
     phonePrimary: phone ? String(phone).slice(0, 50) : undefined,
     type: ["client"],
     status: "active",
+    kindOfPerson: docMapping.kindOfPerson,
+    regime: "SIMPLIFIED_REGIME",
     address: {
       city: city ? String(city).slice(0, 100) : undefined,
       address: addr ? String(addr).slice(0, 100) : undefined,
     },
   };
+
+  if (identification) {
+    const cleanId = String(identification).slice(0, 20);
+    contactData.identification = cleanId;
+    contactData.identificationObject = {
+      type: docMapping.type,
+      number: cleanId,
+      dv: null,
+    };
+  }
+
+  return contactData;
 }
 
 export async function findContactByEmail(

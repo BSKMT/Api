@@ -21,13 +21,16 @@ export async function queryInvoicePdfUrlByTransaction(
   getPdfUrlFn: (invoiceId: string) => Promise<string | null>,
   userId: string,
   transactionReference: string,
-  purpose: string,
+  purpose?: string,
 ): Promise<string | null> {
-  const record = await invoiceModel.findOne({
+  const query: Record<string, unknown> = {
     userId,
     transactionReference,
-    purpose,
-  });
+  };
+  if (purpose) {
+    query.purpose = purpose;
+  }
+  const record = await invoiceModel.findOne(query);
   if (!record?.alegraInvoiceId || record.alegraInvoiceId === "0") {
     return null;
   }

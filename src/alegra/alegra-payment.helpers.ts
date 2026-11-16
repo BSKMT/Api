@@ -136,6 +136,7 @@ export interface ApprovedPaymentFlowOperations {
   createPaymentFn: (
     invoiceId: string,
     amount: number,
+    paymentMethod?: string | null,
   ) => Promise<string | null>;
   emailInvoiceFn: (invoiceId: string) => Promise<boolean>;
 }
@@ -176,7 +177,11 @@ export async function executeApprovedPaymentFlow(
 
     let paymentId: string | null = null;
     if (context.amount > 0) {
-      paymentId = await createPaymentFn(invoiceData.invoiceId, context.amount);
+      paymentId = await createPaymentFn(
+        invoiceData.invoiceId,
+        context.amount,
+        context.paymentMethod,
+      );
     }
 
     const emailed = await emailInvoiceFn(invoiceData.invoiceId);

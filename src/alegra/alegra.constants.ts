@@ -28,9 +28,19 @@ export const ALEGRA_CO_INVOICE_TYPE_EXPORT = "EXPORT";
 export const ALEGRA_CO_OPERATION_TYPE_STANDARD = "STANDARD";
 
 /**
- * Default tax ID for IVA (19%) in Colombia — this is typically
- * pre-configured in the Alegra account. The ID is fetched at runtime
- * from the Alegra tax catalog rather than hard-coded.
+ * Default catalog fallbacks for BSKMT's Alegra account:
+ * - Default item: 77 ("Ingreso BSKMT", ref: "BSKMT-GENERIC")
+ * - Default bank account: 7 ("BOLD. C.F.", Bold payment gateway)
+ * - Default seller: 5 ("Ventas En Linea BSKMT")
+ * - Default number template: 19 ("BSKMT", FEV electronic resolution)
+ */
+export const ALEGRA_DEFAULT_FALLBACK_ITEM_ID = "77";
+export const ALEGRA_DEFAULT_FALLBACK_BANK_ACCOUNT_ID = "7";
+export const ALEGRA_DEFAULT_FALLBACK_SELLER_ID = "5";
+export const ALEGRA_DEFAULT_FALLBACK_TEMPLATE_ID = "19";
+
+/**
+ * Default tax ID for IVA (19%) in Colombia. BSKMT is simplified regime (no responsable IVA).
  */
 export const ALEGRA_CO_DEFAULT_TAX_PERCENTAGE = 19;
 
@@ -43,3 +53,37 @@ export const ALEGRA_KV_PREFIX = "alegra:";
  * KV cache TTL for Alegra contact lookups (1 hour).
  */
 export const ALEGRA_CONTACT_CACHE_TTL = 3600;
+
+/**
+ * Mapping from BSKMT / Bold payment methods to Alegra invoice and payment methods.
+ */
+export const ALEGRA_PAYMENT_METHOD_MAP: Record<
+  string,
+  { invoice: string; payment: string }
+> = {
+  CARD: { invoice: "CREDIT_CARD", payment: "credit-card" },
+  CREDIT_CARD: { invoice: "CREDIT_CARD", payment: "credit-card" },
+  DEBIT_CARD: { invoice: "DEBIT_CARD", payment: "debit-card" },
+  PSE: { invoice: "DEBIT_CARD", payment: "debit-card" },
+  NEQUI: { invoice: "TRANSFER", payment: "transfer" },
+  DAVIPLATA: { invoice: "TRANSFER", payment: "transfer" },
+  BOTON_BANCOLOMBIA: { invoice: "TRANSFER", payment: "transfer" },
+  TRANSFER: { invoice: "TRANSFER", payment: "transfer" },
+  DEPOSIT: { invoice: "TRANSFER", payment: "deposit" },
+  CASH: { invoice: "CASH", payment: "cash" },
+};
+
+export function mapPaymentMethod(method?: string | null): {
+  invoice: string;
+  payment: string;
+} {
+  if (!method) return { invoice: "CASH", payment: "cash" };
+  const normalized = method.trim().toUpperCase().replace(/[\s-]+/g, "_");
+  return (
+    ALEGRA_PAYMENT_METHOD_MAP[normalized] ?? {
+      invoice: "CASH",
+      payment: "cash",
+    }
+  );
+}
+

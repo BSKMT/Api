@@ -79,6 +79,7 @@ export async function processAlegraInvoicingHelper(
       purpose: transaction.purpose,
       amount: transaction.amount,
       description: transaction.description,
+      paymentMethod: transaction.paymentMethod,
     };
 
     if (transaction.purpose === "shop" && transaction.relatedReference) {

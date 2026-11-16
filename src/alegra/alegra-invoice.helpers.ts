@@ -10,6 +10,10 @@ import {
   ALEGRA_CO_PAYMENT_FORM_CASH,
   ALEGRA_CO_INVOICE_TYPE_NATIONAL,
   ALEGRA_CO_OPERATION_TYPE_STANDARD,
+  ALEGRA_DEFAULT_FALLBACK_ITEM_ID,
+  ALEGRA_DEFAULT_FALLBACK_BANK_ACCOUNT_ID,
+  ALEGRA_DEFAULT_FALLBACK_SELLER_ID,
+  mapPaymentMethod,
 } from "./alegra.constants";
 import type { KvCacheService } from "../kv/kv-cache.service";
 import type { EnvironmentConfig } from "../config/config.interface";
@@ -33,6 +37,26 @@ export async function discoverDefaultItemId(
   if (cached) return cached;
 
   try {
+    const matched = await makeRequest<
+      Array<{ id: string | number; name?: string; reference?: string }>
+    >("GET", "/items?query=Ingreso%20BSKMT&limit=5");
+    if (matched && Array.isArray(matched) && matched.length > 0) {
+      const found =
+        matched.find(
+          (i) =>
+            i.reference === "BSKMT-GENERIC" ||
+            i.name?.toLowerCase().includes("ingreso bskmt"),
+        ) ?? matched[0];
+      if (found?.id) {
+        const idStr = String(found.id);
+        await kvCache.set(cacheKey, idStr, 86400, true);
+        logger.log(
+          `Alegra default item auto-discovered: id=${idStr} name="${found.name}"`,
+        );
+        return idStr;
+      }
+    }
+
     const items = await makeRequest<Array<{ id: string | number }>>(
       "GET",
       "/items?limit=1",
@@ -40,13 +64,14 @@ export async function discoverDefaultItemId(
     if (items && Array.isArray(items) && items.length > 0 && items[0].id) {
       const idStr = String(items[0].id);
       await kvCache.set(cacheKey, idStr, 86400, true);
-      logger.log(`Alegra default item auto-discovered: id=${idStr}`);
+      logger.log(`Alegra fallback item auto-discovered: id=${idStr}`);
       return idStr;
     }
   } catch {
     // ignore
   }
-  return null;
+
+  return ALEGRA_DEFAULT_FALLBACK_ITEM_ID;
 }
 
 export async function discoverDefaultBankAccountId(
@@ -68,25 +93,81 @@ export async function discoverDefaultBankAccountId(
   if (cached) return cached;
 
   try {
-    const accounts = await makeRequest<Array<{ id: string | number }>>(
-      "GET",
-      "/bank-accounts?limit=1",
-    );
-    if (
-      accounts &&
-      Array.isArray(accounts) &&
-      accounts.length > 0 &&
-      accounts[0].id
-    ) {
-      const idStr = String(accounts[0].id);
-      await kvCache.set(cacheKey, idStr, 86400, true);
-      logger.log(`Alegra default bank account auto-discovered: id=${idStr}`);
-      return idStr;
+    const accounts = await makeRequest<
+      Array<{ id: string | number; name?: string; status?: string }>
+    >("GET", "/bank-accounts?limit=10");
+    if (accounts && Array.isArray(accounts) && accounts.length > 0) {
+      const boldAcc = accounts.find(
+        (a) =>
+          a.name?.toUpperCase().includes("BOLD") && a.status !== "inactive",
+      );
+      const chosen =
+        boldAcc ??
+        accounts.find((a) => a.status !== "inactive") ??
+        accounts[0];
+      if (chosen?.id) {
+        const idStr = String(chosen.id);
+        await kvCache.set(cacheKey, idStr, 86400, true);
+        logger.log(
+          `Alegra default bank account auto-discovered: id=${idStr} name="${chosen.name}"`,
+        );
+        return idStr;
+      }
     }
   } catch {
     // ignore
   }
-  return null;
+
+  return ALEGRA_DEFAULT_FALLBACK_BANK_ACCOUNT_ID;
+}
+
+export async function discoverDefaultSellerId(
+  configService: ConfigService<EnvironmentConfig>,
+  kvCache: KvCacheService,
+  makeRequest: <T>(
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
+    path: string,
+  ) => Promise<T | null>,
+  logger: Logger,
+): Promise<string | null> {
+  const configured =
+    configService.get<string>("ALEGRA_SELLER_ID", { infer: true }) ||
+    process.env.ALEGRA_SELLER_ID;
+  if (configured) return configured;
+
+  const cacheKey = `${ALEGRA_KV_PREFIX}default_seller_id`;
+  const cached = await kvCache.get<string>(cacheKey, true);
+  if (cached) return cached;
+
+  try {
+    const sellers = await makeRequest<
+      Array<{ id: string | number; name?: string; status?: string }>
+    >("GET", "/sellers?limit=10");
+    if (sellers && Array.isArray(sellers) && sellers.length > 0) {
+      const bskmtSeller = sellers.find(
+        (s) =>
+          (s.name?.toUpperCase().includes("VENTAS") ||
+            s.name?.toUpperCase().includes("BSKMT")) &&
+          s.status !== "inactive",
+      );
+      const chosen =
+        bskmtSeller ??
+        sellers.find((s) => s.status !== "inactive") ??
+        sellers[0];
+      if (chosen?.id) {
+        const idStr = String(chosen.id);
+        await kvCache.set(cacheKey, idStr, 86400, true);
+        logger.log(
+          `Alegra default seller auto-discovered: id=${idStr} name="${chosen.name}"`,
+        );
+        return idStr;
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return ALEGRA_DEFAULT_FALLBACK_SELLER_ID;
 }
 
 export function buildInvoiceItems(
@@ -122,11 +203,13 @@ export function buildInvoicePayload(
   context: AlegraBillingContext,
   contactId: string,
   itemId: string,
-  sellerId?: string,
+  sellerId?: string | null,
 ): AlegraInvoiceCreate {
   const dateStr = new Date().toLocaleDateString("sv-SE", {
     timeZone: "America/Bogota",
   });
+
+  const methodMapping = mapPaymentMethod(context.paymentMethod);
 
   const payload: AlegraInvoiceCreate = {
     date: dateStr,
@@ -137,7 +220,7 @@ export function buildInvoicePayload(
     observations: `BSKMT — Ref: ${context.transactionReference}`,
     termsConditions:
       "BSK Motorcycle Team — Factura electrónica generada automáticamente.",
-    paymentMethod: "CASH",
+    paymentMethod: methodMapping.invoice,
     paymentForm: ALEGRA_CO_PAYMENT_FORM_CASH,
     type: ALEGRA_CO_INVOICE_TYPE_NATIONAL,
     operationType: ALEGRA_CO_OPERATION_TYPE_STANDARD,
@@ -152,16 +235,19 @@ export function buildPaymentPayload(
   invoiceId: string,
   amount: number,
   bankAccountId: string,
+  paymentMethod?: string | null,
 ): AlegraPaymentCreate {
   const dateStr = new Date().toLocaleDateString("sv-SE", {
     timeZone: "America/Bogota",
   });
 
+  const methodMapping = mapPaymentMethod(paymentMethod);
+
   return {
     date: dateStr,
     bankAccount: bankAccountId,
     type: "in",
-    paymentMethod: "CASH",
+    paymentMethod: methodMapping.payment,
     invoices: [{ id: invoiceId, amount }],
   };
 }

@@ -101,6 +101,7 @@ export class AlegraService {
   async createPayment(
     invoiceId: string,
     amount: number,
+    paymentMethod?: string | null,
   ): Promise<string | null> {
     if (!this.isConfigured()) return null;
     return executeCreatePayment(
@@ -110,6 +111,7 @@ export class AlegraService {
       invoiceId,
       amount,
       this.logger,
+      paymentMethod,
     );
   }
 
@@ -151,7 +153,7 @@ export class AlegraService {
       {
         ensureContactFn: (uid) => this.ensureContact(uid),
         createInvoiceFn: (ctx, cid) => this.createInvoice(ctx, cid),
-        createPaymentFn: (iid, amt) => this.createPayment(iid, amt),
+        createPaymentFn: (iid, amt, pm) => this.createPayment(iid, amt, pm),
         emailInvoiceFn: (iid) => this.emailInvoice(iid),
       },
       this.invoiceModel,
@@ -178,7 +180,7 @@ export class AlegraService {
   async getInvoicePdfUrlByTransaction(
     userId: string,
     transactionReference: string,
-    purpose: string,
+    purpose?: string,
   ): Promise<string | null> {
     return queryInvoicePdfUrlByTransaction(
       this.invoiceModel,
