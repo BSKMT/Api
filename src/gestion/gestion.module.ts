@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { MongooseModule } from "@nestjs/mongoose";
 import { UsersModule } from "../users/users.module";
+import { MapboxModule } from "../mapbox/mapbox.module";
 import {
   ArphaRequest,
   ArphaRequestSchema,
@@ -38,6 +39,7 @@ import { GestionArphaService } from "./services/gestion-arpha.service";
       { name: User.name, schema: UserSchema },
     ]),
     UsersModule,
+    MapboxModule,
   ],
   controllers: [
     GestionArphaController,

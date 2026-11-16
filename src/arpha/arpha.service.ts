@@ -22,6 +22,7 @@ import {
   ACTIVE_ARPHA_STATUSES,
   calculateArphaPrice,
 } from "./arpha.constants";
+import { MapboxService } from "../mapbox/mapbox.service";
 
 export type { ArphaPricingResult };
 
@@ -32,6 +33,7 @@ export class ArphaService {
   constructor(
     @InjectModel(ArphaRequest.name)
     private readonly arphaRequestModel: Model<ArphaRequestDocument>,
+    private readonly mapboxService: MapboxService,
   ) {}
 
   async createRequest(
@@ -53,14 +55,40 @@ export class ArphaService {
       dto.requestType,
       membershipLevel,
     );
+
+    let finalLocation = dto.location;
+    let finalCoordinates = dto.coordinates
+      ? { lat: dto.coordinates.lat, lng: dto.coordinates.lng }
+      : null;
+
+    if (
+      finalCoordinates &&
+      (/^lat:\s*[0-9.-]+/i.test(dto.location) || dto.location.trim().length < 5)
+    ) {
+      const geo = await this.mapboxService.reverseGeocode(
+        finalCoordinates.lat,
+        finalCoordinates.lng,
+      );
+      if (geo?.full) {
+        finalLocation = geo.full;
+      }
+    } else if (
+      !finalCoordinates &&
+      dto.location &&
+      !/^lat:\s*[0-9.-]+/i.test(dto.location)
+    ) {
+      const geo = await this.mapboxService.forwardGeocode(dto.location);
+      if (geo) {
+        finalCoordinates = { lat: geo.lat, lng: geo.lng };
+      }
+    }
+
     const request = new this.arphaRequestModel({
       userId,
       requestType: dto.requestType,
       status: ArphaRequestStatus.PENDING,
-      location: dto.location,
-      coordinates: dto.coordinates
-        ? { lat: dto.coordinates.lat, lng: dto.coordinates.lng }
-        : null,
+      location: finalLocation,
+      coordinates: finalCoordinates,
       description: dto.description ?? null,
       isMember,
       amount,

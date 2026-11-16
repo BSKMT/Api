@@ -33,6 +33,7 @@ import { CloudinaryModule } from "./cloudinary/cloudinary.module";
 import { ObserveModule } from "./observe";
 import { SecurityAuditModule } from "./common/audit/security-audit.module";
 import { TicketsModule } from "./tickets/tickets.module";
+import { MapboxModule } from "./mapbox/mapbox.module";
 
 @Module({
   controllers: [AppController],
@@ -99,6 +100,7 @@ import { TicketsModule } from "./tickets/tickets.module";
     CloudinaryModule,
     SecurityAuditModule,
     TicketsModule,
+    MapboxModule,
   ],
   providers: [
     {

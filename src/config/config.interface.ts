@@ -138,6 +138,11 @@ export interface EnvironmentConfig {
   ALEGRA_WEBHOOK_SECRET?: string;
 
   /**
+   * Mapbox — Mapas satelitales, geocodificación inversa y cálculo de rutas ARPHA.
+   */
+  MAPBOX_ACCESS_TOKEN?: string;
+
+  /**
    * Comma-separated list of authorized secret tokens for allied workshop service orders.
    */
   ALLIED_WORKSHOP_TOKENS?: string;

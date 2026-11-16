@@ -14,6 +14,7 @@ import {
 } from "../../arpha/schemas/arpha-request.schema";
 import { UsersService } from "../../users/users.service";
 import { UserRole, UserSubrole } from "../../users/schemas/user.schema";
+import { MapboxService } from "../../mapbox/mapbox.service";
 import {
   AssignArphaDto,
   UpdateGestorLocationDto,
@@ -30,6 +31,7 @@ export class GestionArphaService {
     @InjectModel(ArphaRequest.name)
     private readonly arphaRequestModel: Model<ArphaRequestDocument>,
     private readonly usersService: UsersService,
+    private readonly mapboxService: MapboxService,
   ) {}
 
   async listRequests(user: {
@@ -147,11 +149,24 @@ export class GestionArphaService {
       updatedAt: new Date(),
     };
 
+    if (request.coordinates?.lat && request.coordinates?.lng) {
+      const origin: [number, number] = [coords.lng, coords.lat];
+      const dest: [number, number] = [
+        request.coordinates.lng,
+        request.coordinates.lat,
+      ];
+      const route = await this.mapboxService.getRouteDirections(origin, dest);
+      if (route) {
+        request.eta = `${route.durationMin}`;
+      }
+    }
+
     const saved = await request.save();
     return {
       success: true,
       requestId,
       gestorLocation: saved.gestorLocation,
+      eta: saved.eta,
     };
   }
 

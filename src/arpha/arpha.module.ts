@@ -7,6 +7,7 @@ import {
   ArphaRequestSchema,
 } from "./schemas/arpha-request.schema";
 import { UsersModule } from "../users/users.module";
+import { MapboxModule } from "../mapbox/mapbox.module";
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { UsersModule } from "../users/users.module";
       { name: ArphaRequest.name, schema: ArphaRequestSchema },
     ]),
     UsersModule,
+    MapboxModule,
   ],
   controllers: [ArphaController],
   providers: [ArphaService],
