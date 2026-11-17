@@ -1,8 +1,5 @@
 import type { UsageProfile } from "./schemas/garage-motorcycle.schema";
-import {
-  type MaintenanceLog,
-  MaintenanceType,
-} from "./schemas/maintenance-log.schema";
+import { MaintenanceType } from "./schemas/maintenance-log.schema";
 import {
   OIL_DEGRADATION,
   CHAIN_DEGRADATION,
@@ -59,7 +56,11 @@ export function calculatePredictiveHealth(
   activeMoto: TelemetryMotorcycleInput,
   intelligentEstimatedKm: number,
   inferredDailyRate: number,
-  maintenanceLogs: MaintenanceLog[],
+  maintenanceLogs: Array<{
+    odometerKm?: number;
+    maintenanceType?: MaintenanceType | string;
+    partsChanged?: string[];
+  }>,
   isLegend: boolean,
 ): PredictiveHealthResult {
   const currentBaseKm = activeMoto.currentOdometerKm ?? 0;
@@ -67,21 +68,17 @@ export function calculatePredictiveHealth(
   const lastOilLog = maintenanceLogs.find((m) =>
     hasPartIntervention(m, MaintenanceType.OIL_CHANGE, ["aceite"]),
   );
-  const lastOilKm = lastOilLog ? lastOilLog.odometerKm : currentBaseKm * 0.75;
+  const lastOilKm = lastOilLog?.odometerKm ?? currentBaseKm * 0.75;
 
   const lastChainLog = maintenanceLogs.find((m) =>
     hasPartIntervention(m, MaintenanceType.CHAIN_KIT, ["cadena", "arrastre"]),
   );
-  const lastChainKm = lastChainLog
-    ? lastChainLog.odometerKm
-    : currentBaseKm * 0.4;
+  const lastChainKm = lastChainLog?.odometerKm ?? currentBaseKm * 0.4;
 
   const lastBrakesLog = maintenanceLogs.find((m) =>
     hasPartIntervention(m, MaintenanceType.BRAKES, ["pastilla", "freno"]),
   );
-  const lastBrakesKm = lastBrakesLog
-    ? lastBrakesLog.odometerKm
-    : currentBaseKm * 0.6;
+  const lastBrakesKm = lastBrakesLog?.odometerKm ?? currentBaseKm * 0.6;
 
   const profile = (activeMoto.usageProfile ?? "daily_urban") as UsageProfile;
   const oilInterval = 4500 / (OIL_DEGRADATION[profile] ?? 1.0);
@@ -242,7 +239,7 @@ export function generateAlliedVouchers(
 export function calculateTcoAndMarketValue(
   activeMoto: TelemetryMotorcycleInput,
   intelligentEstimatedKm: number,
-  maintenanceLogs: MaintenanceLog[],
+  maintenanceLogs: Array<{ cost?: number }>,
 ): TcoResult {
   let totalMaintenanceSpent = 0;
   for (const m of maintenanceLogs) {

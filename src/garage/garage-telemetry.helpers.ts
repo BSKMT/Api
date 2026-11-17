@@ -1,6 +1,5 @@
 import { Model } from "mongoose";
 import {
-  GarageMotorcycle,
   GarageMotorcycleDocument,
   UsageProfile,
 } from "./schemas/garage-motorcycle.schema";
@@ -154,49 +153,43 @@ export interface OdometerEstimationResult {
   lastUpdateDate: Date;
 }
 
+export type NullableDate = Date | string | null;
+
 export interface DocumentAlertItem {
   id: string;
   title: string;
-  expiryDate?: Date | string | null;
+  expiryDate?: NullableDate;
   daysRemaining: number | null;
   status: string;
   canRenewOneClick: boolean;
   isRuntVerified: boolean;
-  runtVerifiedAt?: Date | string | null;
+  runtVerifiedAt?: NullableDate;
   runtStatus?: string | null;
   insuranceCompany?: string | null;
   policyNumber?: string | null;
   cdaName?: string | null;
 }
 
-export type TelemetryMotorcycleInput = Omit<
-  Partial<GarageMotorcycle>,
-  | "soatExpiryDate"
-  | "rtmExpiryDate"
-  | "licenseExpiryDate"
-  | "odometerLastUpdatedAt"
-  | "runtVerifiedAt"
-  | "usageProfile"
-> & {
-  currentOdometerKm?: number;
-  odometerLastUpdatedAt?: Date | string | null;
-  usageProfile?: UsageProfile | string;
-  soatExpiryDate?: Date | string | null;
-  rtmExpiryDate?: Date | string | null;
-  licenseExpiryDate?: Date | string | null;
-  isRuntVerified?: boolean;
-  runtVerifiedAt?: Date | string | null;
+export interface TelemetryMotorcycleInput {
+  currentOdometerKm?: number | null;
+  odometerLastUpdatedAt?: NullableDate;
+  usageProfile?: UsageProfile | string | null;
+  soatExpiryDate?: NullableDate;
+  rtmExpiryDate?: NullableDate;
+  licenseExpiryDate?: NullableDate;
+  isRuntVerified?: boolean | null;
+  runtVerifiedAt?: NullableDate;
   runtSoatStatus?: string | null;
   runtRtmStatus?: string | null;
   runtCdaName?: string | null;
   insuranceCompany?: string | null;
   policyNumber?: string | null;
-  brand?: string;
-  modelLine?: string;
-  plate?: string;
-  year?: number;
-  displacementCc?: number;
-};
+  brand?: string | null;
+  modelLine?: string | null;
+  plate?: string | null;
+  year?: number | null;
+  displacementCc?: number | null;
+}
 
 export type TelemetryOdometerLogInput = {
   odometerKm: number;

@@ -1,7 +1,4 @@
-import {
-  MaintenanceLog,
-  MaintenanceType,
-} from "./schemas/maintenance-log.schema";
+import { MaintenanceType } from "./schemas/maintenance-log.schema";
 
 export function getDocumentStatus(
   days: number | null,
@@ -52,7 +49,10 @@ export function parseDateOrNull(
 }
 
 export function hasPartIntervention(
-  log: MaintenanceLog,
+  log: {
+    maintenanceType?: MaintenanceType | string;
+    partsChanged?: string[];
+  },
   type: MaintenanceType,
   keywords: string[],
 ): boolean {
