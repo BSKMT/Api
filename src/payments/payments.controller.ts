@@ -89,9 +89,12 @@ export class PaymentsController {
     @Headers("x-edge-secret") edgeSecret: string | undefined,
     @Body() payload: WebhookBatchPayloadDto,
   ) {
-    const expectedSecret = this.configService.get<string>("INTERNAL_EDGE_SECRET", {
-      infer: true,
-    });
+    const expectedSecret = this.configService.get<string>(
+      "INTERNAL_EDGE_SECRET",
+      {
+        infer: true,
+      },
+    );
 
     if (!expectedSecret || !edgeSecret || edgeSecret !== expectedSecret) {
       throw new BadRequestException("Unauthorized edge webhook batch delivery");
