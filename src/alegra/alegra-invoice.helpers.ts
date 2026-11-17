@@ -10,9 +10,6 @@ import {
   ALEGRA_CO_PAYMENT_FORM_CASH,
   ALEGRA_CO_INVOICE_TYPE_NATIONAL,
   ALEGRA_CO_OPERATION_TYPE_STANDARD,
-  ALEGRA_DEFAULT_FALLBACK_ITEM_ID,
-  ALEGRA_DEFAULT_FALLBACK_BANK_ACCOUNT_ID,
-  ALEGRA_DEFAULT_FALLBACK_SELLER_ID,
   mapPaymentMethod,
 } from "./alegra.constants";
 import type { KvCacheService } from "../kv/kv-cache.service";
@@ -67,11 +64,13 @@ export async function discoverDefaultItemId(
       logger.log(`Alegra fallback item auto-discovered: id=${idStr}`);
       return idStr;
     }
-  } catch {
-    // ignore
+  } catch (err) {
+    logger.error(
+      `Error discovering default item from Alegra API: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
-  return ALEGRA_DEFAULT_FALLBACK_ITEM_ID;
+  return null;
 }
 
 export async function discoverDefaultBankAccountId(
@@ -114,11 +113,13 @@ export async function discoverDefaultBankAccountId(
         return idStr;
       }
     }
-  } catch {
-    // ignore
+  } catch (err) {
+    logger.error(
+      `Error discovering default bank account from Alegra API: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
-  return ALEGRA_DEFAULT_FALLBACK_BANK_ACCOUNT_ID;
+  return null;
 }
 
 export async function discoverDefaultSellerId(
@@ -163,11 +164,13 @@ export async function discoverDefaultSellerId(
         return idStr;
       }
     }
-  } catch {
-    // ignore
+  } catch (err) {
+    logger.error(
+      `Error discovering default seller from Alegra API: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
-  return ALEGRA_DEFAULT_FALLBACK_SELLER_ID;
+  return null;
 }
 
 export function buildInvoiceItems(

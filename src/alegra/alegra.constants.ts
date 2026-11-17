@@ -28,18 +28,6 @@ export const ALEGRA_CO_INVOICE_TYPE_EXPORT = "EXPORT";
 export const ALEGRA_CO_OPERATION_TYPE_STANDARD = "STANDARD";
 
 /**
- * Default catalog fallbacks for BSKMT's Alegra account:
- * - Default item: 77 ("Ingreso BSKMT", ref: "BSKMT-GENERIC")
- * - Default bank account: 7 ("BOLD. C.F.", Bold payment gateway)
- * - Default seller: 5 ("Ventas En Linea BSKMT")
- * - Default number template: 19 ("BSKMT", FEV electronic resolution)
- */
-export const ALEGRA_DEFAULT_FALLBACK_ITEM_ID = "77";
-export const ALEGRA_DEFAULT_FALLBACK_BANK_ACCOUNT_ID = "7";
-export const ALEGRA_DEFAULT_FALLBACK_SELLER_ID = "5";
-export const ALEGRA_DEFAULT_FALLBACK_TEMPLATE_ID = "19";
-
-/**
  * Default tax ID for IVA (19%) in Colombia. BSKMT is simplified regime (no responsable IVA).
  */
 export const ALEGRA_CO_DEFAULT_TAX_PERCENTAGE = 19;
