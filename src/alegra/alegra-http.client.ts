@@ -33,10 +33,23 @@ export function getAlegraBaseUrl(
   );
 }
 
+export type AlegraHttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+async function parseAlegraResponseBody<T>(res: Response): Promise<T> {
+  if (res.status === 204) return {} as T;
+  const text = await res.text().catch(() => "");
+  if (!text.trim()) return {} as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return text as unknown as T;
+  }
+}
+
 export async function makeAlegraRequest<T>(
   configService: ConfigService<EnvironmentConfig>,
   logger: Logger,
-  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
+  method: AlegraHttpMethod,
   path: string,
   body?: unknown,
 ): Promise<T | null> {
@@ -81,16 +94,7 @@ export async function makeAlegraRequest<T>(
       return null;
     }
 
-    if (res.status === 204) return {} as T;
-
-    const text = await res.text().catch(() => "");
-    if (!text.trim()) return {} as T;
-
-    try {
-      return JSON.parse(text) as T;
-    } catch {
-      return text as unknown as T;
-    }
+    return await parseAlegraResponseBody<T>(res);
   } catch (err: unknown) {
     if (err instanceof Error && err.name === "AbortError") {
       logger.warn(`Alegra API ${method} ${path} timed out (${timeoutMs}ms)`);

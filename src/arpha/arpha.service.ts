@@ -21,8 +21,10 @@ import {
   ArphaPricingResult,
   ACTIVE_ARPHA_STATUSES,
   calculateArphaPrice,
+  isLegendMember,
 } from "./arpha.constants";
 import { MapboxService } from "../mapbox/mapbox.service";
+import { SystemPricingConfigService } from "../admin/services/system-pricing-config.service";
 
 export type { ArphaPricingResult };
 
@@ -34,6 +36,7 @@ export class ArphaService {
     @InjectModel(ArphaRequest.name)
     private readonly arphaRequestModel: Model<ArphaRequestDocument>,
     private readonly mapboxService: MapboxService,
+    private readonly pricingConfigService: SystemPricingConfigService,
   ) {}
 
   async createRequest(
@@ -51,10 +54,14 @@ export class ArphaService {
       );
     }
 
-    const { isMember, amount } = calculateArphaPrice(
-      dto.requestType,
-      membershipLevel,
-    );
+    const pricingConfig = await this.pricingConfigService.getConfig();
+    const isMember = isLegendMember(membershipLevel);
+    const arphaRates = pricingConfig.perksAndRates?.arphaPricing;
+    const dynamicPrice =
+      arphaRates?.[dto.requestType as keyof typeof arphaRates] ??
+      ARPHA_PRICING[dto.requestType] ??
+      55000;
+    const amount = isMember ? 0 : dynamicPrice;
 
     let finalLocation = dto.location;
     let finalCoordinates = dto.coordinates

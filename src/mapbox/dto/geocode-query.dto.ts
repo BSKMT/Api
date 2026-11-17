@@ -1,4 +1,11 @@
-import { IsNumber, IsString, MinLength, MaxLength, Min, Max } from "class-validator";
+import {
+  IsNumber,
+  IsString,
+  MinLength,
+  MaxLength,
+  Min,
+  Max,
+} from "class-validator";
 import { Type, Transform } from "class-transformer";
 
 export class ReverseGeocodeQueryDto {

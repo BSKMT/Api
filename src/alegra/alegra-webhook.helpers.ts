@@ -4,6 +4,40 @@ import type { AlegraInvoiceDocument } from "./schemas/alegra-invoice.schema";
 import type { AlegraWebhookPayload } from "./alegra.interfaces";
 import { maskReference } from "../common/utils/log-redact.util";
 
+function reconcileInvoiceStamp(
+  record: AlegraInvoiceDocument,
+  invoice: NonNullable<AlegraWebhookPayload["message"]>["invoice"],
+): boolean {
+  if (!invoice) return false;
+  let modified = false;
+
+  if (invoice.stamp?.cufe && !record.cufe) {
+    record.cufe = invoice.stamp.cufe;
+    record.stamped = true;
+    record.stampedAt = new Date();
+    modified = true;
+  }
+
+  if (
+    invoice.stamp?.legalStatus &&
+    record.stampStatus !== invoice.stamp.legalStatus
+  ) {
+    record.stampStatus = invoice.stamp.legalStatus;
+    if (invoice.stamp.legalStatus.startsWith("STAMPED")) {
+      record.stamped = true;
+      record.stampedAt ??= new Date();
+    }
+    modified = true;
+  }
+
+  if (invoice.numberTemplate?.fullNumber && !record.alegraInvoiceNumber) {
+    record.alegraInvoiceNumber = invoice.numberTemplate.fullNumber;
+    modified = true;
+  }
+
+  return modified;
+}
+
 export async function processInvoiceWebhookEvent(
   invoiceModel: Model<AlegraInvoiceDocument>,
   payload: AlegraWebhookPayload,
@@ -34,42 +68,19 @@ export async function processInvoiceWebhookEvent(
     return;
   }
 
-  let modified = false;
-
-  // Reconcile stamp / DIAN data if present in webhook
-  if (invoice.stamp?.cufe && !record.cufe) {
-    record.cufe = invoice.stamp.cufe;
-    record.stamped = true;
-    record.stampedAt = new Date();
-    modified = true;
-  }
+  let modified = reconcileInvoiceStamp(record, invoice);
 
   if (
-    invoice.stamp?.legalStatus &&
-    record.stampStatus !== invoice.stamp.legalStatus
+    (subject.includes("edit") || subject.includes("new")) &&
+    invoice.balance === 0 &&
+    record.status !== "PAID"
   ) {
-    record.stampStatus = invoice.stamp.legalStatus;
-    if (invoice.stamp.legalStatus.startsWith("STAMPED")) {
-      record.stamped = true;
-      if (!record.stampedAt) record.stampedAt = new Date();
-    }
+    record.status = "PAID";
+    record.paidAt = new Date();
     modified = true;
-  }
-
-  if (invoice.numberTemplate?.fullNumber && !record.alegraInvoiceNumber) {
-    record.alegraInvoiceNumber = invoice.numberTemplate.fullNumber;
-    modified = true;
-  }
-
-  if (subject.includes("edit") || subject.includes("new")) {
-    if (invoice.balance === 0 && record.status !== "PAID") {
-      record.status = "PAID";
-      record.paidAt = new Date();
-      modified = true;
-      logger.log(
-        `Alegra invoice marked paid: invoiceId=${invoice.id} ref=${maskReference(record.transactionReference)}`,
-      );
-    }
+    logger.log(
+      `Alegra invoice marked paid: invoiceId=${invoice.id} ref=${maskReference(record.transactionReference)}`,
+    );
   }
 
   if (modified) {

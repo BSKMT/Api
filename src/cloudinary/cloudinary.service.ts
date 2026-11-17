@@ -184,7 +184,7 @@ export class CloudinaryService {
       );
     }
 
-    const matches = base64Data.match(/^data:([^;]+);base64,(.+)$/);
+    const matches = /^data:([^;]+);base64,(.+)$/.exec(base64Data);
     if (!matches) {
       throw new BadRequestException(
         "Formato inválido: solo se aceptan cadenas Data URI base64 válidas.",

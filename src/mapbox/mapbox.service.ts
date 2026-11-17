@@ -22,6 +22,23 @@ export interface RouteDirectionsResult {
   coordinates: [number, number][];
 }
 
+function extractAddressContext(context?: { id: string; text: string }[]): {
+  neighborhood?: string;
+  locality?: string;
+  city?: string;
+} {
+  if (!context) return {};
+  let neighborhood: string | undefined;
+  let locality: string | undefined;
+  let city: string | undefined;
+  for (const ctx of context) {
+    if (ctx.id.startsWith("neighborhood")) neighborhood = ctx.text;
+    else if (ctx.id.startsWith("locality")) locality = ctx.text;
+    else if (ctx.id.startsWith("place")) city = ctx.text;
+  }
+  return { neighborhood, locality, city };
+}
+
 @Injectable()
 export class MapboxService {
   private readonly logger = new Logger(MapboxService.name);
@@ -74,17 +91,9 @@ export class MapboxService {
       }
 
       const best = data.features[0];
-      let neighborhood: string | undefined;
-      let locality: string | undefined;
-      let city: string | undefined;
-
-      if (best.context) {
-        for (const ctx of best.context) {
-          if (ctx.id.startsWith("neighborhood")) neighborhood = ctx.text;
-          if (ctx.id.startsWith("locality")) locality = ctx.text;
-          if (ctx.id.startsWith("place")) city = ctx.text;
-        }
-      }
+      const { neighborhood, locality, city } = extractAddressContext(
+        best.context,
+      );
 
       return {
         address: best.text || best.place_name,
@@ -183,7 +192,7 @@ export class MapboxService {
         }[];
       };
 
-      if (data.code !== "Ok" || !data.routes || !data.routes[0]) {
+      if (data.code !== "Ok" || !data.routes?.[0]) {
         return null;
       }
 

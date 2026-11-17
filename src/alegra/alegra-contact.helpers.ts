@@ -24,16 +24,9 @@ export function mapDocumentTypeToAlegra(rawType?: string | null): {
     return { type: "NIT", kindOfPerson: "LEGAL_ENTITY" };
   }
   if (
-    [
-      "CC",
-      "CE",
-      "TI",
-      "PASSPORT",
-      "PEP",
-      "DIE",
-      "FOREIGN_NIT",
-      "PPT",
-    ].includes(clean)
+    ["CC", "CE", "TI", "PASSPORT", "PEP", "DIE", "FOREIGN_NIT", "PPT"].includes(
+      clean,
+    )
   ) {
     return { type: clean, kindOfPerson: "PERSON_ENTITY" };
   }

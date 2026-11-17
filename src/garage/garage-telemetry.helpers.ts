@@ -4,12 +4,9 @@ import {
   GarageMotorcycleDocument,
   UsageProfile,
 } from "./schemas/garage-motorcycle.schema";
-import {
-  OdometerLog,
-  OdometerSource,
-  OdometerLogDocument,
-} from "./schemas/odometer-log.schema";
+import type { OdometerLogDocument } from "./schemas/odometer-log.schema";
 import { EventRegistrationDocument } from "../events/schemas/event-registration.schema";
+import { EventDocument } from "../events/schemas/event.schema";
 import { OrderDocument, OrderStatus } from "../shop/schemas/order.schema";
 import {
   KNOWN_EVENT_KM,
@@ -47,7 +44,7 @@ export function buildEmptyDashboardResponse(isLegend: boolean) {
 
 export async function autoSeedFromProfile(
   motorcycleModel: Model<GarageMotorcycleDocument>,
-  odometerModel: Model<OdometerLogDocument>,
+  _odometerModel: Model<OdometerLogDocument>,
   user: { profile?: Record<string, unknown> },
   userId: string,
 ): Promise<void> {
@@ -72,14 +69,14 @@ export async function autoSeedFromProfile(
   const seededMoto = new motorcycleModel({
     userId,
     brand: profileMoto.marcaMoto.trim(),
-    modelLine: (profileMoto.lineaMoto ?? "Modelo Base").trim(),
+    modelLine: (profileMoto.lineaMoto || "").trim(),
     year: validYear,
     displacementCc: validCc,
     plate: profileMoto.placaMoto.trim().toUpperCase(),
-    color: (profileMoto.colorMoto ?? "Negro").trim(),
-    motorcycleType: (profileMoto.tipoMoto ?? "Naked").trim(),
+    color: (profileMoto.colorMoto || "").trim(),
+    motorcycleType: (profileMoto.tipoMoto || "").trim(),
     usageProfile: UsageProfile.DAILY_URBAN,
-    currentOdometerKm: 12500,
+    currentOdometerKm: 0,
     odometerLastUpdatedAt: new Date(),
     soatExpiryDate: parseDateOrNull(profileMoto.soatVigencia),
     rtmExpiryDate: parseDateOrNull(profileMoto.tecnomecanicaVigencia),
@@ -89,29 +86,42 @@ export async function autoSeedFromProfile(
     isPrimary: true,
   });
 
-  const saved = await seededMoto.save();
-  await odometerModel.create({
-    userId,
-    motorcycleId: String(saved._id),
-    odometerKm: 12500,
-    recordedAt: new Date(),
-    source: OdometerSource.MANUAL_QUICK,
-  });
+  await seededMoto.save();
 }
 
 export async function calculateClubTelemetry(
   eventRegistrationModel: Model<EventRegistrationDocument>,
   orderModel: Model<OrderDocument>,
   userId: string,
+  eventModel?: Model<EventDocument>,
 ) {
   const confirmedRegistrations = await eventRegistrationModel
     .find({ userId, status: "CONFIRMED" })
     .lean();
 
   let totalClubRideKm = 0;
-  for (const reg of confirmedRegistrations) {
-    const km = KNOWN_EVENT_KM[reg.eventSlug] ?? 100;
-    totalClubRideKm += km;
+  if (confirmedRegistrations.length > 0) {
+    const slugs = confirmedRegistrations.map((r) => r.eventSlug);
+    const eventDocs = eventModel
+      ? await eventModel
+          .find({ slug: { $in: slugs } })
+          .select("slug routeData metadata")
+          .lean()
+      : [];
+    const eventMap = new Map(eventDocs.map((e) => [e.slug, e]));
+
+    for (const reg of confirmedRegistrations) {
+      const evt = eventMap.get(reg.eventSlug);
+      const distance = Number(
+        (evt?.routeData as Record<string, unknown> | undefined)?.distanceKm ??
+          evt?.metadata?.distanceKm ??
+          KNOWN_EVENT_KM[reg.eventSlug] ??
+          0,
+      );
+      if (Number.isFinite(distance) && distance > 0) {
+        totalClubRideKm += distance;
+      }
+    }
   }
 
   const shopOrders = await orderModel
@@ -135,10 +145,68 @@ export async function calculateClubTelemetry(
   };
 }
 
+export interface OdometerEstimationResult {
+  currentBaseKm: number;
+  intelligentEstimatedKm: number;
+  daysSinceLastUpdate: number;
+  estimatedKmIncrement: number;
+  inferredDailyRate: number;
+  lastUpdateDate: Date;
+}
+
+export interface DocumentAlertItem {
+  id: string;
+  title: string;
+  expiryDate?: Date | string | null;
+  daysRemaining: number | null;
+  status: string;
+  canRenewOneClick: boolean;
+  isRuntVerified: boolean;
+  runtVerifiedAt?: Date | string | null;
+  runtStatus?: string | null;
+  insuranceCompany?: string | null;
+  policyNumber?: string | null;
+  cdaName?: string | null;
+}
+
+export type TelemetryMotorcycleInput = Omit<
+  Partial<GarageMotorcycle>,
+  | "soatExpiryDate"
+  | "rtmExpiryDate"
+  | "licenseExpiryDate"
+  | "odometerLastUpdatedAt"
+  | "runtVerifiedAt"
+  | "usageProfile"
+> & {
+  currentOdometerKm?: number;
+  odometerLastUpdatedAt?: Date | string | null;
+  usageProfile?: UsageProfile | string;
+  soatExpiryDate?: Date | string | null;
+  rtmExpiryDate?: Date | string | null;
+  licenseExpiryDate?: Date | string | null;
+  isRuntVerified?: boolean;
+  runtVerifiedAt?: Date | string | null;
+  runtSoatStatus?: string | null;
+  runtRtmStatus?: string | null;
+  runtCdaName?: string | null;
+  insuranceCompany?: string | null;
+  policyNumber?: string | null;
+  brand?: string;
+  modelLine?: string;
+  plate?: string;
+  year?: number;
+  displacementCc?: number;
+};
+
+export type TelemetryOdometerLogInput = {
+  odometerKm: number;
+  recordedAt: Date | string;
+};
+
 export function calculateOdometerEstimation(
-  activeMoto: GarageMotorcycle,
-  odometerLogs: OdometerLog[],
-) {
+  activeMoto: TelemetryMotorcycleInput,
+  odometerLogs: TelemetryOdometerLogInput[],
+): OdometerEstimationResult {
   const currentBaseKm = activeMoto.currentOdometerKm ?? 0;
   const lastUpdateDate = activeMoto.odometerLastUpdatedAt
     ? new Date(activeMoto.odometerLastUpdatedAt)
@@ -149,7 +217,8 @@ export function calculateOdometerEstimation(
     Math.floor((Date.now() - lastUpdateDate.getTime()) / (1000 * 60 * 60 * 24)),
   );
 
-  let inferredDailyRate = PROFILE_DAILY_RATES[activeMoto.usageProfile] ?? 25.0;
+  const profile = (activeMoto.usageProfile ?? "daily_urban") as UsageProfile;
+  let inferredDailyRate = PROFILE_DAILY_RATES[profile] ?? 25.0;
 
   if (odometerLogs.length >= 2) {
     const latest = odometerLogs[0];
@@ -190,10 +259,18 @@ export function calculateOdometerEstimation(
   };
 }
 
-export function buildDocumentAlerts(activeMoto: GarageMotorcycle) {
-  const soatDays = calculateDaysRemaining(activeMoto.soatExpiryDate);
-  const rtmDays = calculateDaysRemaining(activeMoto.rtmExpiryDate);
-  const licenseDays = calculateDaysRemaining(activeMoto.licenseExpiryDate);
+export function buildDocumentAlerts(
+  activeMoto: TelemetryMotorcycleInput,
+): DocumentAlertItem[] {
+  const soatDays = calculateDaysRemaining(
+    parseDateOrNull(activeMoto.soatExpiryDate),
+  );
+  const rtmDays = calculateDaysRemaining(
+    parseDateOrNull(activeMoto.rtmExpiryDate),
+  );
+  const licenseDays = calculateDaysRemaining(
+    parseDateOrNull(activeMoto.licenseExpiryDate),
+  );
 
   return [
     {

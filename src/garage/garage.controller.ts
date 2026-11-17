@@ -177,7 +177,7 @@ export class GarageController {
 
   @Public()
   @Get(["allied/workshops", "allied-workshops"])
-  getAlliedWorkshops() {
-    return this.garageService.getAlliedWorkshops();
+  async getAlliedWorkshops() {
+    return await this.garageService.getAlliedWorkshops();
   }
 }

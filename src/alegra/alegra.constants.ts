@@ -66,7 +66,10 @@ export function mapPaymentMethod(method?: string | null): {
   payment: string;
 } {
   if (!method) return { invoice: "CASH", payment: "cash" };
-  const normalized = method.trim().toUpperCase().replace(/[\s-]+/g, "_");
+  const normalized = method
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, "_");
   return (
     ALEGRA_PAYMENT_METHOD_MAP[normalized] ?? {
       invoice: "CASH",
@@ -74,4 +77,3 @@ export function mapPaymentMethod(method?: string | null): {
     }
   );
 }
-

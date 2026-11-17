@@ -8,6 +8,7 @@ import {
 } from "./schemas/arpha-request.schema";
 import { UsersModule } from "../users/users.module";
 import { MapboxModule } from "../mapbox/mapbox.module";
+import { AdminModule } from "../admin/admin.module";
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { MapboxModule } from "../mapbox/mapbox.module";
     ]),
     UsersModule,
     MapboxModule,
+    AdminModule,
   ],
   controllers: [ArphaController],
   providers: [ArphaService],

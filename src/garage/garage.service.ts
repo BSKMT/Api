@@ -21,9 +21,14 @@ import {
   OdometerLogDocument,
 } from "./schemas/odometer-log.schema";
 import {
+  AlliedWorkshop,
+  AlliedWorkshopDocument,
+} from "./schemas/allied-workshop.schema";
+import {
   EventRegistration,
   EventRegistrationDocument,
 } from "../events/schemas/event-registration.schema";
+import { Event, EventDocument } from "../events/schemas/event.schema";
 import { Order, OrderDocument } from "../shop/schemas/order.schema";
 import { UsersService } from "../users/users.service";
 import { CreateMotorcycleDto } from "./dto/create-motorcycle.dto";
@@ -161,8 +166,12 @@ export class GarageService {
     private readonly odometerModel: Model<OdometerLogDocument>,
     @InjectModel(EventRegistration.name)
     private readonly eventRegistrationModel: Model<EventRegistrationDocument>,
+    @InjectModel(Event.name)
+    private readonly eventModel: Model<EventDocument>,
     @InjectModel(Order.name)
     private readonly orderModel: Model<OrderDocument>,
+    @InjectModel(AlliedWorkshop.name)
+    private readonly alliedWorkshopModel: Model<AlliedWorkshopDocument>,
     private readonly usersService: UsersService,
     private readonly verifikService: VerifikService,
     private readonly kvCache: KvCacheService,
@@ -254,7 +263,9 @@ export class GarageService {
         maintenanceModel: this.maintenanceModel,
         odometerModel: this.odometerModel,
         eventRegistrationModel: this.eventRegistrationModel,
+        eventModel: this.eventModel,
         orderModel: this.orderModel,
+        alliedWorkshopModel: this.alliedWorkshopModel,
       },
       this.usersService,
       userId,
@@ -346,8 +357,12 @@ export class GarageService {
     );
   }
 
-  getAlliedWorkshops() {
-    return ALLIED_WORKSHOPS;
+  async getAlliedWorkshops() {
+    const list = await this.alliedWorkshopModel
+      .find({ isActive: true })
+      .lean()
+      .exec();
+    return list.length > 0 ? list : ALLIED_WORKSHOPS;
   }
 
   async verifyMotorcycleWithRunt(

@@ -116,7 +116,8 @@ export interface VerifikSinisterRecord {
     amount?: number;
     description?: string;
   }>;
-  status: "LIMPIO" | "CON_HISTORIAL";
+  status: "LIMPIO" | "CON_HISTORIAL" | "DESCONOCIDO";
+  message?: string;
 }
 
 export interface VerifikPicoYPlacaRecord {

@@ -34,7 +34,7 @@ describe("MapboxService", () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: jest.fn().mockResolvedValue({ features: [] }),
-    } as unknown as Response);
+    });
 
     const result = await service.forwardGeocode("Inexistente");
     expect(result).toBeNull();
@@ -52,7 +52,7 @@ describe("MapboxService", () => {
           },
         ],
       }),
-    } as unknown as Response);
+    });
 
     const result = await service.forwardGeocode("Bogota");
     expect(result).toEqual({
@@ -81,7 +81,7 @@ describe("MapboxService", () => {
           },
         ],
       }),
-    } as unknown as Response);
+    });
 
     const result = await service.getRouteDirections(
       [-74.0636, 4.6752],

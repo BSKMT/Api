@@ -303,10 +303,11 @@ export class VerifikService {
     if (!fetchResult.ok) {
       return {
         plate: cleanPlate,
-        status: "AL_DIA",
+        status: "DESCONOCIDO",
         pendingYears: [],
         totalAmount: 0,
-        message: "Sin novedades registradas en impuestos distritales.",
+        message:
+          "La plataforma de impuestos distritales no está disponible en este momento para verificar el estado de cuenta.",
       };
     }
 
@@ -357,7 +358,9 @@ export class VerifikService {
         hasSinister: false,
         sinisterCount: 0,
         records: [],
-        status: "LIMPIO",
+        status: "DESCONOCIDO",
+        message:
+          "La plataforma de consulta de siniestros no se encuentra disponible temporalmente.",
       };
     }
 

@@ -1,4 +1,4 @@
-import type { GarageMotorcycle } from "./schemas/garage-motorcycle.schema";
+import type { UsageProfile } from "./schemas/garage-motorcycle.schema";
 import {
   type MaintenanceLog,
   MaintenanceType,
@@ -14,14 +14,54 @@ import {
   hasPartIntervention,
   getBaseNewPrice,
 } from "./garage-calc.helpers";
+import type { TelemetryMotorcycleInput } from "./garage-telemetry.helpers";
+
+export interface ComponentWearReport {
+  lifePercent: number;
+  remainingKm: number;
+  remainingDays: number;
+  lastServiceKm: number;
+  status: string;
+}
+
+export interface PredictiveHealthResult {
+  report: {
+    isLockedForFree: boolean;
+    oil?: ComponentWearReport;
+    chainKit?: ComponentWearReport;
+    brakes?: ComponentWearReport;
+  };
+  brakeLifePercent: number;
+  oilLifePercent: number;
+  chainLifePercent: number;
+  oilRemainingKm: number;
+}
+
+export interface AlliedVoucherItem {
+  id: string;
+  title: string;
+  component: string;
+  discountPercent: number;
+  workshopName: string;
+  validUntil: Date;
+  description: string;
+  couponCode: string;
+}
+
+export interface TcoResult {
+  costPerKm: number;
+  totalMaintenanceSpent: number;
+  estimatedMarketValue: number;
+  depreciationPercent: number;
+}
 
 export function calculatePredictiveHealth(
-  activeMoto: GarageMotorcycle,
+  activeMoto: TelemetryMotorcycleInput,
   intelligentEstimatedKm: number,
   inferredDailyRate: number,
   maintenanceLogs: MaintenanceLog[],
   isLegend: boolean,
-) {
+): PredictiveHealthResult {
   const currentBaseKm = activeMoto.currentOdometerKm ?? 0;
 
   const lastOilLog = maintenanceLogs.find((m) =>
@@ -43,11 +83,10 @@ export function calculatePredictiveHealth(
     ? lastBrakesLog.odometerKm
     : currentBaseKm * 0.6;
 
-  const oilInterval = 4500 / (OIL_DEGRADATION[activeMoto.usageProfile] ?? 1.0);
-  const chainInterval =
-    22000 / (CHAIN_DEGRADATION[activeMoto.usageProfile] ?? 1.0);
-  const brakeInterval =
-    12000 / (BRAKE_DEGRADATION[activeMoto.usageProfile] ?? 1.0);
+  const profile = (activeMoto.usageProfile ?? "daily_urban") as UsageProfile;
+  const oilInterval = 4500 / (OIL_DEGRADATION[profile] ?? 1.0);
+  const chainInterval = 22000 / (CHAIN_DEGRADATION[profile] ?? 1.0);
+  const brakeInterval = 12000 / (BRAKE_DEGRADATION[profile] ?? 1.0);
 
   const kmSinceOil = Math.max(0, intelligentEstimatedKm - lastOilKm);
   const kmSinceChain = Math.max(0, intelligentEstimatedKm - lastChainKm);
@@ -122,7 +161,7 @@ export function calculatePredictiveHealth(
 }
 
 export function generateAlliedVouchers(
-  activeMoto: GarageMotorcycle,
+  activeMoto: TelemetryMotorcycleInput,
   isLegend: boolean,
   health: {
     brakeLifePercent: number;
@@ -130,7 +169,8 @@ export function generateAlliedVouchers(
     chainLifePercent: number;
     oilRemainingKm: number;
   },
-) {
+  workshopName = "BSK Central Performance",
+): AlliedVoucherItem[] {
   const alliedVouchers: {
     id: string;
     title: string;
@@ -142,42 +182,44 @@ export function generateAlliedVouchers(
     couponCode: string;
   }[] = [];
 
+  const currentYear = new Date().getFullYear();
+
   if (health.brakeLifePercent <= 20) {
     alliedVouchers.push({
       id: "voucher-brakes-urgent",
-      title: "Bono Preferencial Pastillas Brembo",
+      title: "Bono Pastillas de Freno",
       component: "Pastillas de Freno",
       discountPercent: isLegend ? 25 : 10,
-      workshopName: "Brembo Official Service Partner",
+      workshopName,
       validUntil: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
       description: `Tu desgaste de pastillas está al ${health.brakeLifePercent}%. Reserva con descuento exclusivo para tu ${activeMoto.brand} ${activeMoto.modelLine}.`,
-      couponCode: `BREMBO-${activeMoto.plate}-2026`,
+      couponCode: `BSK-BRK-${activeMoto.plate}-${currentYear}`,
     });
   }
 
   if (health.oilLifePercent <= 20) {
     alliedVouchers.push({
       id: "voucher-oil-service",
-      title: "Bono Cambio de Aceite Sintético BSK",
+      title: "Bono Cambio de Aceite",
       component: "Aceite de Motor",
       discountPercent: isLegend ? 20 : 10,
-      workshopName: "BSK Central Performance",
+      workshopName,
       validUntil: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
       description: `Quedan aprox. ${health.oilRemainingKm} km de vida útil de lubricante. Servicio rápido con verificación oficial.`,
-      couponCode: `OILBSK-${activeMoto.plate}-2026`,
+      couponCode: `BSK-OIL-${activeMoto.plate}-${currentYear}`,
     });
   }
 
   if (health.chainLifePercent <= 20) {
     alliedVouchers.push({
       id: "voucher-chain-kit",
-      title: "Bono Kit de Arrastre Reforzado",
+      title: "Bono Kit de Arrastre",
       component: "Kit de Arrastre",
       discountPercent: isLegend ? 15 : 5,
-      workshopName: "Motos & Accesorios SAS — Taller Norte",
+      workshopName,
       validUntil: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000),
       description: `Desgaste detectado por telemetría. Alargue la vida de transmisión con cadena sellada X-Ring.`,
-      couponCode: `CHAIN-${activeMoto.plate}-2026`,
+      couponCode: `BSK-CHN-${activeMoto.plate}-${currentYear}`,
     });
   }
 
@@ -187,10 +229,10 @@ export function generateAlliedVouchers(
       title: "Inspección Preventiva de Seguridad BSK",
       component: "Mantenimiento General",
       discountPercent: isLegend ? 20 : 10,
-      workshopName: "BSK Central Performance",
+      workshopName,
       validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       description: `Revisión de 35 puntos de control de seguridad vial y escaneo computarizado para miembros del club.`,
-      couponCode: `BSKSAFE-${activeMoto.plate}-2026`,
+      couponCode: `BSK-PRV-${activeMoto.plate}-${currentYear}`,
     });
   }
 
@@ -198,10 +240,10 @@ export function generateAlliedVouchers(
 }
 
 export function calculateTcoAndMarketValue(
-  activeMoto: GarageMotorcycle,
+  activeMoto: TelemetryMotorcycleInput,
   intelligentEstimatedKm: number,
   maintenanceLogs: MaintenanceLog[],
-) {
+): TcoResult {
   let totalMaintenanceSpent = 0;
   for (const m of maintenanceLogs) {
     totalMaintenanceSpent += m.cost ?? 0;
@@ -214,7 +256,7 @@ export function calculateTcoAndMarketValue(
   const displacement = activeMoto.displacementCc ?? 250;
   const baseNewPrice = getBaseNewPrice(displacement);
 
-  const brandKey = activeMoto.brand.toLowerCase();
+  const brandKey = (activeMoto.brand ?? "").toLowerCase();
   const brandFactor = BRAND_MULTIPLIERS[brandKey] ?? 1.0;
   const currentYear = new Date().getFullYear();
   const ageYears = Math.max(0, currentYear - (activeMoto.year ?? currentYear));

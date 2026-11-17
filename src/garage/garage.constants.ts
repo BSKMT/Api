@@ -13,53 +13,26 @@ export const KNOWN_EVENT_KM: Record<string, number> = {
   "rodada-nocturna": 80,
 };
 
-export const ALLIED_WORKSHOPS = [
+export const INITIAL_ALLIED_WORKSHOPS = [
   {
     id: "bsk-central",
     name: "BSK Central Performance",
-    address: "Cra 7 # 73-28, Bogotá",
-    city: "Bogotá",
-    phone: "+57 310 890 1234",
+    address: "Carrera 5 A No. 36 A Sur 28",
+    city: "Bogotá, D.C.",
+    phone: "+576018191695",
     services: [
       "Mantenimiento General",
       "Cambio de Aceite",
       "Sincronización",
       "Frenos",
+      "Diagnóstico Computarizado",
     ],
     discountPercent: 20,
     isAlliedCertified: true,
   },
-  {
-    id: "motos-accesorios-norte",
-    name: "Motos & Accesorios SAS — Taller Norte",
-    address: "Autopista Norte # 145-20, Bogotá",
-    city: "Bogotá",
-    phone: "+57 320 456 7890",
-    services: ["Kit de Arrastre", "Pastillas Brembo", "Llantas Pirelli"],
-    discountPercent: 15,
-    isAlliedCertified: true,
-  },
-  {
-    id: "box54-chia",
-    name: "Box 54 Taller Especializado",
-    address: "Av. Pradilla # 4-80, Chía",
-    city: "Chía / Sabana",
-    phone: "+57 315 234 5678",
-    services: ["Suspensiones", "Diagnóstico Computarizado", "Mantenimiento"],
-    discountPercent: 15,
-    isAlliedCertified: true,
-  },
-  {
-    id: "brembo-racing-point",
-    name: "Brembo Official Service Partner",
-    address: "Calle 127 # 19-35, Bogotá",
-    city: "Bogotá",
-    phone: "+57 312 345 6789",
-    services: ["Pastillas Sinterizadas", "Líquido DOT 5.1", "Discos"],
-    discountPercent: 25,
-    isAlliedCertified: true,
-  },
 ];
+
+export const ALLIED_WORKSHOPS = INITIAL_ALLIED_WORKSHOPS;
 
 export const PROFILE_DAILY_RATES: Record<UsageProfile, number> = {
   [UsageProfile.DAILY_URBAN]: 28.5,

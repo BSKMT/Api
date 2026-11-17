@@ -1,19 +1,12 @@
 import { Logger } from "@nestjs/common";
 import { BirdEmailService } from "../../bird/bird-email.service";
 import { TicketDocument } from "../schemas/ticket.schema";
-import { syncTicketCustomerWithBird } from "./ticket-customer-sync.helper";
-import {
-  TicketNotificationContext,
-  sendTicketCreationNotifications,
-} from "./ticket-creation-notifications.helper";
+import { sendTicketCreationNotifications } from "./ticket-creation-notifications.helper";
 import { sendTicketReplyNotifications } from "./ticket-reply-notifications.helper";
 
-export type { TicketNotificationContext };
-export {
-  syncTicketCustomerWithBird,
-  sendTicketCreationNotifications,
-  sendTicketReplyNotifications,
-};
+export { syncTicketCustomerWithBird } from "./ticket-customer-sync.helper";
+export type { TicketNotificationContext } from "./ticket-creation-notifications.helper";
+export { sendTicketCreationNotifications, sendTicketReplyNotifications };
 
 // Backwards compatibility wrappers
 export async function sendTicketCreationEmail(
@@ -21,7 +14,7 @@ export async function sendTicketCreationEmail(
   ticket: TicketDocument,
   logger: Logger,
 ): Promise<void> {
-  return sendTicketCreationNotifications({ birdEmailService, logger }, ticket);
+  await sendTicketCreationNotifications({ birdEmailService, logger }, ticket);
 }
 
 export async function sendTicketReplyEmail(
@@ -31,7 +24,7 @@ export async function sendTicketReplyEmail(
   agentName: string,
   logger: Logger,
 ): Promise<void> {
-  return sendTicketReplyNotifications(
+  await sendTicketReplyNotifications(
     { birdEmailService, logger },
     ticket,
     replyContent,

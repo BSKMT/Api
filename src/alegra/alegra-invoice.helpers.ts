@@ -15,13 +15,12 @@ import {
 import type { KvCacheService } from "../kv/kv-cache.service";
 import type { EnvironmentConfig } from "../config/config.interface";
 
+export type AlegraHttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
 export async function discoverDefaultItemId(
   configService: ConfigService<EnvironmentConfig>,
   kvCache: KvCacheService,
-  makeRequest: <T>(
-    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
-    path: string,
-  ) => Promise<T | null>,
+  makeRequest: <T>(method: AlegraHttpMethod, path: string) => Promise<T | null>,
   logger: Logger,
 ): Promise<string | null> {
   const configured =
@@ -76,10 +75,7 @@ export async function discoverDefaultItemId(
 export async function discoverDefaultBankAccountId(
   configService: ConfigService<EnvironmentConfig>,
   kvCache: KvCacheService,
-  makeRequest: <T>(
-    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
-    path: string,
-  ) => Promise<T | null>,
+  makeRequest: <T>(method: AlegraHttpMethod, path: string) => Promise<T | null>,
   logger: Logger,
 ): Promise<string | null> {
   const configured =
@@ -101,9 +97,7 @@ export async function discoverDefaultBankAccountId(
           a.name?.toUpperCase().includes("BOLD") && a.status !== "inactive",
       );
       const chosen =
-        boldAcc ??
-        accounts.find((a) => a.status !== "inactive") ??
-        accounts[0];
+        boldAcc ?? accounts.find((a) => a.status !== "inactive") ?? accounts[0];
       if (chosen?.id) {
         const idStr = String(chosen.id);
         await kvCache.set(cacheKey, idStr, 86400, true);
@@ -125,10 +119,7 @@ export async function discoverDefaultBankAccountId(
 export async function discoverDefaultSellerId(
   configService: ConfigService<EnvironmentConfig>,
   kvCache: KvCacheService,
-  makeRequest: <T>(
-    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
-    path: string,
-  ) => Promise<T | null>,
+  makeRequest: <T>(method: AlegraHttpMethod, path: string) => Promise<T | null>,
   logger: Logger,
 ): Promise<string | null> {
   const configured =

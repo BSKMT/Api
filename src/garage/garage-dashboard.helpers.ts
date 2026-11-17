@@ -3,7 +3,9 @@ import { Model } from "mongoose";
 import type { GarageMotorcycleDocument } from "./schemas/garage-motorcycle.schema";
 import type { MaintenanceLogDocument } from "./schemas/maintenance-log.schema";
 import type { OdometerLogDocument } from "./schemas/odometer-log.schema";
+import type { AlliedWorkshopDocument } from "./schemas/allied-workshop.schema";
 import type { EventRegistrationDocument } from "../events/schemas/event-registration.schema";
+import type { EventDocument } from "../events/schemas/event.schema";
 import type { OrderDocument } from "../shop/schemas/order.schema";
 import type { UsersService } from "../users/users.service";
 import { ALLIED_WORKSHOPS } from "./garage.constants";
@@ -13,11 +15,16 @@ import {
   calculateClubTelemetry,
   calculateOdometerEstimation,
   buildDocumentAlerts,
+  type OdometerEstimationResult,
+  type DocumentAlertItem,
 } from "./garage-telemetry.helpers";
 import {
   calculatePredictiveHealth,
   generateAlliedVouchers,
   calculateTcoAndMarketValue,
+  type PredictiveHealthResult,
+  type AlliedVoucherItem,
+  type TcoResult,
 } from "./garage-health.helpers";
 
 export interface GarageDashboardModels {
@@ -26,6 +33,8 @@ export interface GarageDashboardModels {
   odometerModel: Model<OdometerLogDocument>;
   eventRegistrationModel: Model<EventRegistrationDocument>;
   orderModel: Model<OrderDocument>;
+  alliedWorkshopModel?: Model<AlliedWorkshopDocument>;
+  eventModel?: Model<EventDocument>;
 }
 
 export async function executeGetDashboard(
@@ -40,6 +49,8 @@ export async function executeGetDashboard(
     odometerModel,
     eventRegistrationModel,
     orderModel,
+    alliedWorkshopModel,
+    eventModel,
   } = models;
   const user = await usersService.findById(userId);
   if (!user) {
@@ -76,35 +87,48 @@ export async function executeGetDashboard(
     eventRegistrationModel,
     orderModel,
     userId,
+    eventModel,
   );
-  const [maintenanceLogs, odometerLogs] = await Promise.all([
+  const [maintenanceLogs, odometerLogs, dbWorkshops] = await Promise.all([
     maintenanceModel.find({ motorcycleId: motoId }).sort({ date: -1 }).lean(),
     odometerModel
       .find({ motorcycleId: motoId })
       .sort({ recordedAt: -1 })
       .limit(10)
       .lean(),
+    alliedWorkshopModel
+      ? alliedWorkshopModel.find({ isActive: true }).lean().exec()
+      : Promise.resolve([]),
   ]);
 
-  const odoData = calculateOdometerEstimation(activeMoto, odometerLogs);
-  const predictiveHealth = calculatePredictiveHealth(
+  const activeWorkshops =
+    dbWorkshops && dbWorkshops.length > 0 ? dbWorkshops : ALLIED_WORKSHOPS;
+
+  const odoData: OdometerEstimationResult = calculateOdometerEstimation(
+    activeMoto,
+    odometerLogs,
+  );
+  const predictiveHealth: PredictiveHealthResult = calculatePredictiveHealth(
     activeMoto,
     odoData.intelligentEstimatedKm,
     odoData.inferredDailyRate,
     maintenanceLogs,
     isLegend,
   );
-  const alliedVouchers = generateAlliedVouchers(
+  const defaultWorkshopName =
+    activeWorkshops[0]?.name ?? "BSK Central Performance";
+  const alliedVouchers: AlliedVoucherItem[] = generateAlliedVouchers(
     activeMoto,
     isLegend,
     predictiveHealth,
+    defaultWorkshopName,
   );
-  const tco = calculateTcoAndMarketValue(
+  const tco: TcoResult = calculateTcoAndMarketValue(
     activeMoto,
     odoData.intelligentEstimatedKm,
     maintenanceLogs,
   );
-  const documentAlerts = buildDocumentAlerts(activeMoto);
+  const documentAlerts: DocumentAlertItem[] = buildDocumentAlerts(activeMoto);
 
   return {
     hasVehicles: true,
@@ -125,7 +149,7 @@ export async function executeGetDashboard(
     tco,
     documentAlerts,
     maintenanceLogs,
-    alliedWorkshops: ALLIED_WORKSHOPS,
+    alliedWorkshops: activeWorkshops,
     alliedVouchers,
     tierLimits: {
       isLegend,
