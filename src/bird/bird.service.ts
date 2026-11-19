@@ -152,6 +152,7 @@ export class BirdService {
 
     const clientOpts: Record<string, unknown> = {
       apiKey: this.apiKey,
+      timeout: 10_000,
     };
     if (this.realtimeConfig) {
       clientOpts["realtime"] = {

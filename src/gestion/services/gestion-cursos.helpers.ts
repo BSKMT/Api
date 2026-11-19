@@ -76,15 +76,47 @@ export async function fetchEnrichedCourseRoster(
   enrollmentModel: Model<CourseEnrollmentDocument>,
   userModel: Model<UserDocument>,
   courseModel: Model<CourseDocument>,
+  actor: GestionActor,
 ) {
+  const isSuper =
+    actor.role === (UserRole.ADMIN as string) ||
+    actor.role === (UserRole.SUPERADMIN as string) ||
+    (actor.subrol as string | null) === (UserSubrole.LIDER_CURSOS as string);
+
+  let course = null;
   const filter: Record<string, unknown> = {};
+
   if (courseSlug) {
+    course = await courseModel
+      .findOne({ slug: courseSlug })
+      .select(
+        "_id slug title level format date coordinatorId coordinatorName coordinatorEmail",
+      )
+      .lean();
+    if (!course) {
+      return { course: null, enrollments: [] };
+    }
+    // M-03: Enforce coordinator scope before returning student PII/roster.
+    authorizeCourseCoordinator(course, actor);
     filter.courseSlug = courseSlug;
+  } else if (!isSuper) {
+    // Non-leader gestores without a specific courseSlug may only view courses they coordinate.
+    const assignedCourses = await courseModel
+      .find({ coordinatorId: actor.userId })
+      .select("slug")
+      .limit(100)
+      .lean();
+    const allowedSlugs = assignedCourses.map((c) => c.slug);
+    if (allowedSlugs.length === 0) {
+      return { course: null, enrollments: [] };
+    }
+    filter.courseSlug = { $in: allowedSlugs };
   }
 
   const enrollments = await enrollmentModel
     .find(filter)
     .sort({ createdAt: -1 })
+    .limit(500)
     .lean();
 
   const userIds = Array.from(
@@ -110,16 +142,6 @@ export async function fetchEnrichedCourseRoster(
       userPhone: attendee.phone,
     };
   });
-
-  let course = null;
-  if (courseSlug) {
-    course = await courseModel
-      .findOne({ slug: courseSlug })
-      .select(
-        "_id slug title level format date coordinatorId coordinatorName coordinatorEmail",
-      )
-      .lean();
-  }
 
   return { course, enrollments: enrichedEnrollments };
 }

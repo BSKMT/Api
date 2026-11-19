@@ -65,13 +65,31 @@ export async function validateRequesterAccess(
   return { isStaff };
 }
 
+export function canBypassSerializedToken(
+  requester: AuthenticatedRequestUser,
+): boolean {
+  const requesterRole = (requester.role || "").toLowerCase();
+  if (requesterRole === "superadmin") {
+    return true;
+  }
+  if (requesterRole === "admin") {
+    const perms = Array.isArray(requester.adminPermissions)
+      ? requester.adminPermissions
+      : [];
+    return perms.includes("*") || perms.includes("users");
+  }
+  return false;
+}
+
 export function validateAntiIdorAccess(
   isSerialized: boolean,
+  requester: AuthenticatedRequestUser,
   isStaff: boolean,
   isOwner: boolean,
   profileCompleted: boolean,
 ) {
-  if (!isSerialized && !isStaff && !isOwner) {
+  const canBypass = canBypassSerializedToken(requester);
+  if (!isSerialized && !canBypass && !isOwner) {
     throw new ForbiddenException(
       "Acceso restringido: Para proteger la privacidad y prevenir ataques de enumeración de miembros, debes usar el enlace seguro serializado o escanear el carnet oficial con la cámara.",
     );
@@ -133,6 +151,7 @@ export function buildPublicProfileResponse(
   user: PublicProfileTargetUser,
   requester: AuthenticatedRequestUser,
   isOwner: boolean,
+  isSerialized = false,
 ): Record<string, unknown> {
   const membershipInfo = computeMembershipStatus(user);
   const privacy = buildPrivacyFlags(user);
@@ -151,7 +170,7 @@ export function buildPublicProfileResponse(
 
   const operationalData = isOwner
     ? null
-    : buildPrivilegedSection(user, requester);
+    : buildPrivilegedSection(user, requester, isSerialized);
 
   const memberSince = user.createdAt
     ? new Date(user.createdAt).toISOString()

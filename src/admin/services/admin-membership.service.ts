@@ -7,6 +7,7 @@ import {
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { BirdContactService } from "../../bird/bird-contact.service";
+import { KvCacheService } from "../../kv/kv-cache.service";
 import {
   MembershipTransaction,
   MembershipTransactionDocument,
@@ -75,7 +76,20 @@ export class AdminMembershipService {
     private readonly refundRequestModel: Model<SavingsRefundRequestDocument>,
     @Optional()
     private readonly birdContactService?: BirdContactService,
+    @Optional()
+    private readonly kvCache?: KvCacheService,
   ) {}
+
+  private async invalidateUserAuthCache(userId: string): Promise<void> {
+    if (!this.kvCache) return;
+    const u = await this.userModel
+      .findById(userId)
+      .select("betterAuthId")
+      .lean();
+    if (u?.betterAuthId) {
+      await this.kvCache.delete(`user:ba:${u.betterAuthId}`, true).catch(() => {});
+    }
+  }
 
   async listTransactions(filters: {
     status?: string;
@@ -118,6 +132,7 @@ export class AdminMembershipService {
       userId,
       actorId,
     );
+    await this.invalidateUserAuthCache(userId);
     this.birdContactService?.syncUser(userId).catch(() => {});
     return result;
   }
@@ -136,6 +151,7 @@ export class AdminMembershipService {
       userId,
       { unit, amount, baseDateStr, actorId },
     );
+    await this.invalidateUserAuthCache(userId);
     this.birdContactService?.syncUser(userId).catch(() => {});
     return result;
   }
@@ -148,6 +164,7 @@ export class AdminMembershipService {
       userId,
       actorId,
     );
+    await this.invalidateUserAuthCache(userId);
     this.birdContactService?.syncUser(userId).catch(() => {});
     return result;
   }

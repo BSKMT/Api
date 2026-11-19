@@ -4,6 +4,7 @@ import type { AuthInstance } from "../auth/better-auth";
 /** Typed shape of the `better-auth/node` module (avoids unsafe dynamic import). */
 interface BetterAuthNodeModule {
   toNodeHandler: (auth: AuthInstance) => (req: Request, res: Response) => void;
+  fromNodeHeaders: (headers: unknown) => Headers;
 }
 
 const authRateLimit = new Map<string, { count: number; resetAt: number }>();
@@ -12,12 +13,33 @@ const MAX_MAP_SIZE = 10_000;
 export const SENSITIVE_AUTH_PATHS = new Set([
   "/sign-in/email",
   "/sign-up/email",
+  "/send-verification-email",
   "/reset-password",
   "/request-password-reset",
+  "/forget-password",
+  "/change-password",
+  "/change-email",
+  "/delete-user",
+  "/passkey/generate-authenticate-options",
+  "/passkey/verify-authentication",
+  "/two-factor/verify-totp",
+  "/two-factor/verify-otp",
+]);
+
+const OTP_PENDING_ALLOWED_AUTH_PATHS = new Set([
+  "/sign-out",
+  "/get-session",
+  "/sign-up/email",
+  "/verify-email",
+  "/send-verification-email",
+  "/reset-password",
+  "/request-password-reset",
+  "/forget-password",
 ]);
 
 export function shouldSkipAuthRoute(path: string): boolean {
-  return path === "/me" || path === "/me/" || path.startsWith("/login-otp/");
+  const lower = path.toLowerCase();
+  return lower === "/me" || lower === "/me/" || lower.startsWith("/login-otp/");
 }
 
 function resolveAuthClientIp(req: Request): string {
@@ -56,8 +78,8 @@ export function enforceAuthRateLimit(
   const ip = resolveAuthClientIp(req);
   const key = `${ip}:${path}`;
   const now = Date.now();
-  const windowMs = 60000;
-  const maxRequests = 10;
+  const windowMs = path === "/send-verification-email" ? 300_000 : 60_000;
+  const maxRequests = path === "/send-verification-email" ? 3 : 10;
   const entry = authRateLimit.get(key);
   if (entry && entry.count >= maxRequests && now < entry.resetAt) {
     res
@@ -74,18 +96,37 @@ export function enforceAuthRateLimit(
   return true;
 }
 
+function normalizeAuthPath(raw: string): string | null {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    return null;
+  }
+  if (
+    decoded.includes("\\") ||
+    decoded.split("/").some((seg) => seg === "." || seg === "..")
+  ) {
+    return null;
+  }
+  let path = decoded.replace(/\/{2,}/g, "/").toLowerCase();
+  while (path.length > 1 && path.endsWith("/")) {
+    path = path.slice(0, -1);
+  }
+  return path;
+}
+
 export async function createBetterAuthMiddleware(auth: AuthInstance) {
-  const { toNodeHandler } =
+  const { toNodeHandler, fromNodeHeaders } =
     (await import("better-auth/node")) as BetterAuthNodeModule;
   const authHandler = toNodeHandler(auth);
 
-  return (req: Request, res: Response, next: NextFunction) => {
-    const rawPath = req.path.replace(/\/{2,}/g, "/");
-    let path = rawPath;
-    while (path.length > 1 && path.endsWith("/")) {
-      path = path.slice(0, -1);
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const path = normalizeAuthPath(req.path);
+    if (path === null) {
+      return res.status(400).json({ message: "Invalid auth route" });
     }
-    if (shouldSkipAuthRoute(rawPath)) {
+    if (shouldSkipAuthRoute(path)) {
       return next();
     }
     if (path === "/sign-in/email" || path.startsWith("/sign-in/social")) {
@@ -96,6 +137,30 @@ export async function createBetterAuthMiddleware(auth: AuthInstance) {
         return;
       }
     }
+
+    // F-04: Reject otpPending sessions on Better-Auth's own endpoints (e.g. passkey enroll,
+    // session revocation, update-user) except sign-out / get-session / unauthenticated flows.
+    const cookieHeader = req.headers.cookie ?? "";
+    if (
+      !OTP_PENDING_ALLOWED_AUTH_PATHS.has(path) &&
+      cookieHeader.includes("better-auth.session_token")
+    ) {
+      try {
+        const session = await auth.api.getSession({
+          headers: fromNodeHeaders(req.headers),
+          query: { disableCookieCache: true },
+        });
+        if (session?.session?.otpPending === true) {
+          return res.status(401).json({
+            message:
+              "No autorizado — verificación de segundo factor (OTP) pendiente",
+          });
+        }
+      } catch {
+        // Proceed to authHandler if session lookup fails cleanly
+      }
+    }
+
     return authHandler(req, res);
   };
 }

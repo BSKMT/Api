@@ -40,6 +40,7 @@ import {
 } from "../services/gestion-eventos.helpers";
 import { processEventScanCheckIn } from "../services/gestion-eventos-scan.helpers";
 import type { GestionActor } from "../services/gestion-cursos.helpers";
+import { ensureString } from "../../common/utils/sanitize-query.util";
 import { IsString, IsNotEmpty, IsOptional, MaxLength } from "class-validator";
 
 export class ScanEventCheckInDto {
@@ -91,14 +92,16 @@ export class GestionEventosController {
   @Get("registrations/:eventId")
   async listRegistrations(
     @Param("eventId", ParseObjectIdPipe) eventId: string,
-    @Query("search") search?: string,
+    @Req() req: AuthenticatedGestionRequest,
+    @Query("search") search?: unknown,
   ) {
     return fetchEnrichedEventRegistrations(
       eventId,
-      search,
+      ensureString(search),
       this.eventModel,
       this.registrationModel,
       this.userModel,
+      req.user,
     );
   }
 

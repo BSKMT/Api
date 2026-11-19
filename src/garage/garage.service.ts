@@ -58,12 +58,18 @@ import {
   normalizeRuntDocumentType,
   normalizeRuntDocumentNumber,
 } from "../verifik/verifik-runt.helpers";
-import { isSectionValid } from "../users/users-profile.helper";
-import { REQUIRED_PROFILE_SECTIONS } from "../users/schemas/user.schema";
+import { isActiveLegendMember } from "../common/utils/membership-access.util";
 import type {
   VerifikRuntLookupResult,
   VerifikRuntVehicleRecord,
+  VerifikFullDiagnosticRecord,
 } from "../verifik/verifik.interfaces";
+
+function maskDocumentNumber(doc?: string): string {
+  if (!doc) return "***";
+  if (doc.length <= 4) return "***";
+  return `${"*".repeat(doc.length - 4)}${doc.slice(-4)}`;
+}
 
 function parseDateIfValid(val: unknown): Date | null {
   if (typeof val !== "string" || !val.trim()) return null;
@@ -113,6 +119,7 @@ function buildVerifiedMotoProfile(
   record: VerifikRuntVehicleRecord,
   cleanDocNumber: string,
   cleanDocType: string,
+  ownershipVerified: boolean,
 ): Record<string, unknown> {
   const motoProfile: Record<string, unknown> = {
     ...existingMoto,
@@ -133,9 +140,9 @@ function buildVerifiedMotoProfile(
       cleanDocNumber || existingMoto.documentoPropietario || "",
     tipoDocumentoPropietario:
       cleanDocType || existingMoto.tipoDocumentoPropietario || "CC",
-    verificadaRunt: "true",
-    verificadaAt: new Date().toISOString(),
-    estadoRunt: "ACTIVO",
+    verificadaRunt: ownershipVerified ? "true" : "false",
+    verificadaAt: ownershipVerified ? new Date().toISOString() : undefined,
+    estadoRunt: ownershipVerified ? "ACTIVO" : "PENDIENTE_PROPIETARIO",
   };
 
   if (record.soat?.expiryDate) {
@@ -278,7 +285,7 @@ export class GarageService {
     if (!user) {
       throw new NotFoundException("Usuario no encontrado");
     }
-    const isLegend = user.membershipLevel === "Legend";
+    const isLegend = isActiveLegendMember(user);
     return executeCreateMotorcycle(
       this.motorcycleModel,
       this.odometerModel,
@@ -398,34 +405,64 @@ export class GarageService {
     }
   }
 
-  async lookupVehicleByPlate(
-    plate: string,
-    documentNumber?: string,
-    documentType?: string,
-  ) {
+  async lookupVehicleByPlate(userId: string, plate: string) {
     const cleanPlate = plate.trim().toUpperCase();
-    const cleanType = normalizeRuntDocumentType(documentType);
-    const cleanDoc = normalizeRuntDocumentNumber(cleanType, documentNumber);
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException("Usuario no encontrado");
+    }
 
-    if (cleanDoc) {
-      const docResult = await this.verifikService.verifyRuntVehicle(
-        cleanType,
-        cleanDoc,
-        cleanPlate,
-      );
-      if (docResult.ok) {
-        return docResult.record;
+    const cacheKey = `runt:plate:${userId}:${cleanPlate}`;
+    if (this.kvCache?.isAvailable()) {
+      const cached = await this.kvCache
+        .get<VerifikRuntVehicleRecord>(cacheKey, true)
+        .catch(() => null);
+      if (cached) {
+        return cached;
       }
-      this.logger.warn(
-        `RUNT query with plate ${cleanPlate} and document ${cleanDoc} (${cleanType}) did not return record: ${docResult.message}. Falling back to plate-only query.`,
-      );
     }
 
-    const res = await this.verifikService.verifyRuntVehicleByPlate(cleanPlate);
-    if (!res.ok) {
-      throw new BadRequestException(res.message);
+    await this.enforceRuntUserThrottle(userId);
+
+    // H-02: Restrict document lookup strictly to the authenticated user's own verified KYC document.
+    const cleanType = normalizeRuntDocumentType(
+      user.identityVerification?.documentType,
+    );
+    const cleanDoc = normalizeRuntDocumentNumber(
+      cleanType,
+      user.identityVerification?.documentNumber,
+    );
+
+    try {
+      let record: VerifikRuntVehicleRecord;
+      if (cleanDoc) {
+        const docResult = await this.verifikService.verifyRuntVehicle(
+          cleanType,
+          cleanDoc,
+          cleanPlate,
+        );
+        if (docResult.ok) {
+          record = docResult.record;
+          await this.kvCache
+            ?.set(cacheKey, record, 600, true)
+            .catch(() => {});
+          return record;
+        }
+        this.logger.warn(
+          `RUNT query with plate ${cleanPlate} and document ${maskDocumentNumber(cleanDoc)} (${cleanType}) did not return record: ${docResult.message}. Falling back to plate-only query.`,
+        );
+      }
+
+      const res = await this.verifikService.verifyRuntVehicleByPlate(cleanPlate);
+      if (!res.ok) {
+        throw new BadRequestException(res.message);
+      }
+      record = res.record;
+      await this.kvCache?.set(cacheKey, record, 600, true).catch(() => {});
+      return record;
+    } finally {
+      await this.recordRuntUserAttempt(userId);
     }
-    return res.record;
   }
 
   async getMotorcycleDiagnostic(userId: string, motorcycleId: string) {
@@ -438,37 +475,55 @@ export class GarageService {
     });
     if (!moto) throw new NotFoundException("Motocicleta no encontrada");
 
+    const cacheKey = `diag:verifik:${userId}:${moto.plate}`;
+    if (this.kvCache?.isAvailable()) {
+      const cached = await this.kvCache
+        .get<VerifikFullDiagnosticRecord>(cacheKey, true)
+        .catch(() => null);
+      if (cached) {
+        return cached;
+      }
+    }
+
+    await this.enforceRuntUserThrottle(userId);
+
     const personal = user.profile?.["datos-personales"] as
       Record<string, unknown> | undefined;
     const docHolder =
-      moto.runtDocumentHolder ||
       user.identityVerification?.documentNumber ||
+      moto.runtDocumentHolder ||
       (typeof personal?.numeroDocumento === "string"
         ? personal.numeroDocumento
         : undefined);
     const docType =
-      moto.runtDocumentType ||
       user.identityVerification?.documentType ||
+      moto.runtDocumentType ||
       (typeof personal?.tipoDocumento === "string"
         ? personal.tipoDocumento
         : "CC");
 
-    return this.verifikService.getFullVehicleDiagnostic(
-      {
-        plate: moto.plate,
-        fallbackRecord: {
+    try {
+      const diagnostic = await this.verifikService.getFullVehicleDiagnostic(
+        {
           plate: moto.plate,
-          brand: moto.brand,
-          modelLine: moto.modelLine,
-          year: moto.year,
-          displacementCc: moto.displacementCc,
-          color: moto.color,
-          vinOrChassis: moto.vinOrEngineNumber ?? undefined,
+          fallbackRecord: {
+            plate: moto.plate,
+            brand: moto.brand,
+            modelLine: moto.modelLine,
+            year: moto.year,
+            displacementCc: moto.displacementCc,
+            color: moto.color,
+            vinOrChassis: moto.vinOrEngineNumber ?? undefined,
+          },
         },
-      },
-      docHolder,
-      docType,
-    );
+        docHolder,
+        docType,
+      );
+      await this.kvCache?.set(cacheKey, diagnostic, 900, true).catch(() => {});
+      return diagnostic;
+    } finally {
+      await this.recordRuntUserAttempt(userId);
+    }
   }
 
   async syncMotorcycleWithVerifik(
@@ -550,7 +605,7 @@ export class GarageService {
       .toUpperCase();
     if (!plate) return null;
 
-    const isLegend = user.membershipLevel === "Legend";
+    const isLegend = isActiveLegendMember(user);
     const { moto, isNew } = await this.resolveProfileMotorcycle(
       userId,
       plate,
@@ -582,7 +637,7 @@ export class GarageService {
           return docResult;
         }
         this.logger.warn(
-          `RUNT query with plate ${cleanPlate} and document ${cleanDocNumber} (${cleanDocType}) did not return vehicle: ${docResult.message}. Falling back to plate-only query.`,
+          `RUNT query with plate ${cleanPlate} and document ${maskDocumentNumber(cleanDocNumber)} (${cleanDocType}) did not return vehicle: ${docResult.message}. Falling back to plate-only query.`,
         );
       }
       return await this.verifikService.verifyRuntVehicleByPlate(cleanPlate);
@@ -597,6 +652,7 @@ export class GarageService {
     motoProfile: Record<string, unknown>,
     cleanDocNumber: string,
     cleanDocType: string,
+    ownershipVerified: boolean,
   ): Promise<GarageMotorcycleDocument> {
     await this.motorcycleModel.updateMany(
       { userId, plate: { $ne: record.plate }, isPrimary: true },
@@ -618,8 +674,14 @@ export class GarageService {
     }
 
     applyProfileFieldsToMotorcycle(moto, motoProfile);
-    moto.isRuntVerified = true;
-    moto.runtVerifiedAt = new Date();
+    // H-03: Only assert RUNT ownership verification when document+plate matched.
+    if (ownershipVerified) {
+      moto.isRuntVerified = true;
+      moto.runtVerifiedAt = new Date();
+    } else {
+      moto.isRuntVerified = false;
+      moto.runtVerifiedAt = null;
+    }
     if (record.soat?.status) {
       moto.runtSoatStatus = record.soat.status;
     }
@@ -648,16 +710,24 @@ export class GarageService {
       throw new BadRequestException("La placa de la motocicleta es requerida.");
     }
 
-    const cleanDocType = normalizeRuntDocumentType(dto.documentType);
-    const cleanDocNumber = normalizeRuntDocumentNumber(
-      cleanDocType,
-      dto.documentNumber,
-    );
-
     const user = await this.usersService.findById(userId);
     if (!user) {
       throw new NotFoundException("Usuario no encontrado.");
     }
+    if (!user.identityVerified) {
+      throw new BadRequestException(
+        "Debes verificar tu identidad antes de consultar y sincronizar tu motocicleta con el RUNT.",
+      );
+    }
+
+    // H-02: Bind document lookup to the authenticated user's verified KYC document.
+    const cleanDocType = normalizeRuntDocumentType(
+      user.identityVerification?.documentType ?? dto.documentType,
+    );
+    const cleanDocNumber = normalizeRuntDocumentNumber(
+      cleanDocType,
+      user.identityVerification?.documentNumber ?? dto.documentNumber,
+    );
 
     const vehicleResult = await this.resolveRuntLookup(
       userId,
@@ -674,6 +744,7 @@ export class GarageService {
     }
 
     const record = vehicleResult.record;
+    const ownershipVerified = vehicleResult.ownershipVerified === true;
     const profile = user.profile ?? {};
     const existingMoto =
       (profile["motocicleta"] as Record<string, unknown> | undefined) ?? {};
@@ -683,27 +754,14 @@ export class GarageService {
       record,
       cleanDocNumber,
       cleanDocType,
+      ownershipVerified,
     );
 
-    profile["motocicleta"] = motoProfile;
-    user.profile = profile;
-
-    const isComplete = isSectionValid(
-      "motocicleta",
+    // H-03: Persist via Mongoose document on UsersService (fixes .lean().save() runtime crash).
+    const savedUser = await this.usersService.saveProfileMotorcycleSection(
+      userId,
       motoProfile,
-      Boolean(user.identityVerified),
     );
-    const completedSections = [...(user.completedSections ?? [])];
-    if (isComplete && !completedSections.includes("motocicleta")) {
-      completedSections.push("motocicleta");
-    }
-    user.completedSections = completedSections;
-    user.profileCompleted =
-      REQUIRED_PROFILE_SECTIONS.every((s) => completedSections.includes(s)) &&
-      Boolean(user.identityVerified);
-
-    user.markModified("profile");
-    await user.save();
 
     const moto = await this.syncPrimaryMotorcycle(
       userId,
@@ -711,14 +769,18 @@ export class GarageService {
       motoProfile,
       cleanDocNumber,
       cleanDocType,
+      ownershipVerified,
     );
 
     return {
       ok: true,
-      message: `¡Motocicleta verificada y sincronizada exitosamente con RUNT! ${record.brand ?? ""} ${record.modelLine ?? ""} (Placa: ${record.plate}). Registrada como tu motocicleta principal en el Garaje.`,
-      profile: user.profile,
-      completedSections: user.completedSections,
-      profileCompleted: user.profileCompleted,
+      ownershipVerified,
+      message: ownershipVerified
+        ? `¡Motocicleta verificada y sincronizada exitosamente con RUNT! ${record.brand ?? ""} ${record.modelLine ?? ""} (Placa: ${record.plate}). Registrada como tu motocicleta principal en el Garaje.`
+        : `Motocicleta consultada en RUNT (${record.brand ?? ""} ${record.modelLine ?? ""}, Placa: ${record.plate}). No se confirmó coincidencia de titularidad con tu documento verificado.`,
+      profile: savedUser.profile,
+      completedSections: savedUser.completedSections,
+      profileCompleted: savedUser.profileCompleted,
       motorcycle: moto,
     };
   }

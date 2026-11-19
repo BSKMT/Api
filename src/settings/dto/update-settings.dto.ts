@@ -36,6 +36,27 @@ export class UpdateSettingsDto {
   // M-9/M-10: depth-limit and maxKeys to prevent DoS via deeply nested JSON
   private static readonly MAX_DEPTH = 5;
   private static readonly MAX_KEYS = 50;
+  private static readonly MAX_ARRAY_ITEMS = 50;
+  private static readonly MAX_STRING_LEN = 500;
+
+  private static sanitizeValue(value: unknown, depth: number): unknown {
+    if (Array.isArray(value)) {
+      return value
+        .slice(0, UpdateSettingsDto.MAX_ARRAY_ITEMS)
+        .map((item) => UpdateSettingsDto.sanitizeValue(item, depth + 1));
+    }
+    if (value && typeof value === "object") {
+      return UpdateSettingsDto.sanitize(
+        value as Record<string, unknown>,
+        undefined,
+        depth + 1,
+      );
+    }
+    if (typeof value === "string") {
+      return value.slice(0, UpdateSettingsDto.MAX_STRING_LEN);
+    }
+    return value;
+  }
 
   static sanitize(
     obj: Record<string, unknown>,
@@ -50,17 +71,12 @@ export class UpdateSettingsDto {
     let keyCount = 0;
     for (const [key, value] of Object.entries(obj)) {
       if (++keyCount > this.MAX_KEYS) break;
-      if (FORBIDDEN_KEYS.has(key)) continue;
-      if (allowedKeys && !allowedKeys.has(key)) continue;
-      if (value && typeof value === "object" && !Array.isArray(value)) {
-        cleaned[key] = UpdateSettingsDto.sanitize(
-          value as Record<string, unknown>,
-          undefined,
-          depth + 1,
-        );
-      } else {
-        cleaned[key] = value;
+      // L-08: Reject MongoDB operator keys ($) and dot-notation keys (.) at every level.
+      if (FORBIDDEN_KEYS.has(key) || key.startsWith("$") || key.includes(".")) {
+        continue;
       }
+      if (allowedKeys && !allowedKeys.has(key)) continue;
+      cleaned[key] = UpdateSettingsDto.sanitizeValue(value, depth);
     }
     return cleaned;
   }

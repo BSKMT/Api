@@ -135,6 +135,7 @@ export class SavingsPlanService {
     const plan = await this.getOrCreateUserSavingsPlan(userId);
     return executeRequestRefund(
       plan,
+      this.savingsPlanModel,
       this.refundRequestModel,
       this.notificationsService,
       userId,

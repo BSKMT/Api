@@ -18,7 +18,10 @@ import {
 } from "./login-otp-crypto.helper";
 import { maskEmail } from "../common/utils/log-redact.util";
 
-const FULL_SESSION_TTL_MS = 60 * 24 * 60 * 60 * 1000;
+const STANDARD_SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24h when rememberMe=false
+const REMEMBERED_MEMBER_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7d matching Better Auth config
+const PRIVILEGED_SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24h cap for staff/admin/superadmin
+const PRIVILEGED_ROLES = new Set(["admin", "superadmin", "gestor"]);
 
 export async function revokeEncryptedOtpSession(
   otpRecord: LoginOtpDocument,
@@ -42,16 +45,51 @@ export async function revokeEncryptedOtpSession(
 
 async function promoteBetterAuthSessionOnOtpSuccess(
   rawCookies: string[],
-): Promise<void> {
+  betterAuthId?: string,
+): Promise<{ maxAgeSeconds?: number }> {
   const token = extractSessionTokenFromCookies(rawCookies);
-  if (!token) return;
+  if (!token) return {};
   try {
     const db = getMongoDb();
+    const existingSession = await db
+      .collection("session")
+      .findOne({ token }, { projection: { rememberMe: 1, userId: 1 } });
+    const rememberMe = existingSession?.rememberMe === true;
+
+    let isPrivileged = false;
+    const lookupBaId =
+      betterAuthId ||
+      (typeof existingSession?.userId === "string"
+        ? existingSession.userId
+        : undefined);
+    if (lookupBaId) {
+      const userDoc = await db
+        .collection("users")
+        .findOne(
+          { betterAuthId: lookupBaId },
+          { projection: { role: 1, subrol: 1 } },
+        );
+      if (userDoc) {
+        const role = typeof userDoc["role"] === "string" ? userDoc["role"] : "";
+        const subrol = userDoc["subrol"];
+        isPrivileged =
+          PRIVILEGED_ROLES.has(role) ||
+          (typeof subrol === "string" && subrol.trim().length > 0);
+      }
+    }
+
+    let ttlMs = STANDARD_SESSION_TTL_MS;
+    if (rememberMe) {
+      ttlMs = isPrivileged
+        ? PRIVILEGED_SESSION_TTL_MS
+        : REMEMBERED_MEMBER_SESSION_TTL_MS;
+    }
+
     await db.collection("session").updateOne(
       { token },
       {
         $set: {
-          expiresAt: new Date(Date.now() + FULL_SESSION_TTL_MS),
+          expiresAt: new Date(Date.now() + ttlMs),
         },
         $unset: {
           otpPending: "",
@@ -59,8 +97,11 @@ async function promoteBetterAuthSessionOnOtpSuccess(
         },
       },
     );
+    return {
+      maxAgeSeconds: rememberMe ? Math.floor(ttlMs / 1000) : undefined,
+    };
   } catch {
-    // Non-fatal
+    return {};
   }
 }
 
@@ -215,7 +256,10 @@ export async function processBirdCheckResult(
       );
     }
 
-    await promoteBetterAuthSessionOnOtpSuccess(rawCookies);
+    await promoteBetterAuthSessionOnOtpSuccess(
+      rawCookies,
+      otpRecord.betterAuthId,
+    );
 
     const isProd = process.env.NODE_ENV === "production";
     const setCookieHeaders = rawCookies.map((sc) => {

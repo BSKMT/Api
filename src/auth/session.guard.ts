@@ -137,6 +137,7 @@ export class SessionGuard {
     const fromNodeHeaders = await loadFromNodeHeaders();
     const session: BetterAuthSessionData | null = await auth.api.getSession({
       headers: fromNodeHeaders(request.headers),
+      query: { disableCookieCache: true },
     });
 
     if (!session) {

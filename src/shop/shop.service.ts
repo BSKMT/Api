@@ -71,9 +71,15 @@ export class ShopService implements OnModuleInit {
     featuredOnly = false,
     collection?: string,
   ): Promise<ProductDocument[]> {
-    const cacheKey = `shop:products:${limit}:${featuredOnly}:${collection ?? ""}`;
-    const cached = await this.kvCache.get<ProductDocument[]>(cacheKey);
-    if (cached) return cached;
+    const cleanCollection =
+      collection && /^[a-zA-Z0-9 _-]{1,64}$/.test(collection.trim())
+        ? collection.trim()
+        : undefined;
+    const cacheKey = `shop:products:${limit}:${featuredOnly}:${cleanCollection ?? ""}`;
+    if (!collection || cleanCollection) {
+      const cached = await this.kvCache.get<ProductDocument[]>(cacheKey);
+      if (cached) return cached;
+    }
 
     const filter: Record<string, unknown> = { status: ProductStatus.PUBLISHED };
     if (featuredOnly) filter.featured = true;
@@ -87,7 +93,10 @@ export class ShopService implements OnModuleInit {
       .limit(limit)
       .lean();
 
-    await this.kvCache.set(cacheKey, result, 300);
+    // M-11: Avoid KV cache key explosion by only caching valid collections with results (or unfiltered listings).
+    if (!collection || (cleanCollection && result.length > 0)) {
+      await this.kvCache.set(cacheKey, result, 300);
+    }
     return result;
   }
 

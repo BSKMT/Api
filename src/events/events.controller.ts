@@ -29,6 +29,7 @@ import { CancelEventDto } from "./dto/cancel-event.dto";
 import type { EnvironmentConfig } from "../config/config.interface";
 
 import { clampPaginationLimit, assertCronSecret } from "./events.helpers";
+import { isActiveMember } from "../common/utils/membership-access.util";
 
 interface AuthenticatedRequest extends Request {
   user: { userId: string; email?: string };
@@ -89,12 +90,7 @@ export class EventsController {
   ) {
     const { userId } = req.user;
     const fullUser = await this.usersService.findById(userId);
-    const isActiveMember =
-      fullUser?.role === "member" &&
-      !fullUser?.membershipExpired &&
-      (!fullUser?.membershipExpiryDate ||
-        new Date(fullUser.membershipExpiryDate) > new Date());
-    const membershipLevel = isActiveMember
+    const membershipLevel = isActiveMember(fullUser)
       ? (fullUser?.membershipLevel ?? null)
       : null;
     const registration = await this.eventsService.registerForEvent(
@@ -113,21 +109,6 @@ export class EventsController {
   ) {
     const { userId } = req.user;
     return this.eventsService.confirmRegistration(userId, dto.eventSlug);
-  }
-
-  @Get(["confirm", "confirm/:eventSlug"])
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
-  async confirmRegistrationGet(
-    @Req() req: AuthenticatedRequest,
-    @Param("eventSlug") paramSlug?: string,
-    @Query("eventSlug") querySlug?: string,
-  ) {
-    const { userId } = req.user;
-    const eventSlug = paramSlug || querySlug;
-    if (!eventSlug) {
-      throw new BadRequestException("El parámetro eventSlug es requerido");
-    }
-    return this.eventsService.confirmRegistration(userId, eventSlug);
   }
 
   @Post("waiver")
@@ -171,7 +152,9 @@ export class EventsController {
   ) {
     const { userId } = req.user;
     const fullUser = await this.usersService.findById(userId);
-    const membershipLevel = fullUser?.membershipLevel ?? null;
+    const membershipLevel = isActiveMember(fullUser)
+      ? (fullUser?.membershipLevel ?? null)
+      : null;
     const event = await this.eventsService.getEventBySlug(eventSlug);
     if (!event) {
       throw new BadRequestException("Evento no encontrado");

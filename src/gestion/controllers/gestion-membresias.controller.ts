@@ -29,6 +29,8 @@ import {
   UserSubrole,
 } from "../../users/schemas/user.schema";
 import { ParseObjectIdPipe } from "../../common/pipes/parse-object-id.pipe";
+import { ensureString } from "../../common/utils/sanitize-query.util";
+import { parsePositiveInt } from "../../common/utils/pagination.util";
 import { KvCacheService } from "../../kv/kv-cache.service";
 import {
   SecurityAuditService,
@@ -59,33 +61,33 @@ export class GestionMembresiasController {
 
   @Get("members")
   async listMembers(
-    @Query("search") search?: string,
-    @Query("limit") limit?: string,
-    @Query("page") page?: string,
+    @Query("search") search?: unknown,
+    @Query("limit") limit?: unknown,
+    @Query("page") page?: unknown,
   ) {
     const filter: Record<string, unknown> = {
       role: { $in: ["member", "admin"] },
     };
 
-    if (search && typeof search === "string") {
-      const cleanSearch = search.trim().slice(0, 100);
-      const searchRegex = new RegExp(
-        cleanSearch.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`),
-        "i",
-      );
-      filter.$or = [
-        { email: searchRegex },
-        { "profile.datos-personales.primerNombre": searchRegex },
-        { "profile.datos-personales.primerApellido": searchRegex },
-        { "profile.membresia-ecosistema.numeroMiembro": searchRegex },
-      ];
+    const safeSearch = ensureString(search);
+    if (safeSearch) {
+      const cleanSearch = safeSearch.trim().slice(0, 100);
+      if (cleanSearch) {
+        const searchRegex = new RegExp(
+          cleanSearch.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`),
+          "i",
+        );
+        filter.$or = [
+          { email: searchRegex },
+          { "profile.datos-personales.primerNombre": searchRegex },
+          { "profile.datos-personales.primerApellido": searchRegex },
+          { "profile.membresia-ecosistema.numeroMiembro": searchRegex },
+        ];
+      }
     }
 
-    const lim = Math.min(
-      Math.max(limit ? Number.parseInt(limit, 10) : 25, 1),
-      100,
-    );
-    const pg = Math.max(page ? Number.parseInt(page, 10) : 1, 1);
+    const lim = parsePositiveInt(limit, 25, 100);
+    const pg = parsePositiveInt(page, 1, 10000);
     const skip = (pg - 1) * lim;
 
     // F-09: Proyección estricta de solo los campos necesarios para gestión de membresías

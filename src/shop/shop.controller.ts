@@ -26,6 +26,8 @@ import { ShopService } from "./shop.service";
 import { CreateOrderDto } from "./dto/create-order.dto";
 import { AddWishlistDto } from "./dto/add-wishlist.dto";
 import { ensureString } from "../common/utils/sanitize-query.util";
+import { parsePositiveInt } from "../common/utils/pagination.util";
+import { isActiveMember } from "../common/utils/membership-access.util";
 import type { EnvironmentConfig } from "../config/config.interface";
 
 interface AuthenticatedRequest extends Request {
@@ -53,7 +55,7 @@ export class ShopController {
     // M2: Sanitize collection param — public endpoint, prevent NoSQL injection
     const safeCollection = ensureString(collectionName ?? collection);
     return this.shopService.getProducts(
-      Math.min(Math.max(limit ? Number.parseInt(limit, 10) : 20, 1), 100),
+      parsePositiveInt(limit, 20, 100),
       featured === "true",
       safeCollection,
     );
@@ -62,9 +64,7 @@ export class ShopController {
   @Public()
   @Get("upcoming")
   async getUpcomingReleases(@Query("limit") limit?: string) {
-    return this.shopService.getUpcomingReleases(
-      Math.min(Math.max(limit ? Number.parseInt(limit, 10) : 10, 1), 100),
-    );
+    return this.shopService.getUpcomingReleases(parsePositiveInt(limit, 10, 100));
   }
 
   @Public()
@@ -90,10 +90,9 @@ export class ShopController {
   ) {
     const { userId } = req.user;
     const fullUser = await this.usersService.findById(userId);
-    const membershipLevel =
-      fullUser && !fullUser.membershipExpired
-        ? (fullUser.membershipLevel ?? null)
-        : null;
+    const membershipLevel = isActiveMember(fullUser)
+      ? (fullUser?.membershipLevel ?? null)
+      : null;
     return this.shopService.createOrder(userId, dto, membershipLevel);
   }
 

@@ -10,8 +10,21 @@ import {
   HttpStatus,
   Headers,
   BadRequestException,
+  UnauthorizedException,
   Query,
 } from "@nestjs/common";
+import { timingSafeEqual } from "node:crypto";
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsString,
+  MaxLength,
+  ValidateNested,
+} from "class-validator";
+import { Type } from "class-transformer";
 import type { Request } from "express";
 import { PaymentsService } from "./payments.service";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
@@ -23,16 +36,47 @@ import { ensureString } from "../common/utils/sanitize-query.util";
 import { ConfigService } from "@nestjs/config";
 import type { EnvironmentConfig } from "../config/config.interface";
 
-interface WebhookBatchItemDto {
-  id: string;
-  body: {
-    rawBody: string;
-    signature: string;
-  };
+class WebhookBatchBodyDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(65_536)
+  rawBody!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(256)
+  signature!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  source?: string;
+
+  @IsOptional()
+  enqueuedAt?: number;
 }
 
-interface WebhookBatchPayloadDto {
-  batch: WebhookBatchItemDto[];
+class WebhookBatchItemDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  id!: string;
+
+  @IsObject()
+  @ValidateNested()
+  @Type(() => WebhookBatchBodyDto)
+  body!: WebhookBatchBodyDto;
+
+  @IsOptional()
+  timestamp?: string | number | Date;
+}
+
+class WebhookBatchPayloadDto {
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => WebhookBatchItemDto)
+  batch!: WebhookBatchItemDto[];
 }
 
 interface AuthenticatedRequest extends Request {
@@ -89,15 +133,22 @@ export class PaymentsController {
     @Headers("x-edge-secret") edgeSecret: string | undefined,
     @Body() payload: WebhookBatchPayloadDto,
   ) {
-    const expectedSecret = this.configService.get<string>(
-      "INTERNAL_EDGE_SECRET",
-      {
+    const expectedSecret = this.configService
+      .get<string>("INTERNAL_EDGE_SECRET", {
         infer: true,
-      },
-    );
+      })
+      ?.trim();
 
-    if (!expectedSecret || !edgeSecret || edgeSecret !== expectedSecret) {
-      throw new BadRequestException("Unauthorized edge webhook batch delivery");
+    const providedBuf = Buffer.from(edgeSecret?.trim() ?? "", "utf8");
+    const expectedBuf = Buffer.from(expectedSecret ?? "", "utf8");
+    if (
+      !expectedSecret ||
+      providedBuf.length !== expectedBuf.length ||
+      !timingSafeEqual(providedBuf, expectedBuf)
+    ) {
+      throw new UnauthorizedException(
+        "Unauthorized edge webhook batch delivery",
+      );
     }
 
     if (!payload?.batch || !Array.isArray(payload.batch)) {

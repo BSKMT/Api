@@ -1,4 +1,5 @@
 import {
+  ArrayMaxSize,
   IsArray,
   IsEnum,
   IsInt,
@@ -29,7 +30,9 @@ export class CreateMaintenanceDto {
   workshop!: string;
 
   @IsArray()
+  @ArrayMaxSize(50)
   @IsString({ each: true })
+  @MaxLength(100, { each: true })
   partsChanged!: string[];
 
   @IsOptional()

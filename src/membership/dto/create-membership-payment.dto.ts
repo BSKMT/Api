@@ -3,7 +3,7 @@ import {
   IsIn,
   IsBoolean,
   IsOptional,
-  IsNumber,
+  IsInt,
   Min,
 } from "class-validator";
 
@@ -20,7 +20,7 @@ export class CreateMembershipPaymentDto {
   @IsOptional()
   useCredit?: boolean;
 
-  @IsNumber()
+  @IsInt()
   @Min(0)
   @IsOptional()
   creditAmount?: number;

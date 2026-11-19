@@ -66,6 +66,7 @@ export interface AuthInstance {
   api: {
     getSession: (params: {
       headers: AuthHeaders;
+      query?: { disableCookieCache?: boolean };
     }) => Promise<BetterAuthSessionData | null>;
     changePassword: (params: {
       body: { currentPassword: string; newPassword: string };

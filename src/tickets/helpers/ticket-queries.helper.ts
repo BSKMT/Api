@@ -35,6 +35,19 @@ export async function queryTickets(
   return { tickets, total, page, limit };
 }
 
+function sanitizeTicketForMember(ticket: TicketDocument): void {
+  ticket.messages = ticket.messages.filter((m) => !m.isInternalNote);
+  // M-10: Strip internal staff/CRM metadata from member-facing ticket responses.
+  ticket.auditLog = [];
+  ticket.metadata = {};
+  if (ticket.customer) {
+    ticket.customer.birdContactId = undefined;
+  }
+  if (ticket.assignedTo) {
+    (ticket.assignedTo as unknown as Record<string, unknown>).email = undefined;
+  }
+}
+
 export async function findTicketById(
   ticketModel: Model<TicketDocument>,
   ticketId: string,
@@ -44,7 +57,7 @@ export async function findTicketById(
   if (!ticket) throw new NotFoundException("Ticket no encontrado");
   ticket.sla.isSlaBreached = evaluateSlaBreach(ticket.sla, ticket.status);
   if (!isStaffOrAdmin) {
-    ticket.messages = ticket.messages.filter((m) => !m.isInternalNote);
+    sanitizeTicketForMember(ticket);
   }
   return ticket;
 }
@@ -56,10 +69,11 @@ export async function findTicketsForUser(
   const tickets = await ticketModel
     .find({ "customer.userId": userId })
     .sort({ createdAt: -1 })
+    .limit(100)
     .exec();
   tickets.forEach((t) => {
     t.sla.isSlaBreached = evaluateSlaBreach(t.sla, t.status);
-    t.messages = t.messages.filter((m) => !m.isInternalNote);
+    sanitizeTicketForMember(t);
   });
   return tickets;
 }

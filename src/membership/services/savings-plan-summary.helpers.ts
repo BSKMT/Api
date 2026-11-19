@@ -86,6 +86,7 @@ export async function computeSavingsPlanSummary(
       userModel,
       userId,
       nowMs,
+      (baId) => usersService.invalidateUserCache(baId),
     );
 
   const remainingInstallments = Math.max(

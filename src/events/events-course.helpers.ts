@@ -79,6 +79,7 @@ export async function incrementCourseEnrollmentCount(
 
 export async function handleReEnrollment(
   courseModel: Model<CourseDocument>,
+  courseEnrollmentModel: Model<CourseEnrollmentDocument>,
   existing: CourseEnrollmentDocument,
   course: CourseDocument,
   courseSlug: string,
@@ -90,39 +91,54 @@ export async function handleReEnrollment(
     throw new ConflictException("Ya estás inscrito en este curso");
   }
 
-  await reserveCourseSeat(courseModel, course, courseSlug);
-
-  existing.status = pricing.requiresPayment ? "PENDING" : "ACTIVE";
-  existing.progress = 0;
-  existing.paymentConfirmed = !pricing.requiresPayment;
-  existing.transactionReference = null;
-  existing.completedAt = null;
-  existing.certificateId = null;
-  existing.attendanceConfirmed = false;
-  existing.attendedAt = null;
-  existing.checkedInBy = null;
-  existing.checkedInByName = null;
-  existing.checkInCode = existing.checkInCode || generateCheckInCode("CRS");
-  existing.qrCodeData = buildQrTicketPayload("COURSE", {
+  const nextStatus = pricing.requiresPayment ? "PENDING" : "ACTIVE";
+  const checkInCode = existing.checkInCode || generateCheckInCode("CRS");
+  const qrCodeData = buildQrTicketPayload("COURSE", {
     registrationId: String(existing._id),
     slug: courseSlug,
-    checkInCode: existing.checkInCode,
+    checkInCode,
     userId,
   });
+
+  // M-05: Atomically transition CANCELLED -> nextStatus before reserving seat.
+  const updated = await courseEnrollmentModel.findOneAndUpdate(
+    { _id: existing._id, status: "CANCELLED" },
+    {
+      $set: {
+        status: nextStatus,
+        progress: 0,
+        paymentConfirmed: !pricing.requiresPayment,
+        transactionReference: null,
+        completedAt: null,
+        certificateId: null,
+        attendanceConfirmed: false,
+        attendedAt: null,
+        checkedInBy: null,
+        checkedInByName: null,
+        checkInCode,
+        qrCodeData,
+      },
+    },
+    { new: true },
+  );
+  if (!updated) {
+    throw new ConflictException("Ya estás inscrito en este curso");
+  }
+
   try {
-    await existing.save();
-  } catch (saveErr) {
-    await courseModel.findOneAndUpdate(
-      { slug: courseSlug, enrolledCount: { $gt: 0 } },
-      { $inc: { enrolledCount: -1 } },
+    await reserveCourseSeat(courseModel, course, courseSlug);
+  } catch (seatErr) {
+    await courseEnrollmentModel.updateOne(
+      { _id: updated._id },
+      { $set: { status: "CANCELLED", paymentConfirmed: false } },
     );
-    throw saveErr;
+    throw seatErr;
   }
 
   logger.log(
-    `Course re-enrollment after cancellation: user=${userId} course=${courseSlug} status=${existing.status} amount=${pricing.amount}`,
+    `Course re-enrollment after cancellation: user=${userId} course=${courseSlug} status=${updated.status} amount=${pricing.amount}`,
   );
-  return { enrollment: existing, pricing };
+  return { enrollment: updated, pricing };
 }
 
 export async function handleNewEnrollment(
@@ -200,6 +216,7 @@ export async function executeEnrollInCourse(
   if (existing) {
     return handleReEnrollment(
       courseModel,
+      courseEnrollmentModel,
       existing,
       course,
       courseSlug,

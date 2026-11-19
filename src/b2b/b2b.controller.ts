@@ -13,7 +13,10 @@ import type { Request } from "express";
 import { B2bService } from "./b2b.service";
 import { B2bContactDto } from "./dto/b2b-contact.dto";
 import { Public } from "../common/decorators";
-import { verifyTurnstileToken } from "../common/utils/turnstile.util";
+import {
+  verifyTurnstileAttestation,
+  verifyTurnstileToken,
+} from "../common/utils/turnstile.util";
 
 @Controller("b2b")
 export class B2bController {
@@ -30,11 +33,18 @@ export class B2bController {
     @Req() req?: Request & { cfOriginVerified?: boolean },
     @Ip() ip?: string,
   ) {
-    const edgeVerified =
-      Boolean(req?.cfOriginVerified) &&
-      req?.headers?.["x-turnstile-verified"] === "1";
+    const clientIp =
+      (req?.headers?.["cf-connecting-ip"] as string | undefined) || ip || "";
+    const requestId =
+      (req?.headers?.["x-request-id"] as string | undefined)?.trim() || "";
+    const edgeVerified = verifyTurnstileAttestation(
+      req?.headers?.["x-turnstile-attestation"],
+      "b2b_contact",
+      clientIp,
+      requestId,
+    );
     if (!edgeVerified) {
-      await verifyTurnstileToken(dto.turnstileToken, ip, this.logger);
+      await verifyTurnstileToken(dto.turnstileToken, clientIp, this.logger);
     }
     await this.b2bService.createContact(dto);
     return {

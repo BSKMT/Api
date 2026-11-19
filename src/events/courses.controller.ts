@@ -19,6 +19,7 @@ import { EventsService } from "./events.service";
 import { EnrollCourseDto } from "./dto/enroll-course.dto";
 import { CancelCourseDto } from "./dto/cancel-course.dto";
 import { UpdateProgressDto } from "./dto/update-progress.dto";
+import { isActiveMember } from "../common/utils/membership-access.util";
 
 interface AuthenticatedRequest extends Request {
   user: { userId: string; email?: string };
@@ -66,12 +67,7 @@ export class CoursesController {
   ) {
     const { userId } = req.user;
     const fullUser = await this.usersService.findById(userId);
-    const isActiveMember =
-      fullUser?.role === "member" &&
-      !fullUser?.membershipExpired &&
-      (!fullUser?.membershipExpiryDate ||
-        new Date(fullUser.membershipExpiryDate) > new Date());
-    const membershipLevel = isActiveMember
+    const membershipLevel = isActiveMember(fullUser)
       ? (fullUser?.membershipLevel ?? null)
       : null;
     const result = await this.eventsService.enrollInCourse(
@@ -135,7 +131,9 @@ export class CoursesController {
   ) {
     const { userId } = req.user;
     const fullUser = await this.usersService.findById(userId);
-    const membershipLevel = fullUser?.membershipLevel ?? null;
+    const membershipLevel = isActiveMember(fullUser)
+      ? (fullUser?.membershipLevel ?? null)
+      : null;
     const course = await this.eventsService.getCourseBySlug(courseSlug);
     if (!course) {
       throw new BadRequestException("Curso no encontrado");

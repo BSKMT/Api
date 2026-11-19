@@ -44,7 +44,10 @@ function getPathWithoutQuery(rawUrl: string): string {
 
 function resolveRequiredPermission(cleanPath: string): string | null {
   for (const [routePrefix, requiredPerm] of Object.entries(ADMIN_MODULE_MAP)) {
-    if (cleanPath.startsWith(routePrefix)) {
+    if (
+      cleanPath === routePrefix ||
+      cleanPath.startsWith(`${routePrefix}/`)
+    ) {
       return requiredPerm;
     }
   }

@@ -1,4 +1,9 @@
-import { BadRequestException, Logger, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
 import { Model } from "mongoose";
 import { type EventDocument, EventStatus } from "./schemas/event.schema";
 import type { EventRegistrationDocument } from "./schemas/event-registration.schema";
@@ -94,34 +99,59 @@ export interface EventRegistrationState {
 
 export async function updateCancelledRegistration(
   eventModel: Model<EventDocument>,
+  eventRegistrationModel: Model<EventRegistrationDocument>,
   existing: EventRegistrationDocument,
   state: EventRegistrationState,
   logger: Logger,
 ): Promise<EventRegistrationDocument> {
   const { dto, status, membershipStatus, userId, event } = state;
-  existing.registrationType = dto.registrationType;
-  existing.attendanceMode = dto.attendanceMode;
-  existing.status = status;
-  existing.membershipStatus = membershipStatus;
-  existing.confirmedAt = status === "CONFIRMED" ? new Date() : null;
-  existing.paymentConfirmed = false;
-  existing.waiverAccepted = false;
-  existing.waiverAcceptedAt = null;
-  existing.transactionReference = null;
-  existing.companionData = null;
-  existing.attendanceConfirmed = false;
-  existing.attendedAt = null;
-  existing.checkedInBy = null;
-  existing.checkedInByName = null;
-  existing.checkInCode = existing.checkInCode || generateCheckInCode("EVT");
-  existing.qrCodeData = buildQrTicketPayload("EVENT", {
+  const checkInCode = existing.checkInCode || generateCheckInCode("EVT");
+  const qrCodeData = buildQrTicketPayload("EVENT", {
     registrationId: String(existing._id),
     slug: dto.eventSlug,
-    checkInCode: existing.checkInCode,
+    checkInCode,
     userId,
   });
-  await incrementEventRegisteredCount(eventModel, dto.eventSlug, event);
-  const saved = await existing.save();
+
+  // M-05: Atomically claim CANCELLED -> new status before incrementing capacity.
+  const saved = await eventRegistrationModel.findOneAndUpdate(
+    { _id: existing._id, status: "CANCELLED" },
+    {
+      $set: {
+        registrationType: dto.registrationType,
+        attendanceMode: dto.attendanceMode,
+        status,
+        membershipStatus,
+        confirmedAt: status === "CONFIRMED" ? new Date() : null,
+        paymentConfirmed: false,
+        waiverAccepted: false,
+        waiverAcceptedAt: null,
+        transactionReference: null,
+        companionData: null,
+        attendanceConfirmed: false,
+        attendedAt: null,
+        checkedInBy: null,
+        checkedInByName: null,
+        checkInCode,
+        qrCodeData,
+      },
+    },
+    { new: true },
+  );
+  if (!saved) {
+    throw new ConflictException("Ya estás registrado para este evento");
+  }
+
+  try {
+    await incrementEventRegisteredCount(eventModel, dto.eventSlug, event);
+  } catch (err) {
+    await eventRegistrationModel.updateOne(
+      { _id: saved._id },
+      { $set: { status: "CANCELLED", confirmedAt: null } },
+    );
+    throw err;
+  }
+
   logger.log(
     `Event re-registration after cancellation: user=${userId} event=${dto.eventSlug} status=${status}`,
   );

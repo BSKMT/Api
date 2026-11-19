@@ -163,13 +163,26 @@ export async function cancelPendingMembershipTransactionHelper(
   }
 
   if (transaction.creditUsedAmount > 0 && !transaction.creditReverted) {
-    const reverted = await deps.usersService.revertPartialPaymentCredit(
-      transaction.userId,
-      transaction.creditUsedAmount,
+    const claimed = await deps.transactionModel.findOneAndUpdate(
+      {
+        _id: transaction._id,
+        creditReverted: false,
+        creditUsedAmount: { $gt: 0 },
+      },
+      { $set: { creditReverted: true } },
+      { new: true },
     );
-    if (reverted) {
-      transaction.creditReverted = true;
-      await transaction.save();
+    if (claimed) {
+      const reverted = await deps.usersService.revertPartialPaymentCredit(
+        claimed.userId,
+        claimed.creditUsedAmount,
+      );
+      if (!reverted) {
+        await deps.transactionModel.updateOne(
+          { _id: claimed._id },
+          { $set: { creditReverted: false } },
+        );
+      }
     }
   }
 

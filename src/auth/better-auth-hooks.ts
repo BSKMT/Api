@@ -33,27 +33,29 @@ async function isStaffOrSubroleUser(
   );
 }
 
+export const ALLOWED_USER_EMAIL_DOMAINS = new Set([
+  "outlook.com",
+  "hotmail.com",
+  "live.com",
+  "gmail.com",
+  "icloud.com",
+  "me.com",
+  "mac.com",
+  "yahoo.com",
+  "yahoo.es",
+]);
+
 export function createBetterAuthHooks(
   mongoDb: Db,
   authLogger: Logger,
   getBirdContactService?: () => BirdContactService | null,
 ) {
-  const ALLOWED_DOMAINS = new Set([
-    "outlook.com",
-    "hotmail.com",
-    "live.com",
-    "gmail.com",
-    "icloud.com",
-    "me.com",
-    "mac.com",
-    "yahoo.com",
-    "yahoo.es",
-  ]);
+  const ALLOWED_DOMAINS = ALLOWED_USER_EMAIL_DOMAINS;
 
   return {
     user: {
       create: {
-        before: (user: BetterAuthUser): BetterAuthUser => {
+        before: (user: BetterAuthUser): { data: BetterAuthUser } => {
           const email = (user.email ?? "").toLowerCase();
           const domain = email.split("@")[1] ?? "";
           if (!ALLOWED_DOMAINS.has(domain)) {
@@ -61,7 +63,7 @@ export function createBetterAuthHooks(
               "El dominio del correo no esta permitido. Usa Microsoft (outlook, hotmail, live), Google (gmail), Apple (icloud, me, mac) o Yahoo.",
             );
           }
-          return user;
+          return { data: user };
         },
         after: async (user: BetterAuthUser): Promise<void> => {
           let insertedId: ObjectId | null = null;
@@ -168,22 +170,23 @@ export function createBetterAuthHooks(
         before: async (
           session: BetterAuthSession,
           ctx?: { path?: string },
-        ): Promise<BetterAuthSession> => {
+        ): Promise<{ data: BetterAuthSession } | false> => {
           const staffUser = await isStaffOrSubroleUser(mongoDb, session.userId);
           if (staffUser) {
-            const path = ctx?.path ?? "";
+            const path = (ctx?.path ?? "").toLowerCase();
             if (
               path.includes("/sign-in/social") ||
               path.includes("/callback") ||
               path.includes("/passkey/verify-authentication")
             ) {
               authLogger.warn(
-                `[databaseHooks] Bloqueando bypass 4FA en ${path} para userId=${session.userId}: marcando otpPending=true`,
+                `[databaseHooks] Bloqueando bypass 4FA en ${path} para userId=${session.userId}: abortando creación de sesión.`,
               );
+              return false;
             }
-            session.otpPending = true;
+            return { data: { ...session, otpPending: true } };
           }
-          return session;
+          return { data: session };
         },
         after: async (
           session: BetterAuthSession,

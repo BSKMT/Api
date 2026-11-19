@@ -1,9 +1,18 @@
 /**
- * Recursively strip MongoDB operator keys (starting with $) from an object.
+ * Recursively strip MongoDB operator keys (starting with $) from objects and nested arrays.
  * Prevents NoSQL operator injection via qs-parsed query parameters.
- *
- * Usage: call sanitizeQuery(filter) before passing to Mongoose find().
  */
+function sanitizeValue(value: unknown, depth: number): unknown {
+  if (depth > 10 || value === null || value === undefined) return value;
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeValue(item, depth + 1));
+  }
+  if (typeof value === "object") {
+    return sanitizeQuery(value as Record<string, unknown>, depth + 1);
+  }
+  return value;
+}
+
 export function sanitizeQuery<T extends Record<string, unknown>>(
   obj: T,
   depth = 0,
@@ -14,14 +23,8 @@ export function sanitizeQuery<T extends Record<string, unknown>>(
 
   const cleaned: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
-    // Skip keys that start with $ (MongoDB operators)
     if (key.startsWith("$")) continue;
-
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      cleaned[key] = sanitizeQuery(value as Record<string, unknown>, depth + 1);
-    } else {
-      cleaned[key] = value;
-    }
+    cleaned[key] = sanitizeValue(value, depth + 1);
   }
   return cleaned as T;
 }

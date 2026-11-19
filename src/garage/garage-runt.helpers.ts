@@ -147,6 +147,7 @@ export function applyRuntSync(
   moto: GarageMotorcycleDocument,
   runtRecord: VerifikRuntVehicleRecord,
   documentNumber: string,
+  ownershipVerified: boolean,
 ): { updatedFields: string[]; discrepancies: string[] } {
   const updatedFields: string[] = [];
   const discrepancies: string[] = [];
@@ -166,9 +167,14 @@ export function applyRuntSync(
     updatedFields.push("displacementCc");
   }
 
-  moto.isRuntVerified = true;
-  moto.runtVerifiedAt = new Date();
-  moto.runtDocumentHolder = documentNumber;
+  // H-03: Only mark motorcycle as RUNT ownership-verified when document+plate matched.
+  if (ownershipVerified) {
+    moto.isRuntVerified = true;
+    moto.runtVerifiedAt = new Date();
+    if (documentNumber) {
+      moto.runtDocumentHolder = documentNumber;
+    }
+  }
 
   return { updatedFields, discrepancies };
 }
@@ -228,18 +234,25 @@ export async function executeVerifyMotorcycleWithRunt(
   }
 
   const runtRecord = runtResult.record;
-  const syncResult = applyRuntSync(moto, runtRecord, documentNumber);
+  const ownershipVerified = runtResult.ownershipVerified === true;
+  const syncResult = applyRuntSync(
+    moto,
+    runtRecord,
+    documentNumber,
+    ownershipVerified,
+  );
   await moto.save();
 
   logger.log(
-    `Motorcycle ${moto.plate} successfully verified with official RUNT via Verifik`,
+    `Motorcycle ${moto.plate} RUNT sync complete (ownershipVerified=${ownershipVerified})`,
   );
 
   return {
     success: true,
-    verified: true,
+    verified: ownershipVerified,
+    ownershipVerified,
     plate: moto.plate,
-    verifiedAt: moto.runtVerifiedAt,
+    verifiedAt: ownershipVerified ? moto.runtVerifiedAt : null,
     runtRecord,
     updatedFields: syncResult.updatedFields,
     discrepancies: syncResult.discrepancies,
@@ -312,6 +325,7 @@ export async function executeSyncMotorcycleWithVerifik(
       moto,
       diagnostic.vehicle,
       docNum || moto.runtDocumentHolder || "",
+      Boolean(diagnostic.ownershipVerified),
     );
     updatedFields = syncRes.updatedFields;
     discrepancies = syncRes.discrepancies;

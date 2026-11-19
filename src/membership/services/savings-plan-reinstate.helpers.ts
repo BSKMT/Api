@@ -92,32 +92,49 @@ export async function executeReinstateMembership(
   const totalInstallments = plan.installmentsPaid;
   const excess = Math.max(0, totalInstallments - 12);
 
-  plan.status = SavingsPlanStatus.COMPLETED;
-  plan.reinstatedAt = now;
-  plan.completedAt = now;
-  plan.excessInstallments = excess;
-  await plan.save();
+  // M-05: Atomically transition plan -> COMPLETED to prevent duplicate reinstatement & duplicate next-season credit.
+  const claimed = await savingsPlanModel.findOneAndUpdate(
+    {
+      _id: plan._id,
+      status: { $ne: SavingsPlanStatus.COMPLETED },
+      installmentsPaid: { $gte: 12 },
+    },
+    {
+      $set: {
+        status: SavingsPlanStatus.COMPLETED,
+        reinstatedAt: now,
+        completedAt: now,
+        excessInstallments: excess,
+      },
+    },
+    { new: true },
+  );
+  if (!claimed) {
+    throw new BadRequestException(
+      "Tu plan de ahorro ya fue reincorporado o completado.",
+    );
+  }
 
   await usersService.activateMembership(userId, now, expiry, "installments");
 
   if (excess > 0) {
     const nextSeason = summary.seasonYear + 1;
-    const existingNextPlan = await savingsPlanModel.findOne({
-      userId,
-      seasonYear: nextSeason,
-    });
-    if (!existingNextPlan) {
-      await savingsPlanModel.create({
-        userId,
-        seasonYear: nextSeason,
-        isRenewal: true,
-        targetInstallments: 12,
-        installmentsPaid: excess,
-        totalAmountSaved: excess * plan.installmentAmount,
-        installmentAmount: plan.installmentAmount,
-        status: SavingsPlanStatus.ACTIVE,
-      });
-    }
+    await savingsPlanModel.findOneAndUpdate(
+      { userId, seasonYear: nextSeason },
+      {
+        $setOnInsert: {
+          userId,
+          seasonYear: nextSeason,
+          isRenewal: true,
+          targetInstallments: 12,
+          installmentsPaid: excess,
+          totalAmountSaved: excess * claimed.installmentAmount,
+          installmentAmount: claimed.installmentAmount,
+          status: SavingsPlanStatus.ACTIVE,
+        },
+      },
+      { upsert: true },
+    );
   }
 
   await notificationsService.create({

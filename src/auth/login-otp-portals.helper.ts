@@ -24,25 +24,50 @@ export interface PortalUserCandidate {
   isEligible: boolean;
 }
 
+const STAFF_PORTAL_ROLES = new Set<string>([
+  UserRole.ADMIN,
+  UserRole.SUPERADMIN,
+  UserRole.GESTOR,
+]);
+
+async function findUserByPrimaryOrInstitutionalEmail(
+  userModel: Model<UserDocument>,
+  normalizedEmail: string,
+  username?: string,
+) {
+  const baseFilter = username ? { username } : {};
+  const byPrimary = await userModel
+    .findOne({ ...baseFilter, email: normalizedEmail })
+    .lean();
+  if (byPrimary) return byPrimary;
+  return userModel
+    .findOne({
+      ...baseFilter,
+      "contractorInfo.correoInstitucional": normalizedEmail,
+    })
+    .lean();
+}
+
 export async function findAndValidateStandardUser(
   userModel: Model<UserDocument>,
   email: string,
 ): Promise<PortalUserCandidate> {
   const normalizedEmail = (email ?? "").toLowerCase().trim();
-  const user = await userModel
-    .findOne({
-      $or: [
-        { email: normalizedEmail },
-        { "contractorInfo.correoInstitucional": normalizedEmail },
-        { "profile.contacto.correoInstitucional": normalizedEmail },
-      ],
-    })
-    .lean();
+  const user = await findUserByPrimaryOrInstitutionalEmail(
+    userModel,
+    normalizedEmail,
+  );
 
   const authEmail = user?.email || normalizedEmail;
+  const isStaff =
+    Boolean(user) &&
+    (STAFF_PORTAL_ROLES.has(user!.role) ||
+      (typeof user!.subrol === "string" && user!.subrol.trim().length > 0));
   const isEligible =
     !user ||
-    (user.isActive !== false && user.accountDeletionRequested !== true);
+    (!isStaff &&
+      user.isActive !== false &&
+      user.accountDeletionRequested !== true);
 
   return { authEmail, targetEmail: normalizedEmail, isEligible };
 }
@@ -110,16 +135,11 @@ export async function findAndValidateConsoleUser(
     );
   }
 
-  const user = await userModel
-    .findOne({
-      username: normalizedUsername,
-      $or: [
-        { email: normalizedEmail },
-        { "contractorInfo.correoInstitucional": normalizedEmail },
-        { "profile.contacto.correoInstitucional": normalizedEmail },
-      ],
-    })
-    .lean();
+  const user = await findUserByPrimaryOrInstitutionalEmail(
+    userModel,
+    normalizedEmail,
+    normalizedUsername,
+  );
 
   if (!user) {
     logger.warn(
@@ -158,16 +178,11 @@ export async function findAndValidateSuperAdminUser(
     );
   }
 
-  const user = await userModel
-    .findOne({
-      username: normalizedUsername,
-      $or: [
-        { email: normalizedEmail },
-        { "contractorInfo.correoInstitucional": normalizedEmail },
-        { "profile.contacto.correoInstitucional": normalizedEmail },
-      ],
-    })
-    .lean();
+  const user = await findUserByPrimaryOrInstitutionalEmail(
+    userModel,
+    normalizedEmail,
+    normalizedUsername,
+  );
 
   if (!user) {
     logger.warn(
@@ -207,7 +222,12 @@ export async function executeVerifyOtp(params: {
     logger,
   } = params;
   const otpRecord = await otpModel.findOneAndUpdate(
-    { requestId, status: "pending", attempts: { $lt: 5 } },
+    {
+      requestId,
+      status: "pending",
+      attempts: { $lt: 5 },
+      expiresAt: { $gt: new Date() },
+    },
     { $inc: { attempts: 1 } },
     { new: true },
   );

@@ -7,20 +7,29 @@ import {
   Body,
   Param,
   Query,
+  Req,
   UseGuards,
   HttpCode,
   HttpStatus,
   BadRequestException,
   NotFoundException,
 } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
+import type { Request } from "express";
 import { IsOptional, IsString, ValidateIf } from "class-validator";
 import { SessionGuard } from "../../auth/session.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles, Role } from "../../common/decorators";
 import { UsersService } from "../../users/users.service";
-import { UserSubrole } from "../../users/schemas/user.schema";
+import { UserRole, UserSubrole } from "../../users/schemas/user.schema";
 import { ParseObjectIdPipe } from "../../common/pipes/parse-object-id.pipe";
 import { BirdContactService } from "../../bird/bird-contact.service";
+import { ensureString } from "../../common/utils/sanitize-query.util";
+import { parsePositiveInt } from "../../common/utils/pagination.util";
+
+interface AuthenticatedAdminRequest extends Request {
+  user: { userId: string; role: string };
+}
 
 export class UpdateSubrolDto {
   @IsOptional()
@@ -40,23 +49,28 @@ export class AdminUsersController {
 
   @Get()
   async listUsers(
-    @Query("search") search?: string,
-    @Query("role") role?: string,
-    @Query("subrol") subrol?: string,
-    @Query("limit") limit?: string,
-    @Query("page") page?: string,
+    @Req() req: AuthenticatedAdminRequest,
+    @Query("search") search?: unknown,
+    @Query("role") role?: unknown,
+    @Query("subrol") subrol?: unknown,
+    @Query("limit") limit?: unknown,
+    @Query("page") page?: unknown,
   ) {
+    const isSuperAdmin =
+      (req.user?.role || "").toLowerCase() === UserRole.SUPERADMIN;
     return this.usersService.listUsers({
-      search,
-      role,
-      subrol,
-      limit: limit ? Number.parseInt(limit, 10) : 20,
-      page: page ? Number.parseInt(page, 10) : 1,
+      search: ensureString(search),
+      role: ensureString(role),
+      subrol: ensureString(subrol),
+      limit: parsePositiveInt(limit, 20, 100),
+      page: parsePositiveInt(page, 1, 10000),
+      excludeSuperAdmin: !isSuperAdmin,
     });
   }
 
   @Post("sync-crm")
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 1 } })
   async syncAllToCrm() {
     if (!this.birdContactService) {
       throw new BadRequestException("Servicio de Bird CRM no disponible");

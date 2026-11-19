@@ -20,36 +20,44 @@ export async function fetchEnrichedEventRegistrations(
   eventModel: Model<EventDocument>,
   registrationModel: Model<EventRegistrationDocument>,
   userModel: Model<UserDocument>,
+  actor: GestionActor,
 ) {
   const event = await eventModel.findById(eventId).lean();
   if (!event) {
     throw new NotFoundException("Evento no encontrado");
   }
 
+  // M-03: Enforce coordinator scope before returning attendee PII/roster.
+  authorizeEventCoordinator(event, actor);
+
   const filter: Record<string, unknown> = {
     $or: [{ eventId }, { eventSlug: event.slug }],
   };
 
-  if (search) {
-    const searchRegex = new RegExp(
-      search.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`),
-      "i",
-    );
-    filter.$and = [
-      {
-        $or: [
-          { userEmail: searchRegex },
-          { userName: searchRegex },
-          { checkInCode: searchRegex },
-          { "companionData.fullName": searchRegex },
-        ],
-      },
-    ];
+  if (search && typeof search === "string") {
+    const cleanSearch = search.trim().slice(0, 100);
+    if (cleanSearch) {
+      const searchRegex = new RegExp(
+        cleanSearch.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`),
+        "i",
+      );
+      filter.$and = [
+        {
+          $or: [
+            { userEmail: searchRegex },
+            { userName: searchRegex },
+            { checkInCode: searchRegex },
+            { "companionData.fullName": searchRegex },
+          ],
+        },
+      ];
+    }
   }
 
   const registrations = await registrationModel
     .find(filter)
     .sort({ createdAt: -1 })
+    .limit(500)
     .lean();
 
   const userIds = Array.from(

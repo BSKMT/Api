@@ -6,7 +6,10 @@ import {
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
-import { User, UserDocument } from "../users/schemas/user.schema";
+import { User, UserDocument, UserRole } from "../users/schemas/user.schema";
+import { ALLOWED_USER_EMAIL_DOMAINS } from "../auth/better-auth-hooks";
+import { getMongoDb } from "../auth/better-auth";
+import { ObjectId } from "mongodb";
 import { BirdVerifyService } from "../bird-verify/bird-verify.service";
 import { BirdSmsService } from "../bird/bird-sms.service";
 import { BirdEmailService } from "../bird/bird-email.service";
@@ -96,6 +99,22 @@ export class ChannelVerificationService {
       throw new BadRequestException("El nuevo correo es igual al actual");
     }
 
+    // F-10: Enforce the same ALLOWED_USER_EMAIL_DOMAINS allowlist as signup for non-staff users.
+    const isStaff =
+      user.role === UserRole.ADMIN ||
+      user.role === UserRole.SUPERADMIN ||
+      user.role === UserRole.GESTOR ||
+      Boolean(user.subrol);
+    const domain = normalizedEmail.split("@")[1] ?? "";
+    if (
+      !ALLOWED_USER_EMAIL_DOMAINS.has(domain) &&
+      !(isStaff && domain === "bskmt.com")
+    ) {
+      throw new BadRequestException(
+        "El dominio del correo no está permitido. Usa Microsoft (outlook, hotmail, live), Google (gmail), Apple (icloud, me, mac) o Yahoo.",
+      );
+    }
+
     const existing = await this.userModel
       .findOne({ email: normalizedEmail })
       .lean();
@@ -146,6 +165,7 @@ export class ChannelVerificationService {
     userId: string,
     newEmail: string,
     code: string,
+    currentSessionToken?: string,
   ): Promise<void> {
     const normalizedEmail = newEmail.toLowerCase().trim();
     const user = await this.userModel.findById(userId);
@@ -181,6 +201,18 @@ export class ChannelVerificationService {
       await user.save();
     });
 
+    // F-10: Re-check email uniqueness immediately before mutating Better-Auth & MongoDB.
+    const conflict = await this.userModel
+      .findOne({ email: normalizedEmail, _id: { $ne: user._id } })
+      .lean();
+    if (conflict) {
+      user.pendingEmail = null;
+      await user.save();
+      throw new ConflictException(
+        "No se pudo completar el cambio de correo. Intenta con otro correo.",
+      );
+    }
+
     await updateBetterAuthEmail(
       user.betterAuthId,
       normalizedEmail,
@@ -191,6 +223,31 @@ export class ChannelVerificationService {
     user.emailVerified = true;
     user.pendingEmail = null;
     await user.save();
+
+    // F-10: Invalidate auth KV cache and revoke other sessions on email change.
+    if (user.betterAuthId) {
+      await this.kvCache
+        .delete(`user:ba:${user.betterAuthId}`, true)
+        .catch(() => {});
+      try {
+        const db = getMongoDb();
+        const userFilters: (string | ObjectId)[] = [user.betterAuthId];
+        if (ObjectId.isValid(user.betterAuthId)) {
+          userFilters.push(new ObjectId(user.betterAuthId));
+        }
+        const sessionFilter: Record<string, unknown> = {
+          userId: { $in: userFilters },
+        };
+        if (currentSessionToken) {
+          sessionFilter.token = { $ne: currentSessionToken };
+        }
+        await db.collection("session").deleteMany(sessionFilter);
+      } catch (err: unknown) {
+        this.logger.warn(
+          `verifyEmailChange: failed to revoke other sessions: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
 
     this.logger.log(
       `Email changed to ${maskEmail(normalizedEmail)} for user ${userId}`,

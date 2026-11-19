@@ -113,19 +113,36 @@ export async function revertCreditIfUsed(
   },
   transaction: MembershipTransactionDocument,
 ): Promise<void> {
-  if (transaction.creditUsedAmount > 0 && !transaction.creditReverted) {
-    const reverted = await deps.usersService.revertPartialPaymentCredit(
-      transaction.userId,
-      transaction.creditUsedAmount,
+  if (transaction.creditUsedAmount <= 0 || transaction.creditReverted) {
+    return;
+  }
+
+  // H-04: Atomically claim reversion BEFORE crediting user balance to prevent double-reversion races
+  const claimed = await deps.transactionModel.findOneAndUpdate(
+    {
+      _id: transaction._id,
+      creditReverted: false,
+      creditUsedAmount: { $gt: 0 },
+    },
+    { $set: { creditReverted: true } },
+    { new: true },
+  );
+  if (!claimed) {
+    return;
+  }
+
+  const reverted = await deps.usersService.revertPartialPaymentCredit(
+    claimed.userId,
+    claimed.creditUsedAmount,
+  );
+  if (reverted) {
+    deps.logger.log(
+      `Credit reverted: user=${maskUserId(claimed.userId)} amount=${maskAmount(claimed.creditUsedAmount)} ref=${maskReference(claimed.reference)}`,
     );
-    if (reverted) {
-      await deps.transactionModel.updateOne(
-        { _id: transaction._id, creditReverted: false },
-        { $set: { creditReverted: true } },
-      );
-      deps.logger.log(
-        `Credit reverted: user=${maskUserId(transaction.userId)} amount=${maskAmount(transaction.creditUsedAmount)} ref=${maskReference(transaction.reference)}`,
-      );
-    }
+  } else {
+    await deps.transactionModel.updateOne(
+      { _id: claimed._id },
+      { $set: { creditReverted: false } },
+    );
   }
 }

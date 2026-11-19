@@ -18,9 +18,16 @@ import { ArphaService } from "./arpha.service";
 import { CreateArphaRequestDto } from "./dto/create-arpha-request.dto";
 import { RateArphaRequestDto } from "./dto/rate-arpha-request.dto";
 import { ParseObjectIdPipe } from "../common/pipes/parse-object-id.pipe";
+import { isActiveMember } from "../common/utils/membership-access.util";
 
 interface AuthenticatedRequest extends Request {
-  user: { userId: string; email?: string };
+  user: {
+    userId: string;
+    email?: string;
+    role?: string;
+    subrol?: string | null;
+    adminPermissions?: string[];
+  };
 }
 
 @Controller("arpha")
@@ -45,12 +52,7 @@ export class ArphaController {
   ) {
     const { userId } = req.user;
     const fullUser = await this.usersService.findById(userId);
-    const isActiveMember =
-      fullUser?.role === "member" &&
-      !fullUser?.membershipExpired &&
-      (!fullUser?.membershipExpiryDate ||
-        new Date(fullUser.membershipExpiryDate) > new Date());
-    const membershipLevel = isActiveMember
+    const membershipLevel = isActiveMember(fullUser)
       ? (fullUser?.membershipLevel ?? null)
       : null;
     return this.arphaService.createRequest(userId, dto, membershipLevel);
@@ -92,12 +94,7 @@ export class ArphaController {
   async getPricing(@Req() req: AuthenticatedRequest) {
     const { userId } = req.user;
     const fullUser = await this.usersService.findById(userId);
-    const isActiveMember =
-      fullUser?.role === "member" &&
-      !fullUser?.membershipExpired &&
-      (!fullUser?.membershipExpiryDate ||
-        new Date(fullUser.membershipExpiryDate) > new Date());
-    const membershipLevel = isActiveMember
+    const membershipLevel = isActiveMember(fullUser)
       ? (fullUser?.membershipLevel ?? null)
       : null;
     return this.arphaService.getPricingInfo("tecnica", membershipLevel);

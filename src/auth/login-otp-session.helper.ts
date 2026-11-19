@@ -215,7 +215,7 @@ export async function executeDispatchOtpAndSave(
   }
 
   const requestId = randomBytes(16).toString("hex");
-  const expiresAt = new Date(Date.now() + 3600 * 1000);
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
   const encryptedCookies = encryptSessionCookies(
     session.sessionCookies,
     sessionEncKey,

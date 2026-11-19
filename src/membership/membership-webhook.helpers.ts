@@ -233,7 +233,6 @@ export async function handleWebhookHelper(
     return;
   }
 
-  await markSeenInWebhookKv(deps, parsed);
   recordWebhookEvent(transaction, event, parsed);
 
   const statusFromEvent = mapBoldStatus(parsed.eventType);
@@ -242,6 +241,7 @@ export async function handleWebhookHelper(
       `Amount mismatch in membership webhook for ref ${maskReference(parsed.referenceId)}: expected ${transaction.amount}, received ${parsed.amount}. Skipping approval.`,
     );
     await transaction.save();
+    await markSeenInWebhookKv(deps, parsed);
     return;
   }
 
@@ -255,6 +255,8 @@ export async function handleWebhookHelper(
     : false;
 
   await transaction.save();
+  // L-05: Mark seen in KV only AFTER MongoDB persistence succeeds so transient DB errors can retry.
+  await markSeenInWebhookKv(deps, parsed);
   deps.logger.log(
     `Membership webhook processed: ${parsed.eventType} for ${maskReference(parsed.referenceId)}`,
   );

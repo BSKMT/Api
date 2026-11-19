@@ -160,7 +160,7 @@ async function initAuth(): Promise<AuthInstance> {
       additionalFields: SESSION_ADDITIONAL_FIELDS,
       expiresIn: 7 * 24 * 60 * 60,
       updateAge: 24 * 60 * 60,
-      cookieCache: { enabled: true, maxAge: 5 * 60 },
+      cookieCache: { enabled: false },
     },
 
     advanced: {
@@ -183,7 +183,7 @@ async function initAuth(): Promise<AuthInstance> {
     },
 
     trustedOrigins: getTrustedOrigins(),
-    disabledPaths: ["/sign-in/email"],
+    disabledPaths: ["/sign-in/email", "/sign-in/social"],
     databaseHooks: createBetterAuthHooks(
       mongoDb,
       authLogger,

@@ -10,6 +10,7 @@ import {
   buildBoldResponse,
 } from "./payments-creation.helpers";
 import type { EventCoursePaymentDeps } from "./payments-event-course.helpers";
+import { isActiveMember } from "../common/utils/membership-access.util";
 
 export async function createCoursePaymentHelper(
   deps: EventCoursePaymentDeps,
@@ -43,10 +44,9 @@ export async function createCoursePaymentHelper(
   }
 
   const fullUser = await deps.usersService.findById(userId);
-  const membershipLevel =
-    fullUser && !fullUser.membershipExpired
-      ? (fullUser.membershipLevel ?? null)
-      : null;
+  const membershipLevel = isActiveMember(fullUser)
+    ? (fullUser?.membershipLevel ?? null)
+    : null;
   const expectedPricing = deps.eventsService.calculateCoursePricing(
     course,
     membershipLevel,

@@ -15,6 +15,8 @@ const VALID_SECTION_IDS = [
 // M8: fechaIngreso is also server-set at profile completion, users cannot fake it
 const FORBIDDEN_BY_SECTION: Record<string, Set<string>> = {
   "membresia-ecosistema": new Set(["numeroMiembro", "fechaIngreso"]),
+  contacto: new Set(["correoInstitucional"]),
+  motocicleta: new Set(["verificadaRunt", "verificadaAt", "estadoRunt"]),
 };
 
 export class UpdateProfileSectionDto {

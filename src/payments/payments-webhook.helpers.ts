@@ -219,15 +219,6 @@ export async function findWebhookTransaction(
     return null;
   }
 
-  if (parsed.notificationId) {
-    await deps.kvCache.set(
-      `webhook:seen:${parsed.referenceId}:${parsed.notificationId}`,
-      1,
-      7 * 24 * 60 * 60,
-      true,
-    );
-  }
-
   if (parsed.notificationId === undefined && parsed.paymentId) {
     const seenByPaymentId = transaction.webhookEvents.some(
       (e) =>
@@ -243,4 +234,19 @@ export async function findWebhookTransaction(
   }
 
   return transaction;
+}
+
+export async function markPaymentWebhookSeen(
+  kvCache: KvCacheService,
+  parsed: ParsedBoldWebhookEvent,
+): Promise<void> {
+  if (!parsed.notificationId || !parsed.referenceId) return;
+  await kvCache
+    .set(
+      `webhook:seen:${parsed.referenceId}:${parsed.notificationId}`,
+      1,
+      7 * 24 * 60 * 60,
+      true,
+    )
+    .catch(() => {});
 }

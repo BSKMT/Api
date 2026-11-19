@@ -9,10 +9,12 @@ import { Logger } from "@nestjs/common";
 const logger = new Logger("FieldEncryptionHelper");
 const ENVELOPE_PREFIX = "enc:v1:";
 const SALT = "bskmt-field-encryption-v1";
+const derivedKeyCache = new Map<string, Buffer>();
 
 /**
  * Derives a 256-bit symmetric key using scrypt from the provided secret
  * or from environment variables (FIELD_ENCRYPTION_KEY / BETTER_AUTH_SECRET).
+ * Memoized in memory by secret to avoid per-document synchronous scryptSync event-loop DoS.
  * NIST CSF 2.0: PR.DS-01, PR.DS-02.
  */
 export function deriveFieldEncryptionKey(secret?: string): Buffer {
@@ -26,9 +28,21 @@ export function deriveFieldEncryptionKey(secret?: string): Buffer {
         "FIELD_ENCRYPTION_KEY or BETTER_AUTH_SECRET is required in production",
       );
     }
-    return scryptSync(`dev-test-only-${process.pid}`, SALT, 32);
+    const devSecret = `dev-test-only-${process.pid}`;
+    const cachedDev = derivedKeyCache.get(devSecret);
+    if (cachedDev) return cachedDev;
+    const derivedDev = scryptSync(devSecret, SALT, 32);
+    derivedKeyCache.set(devSecret, derivedDev);
+    return derivedDev;
   }
-  return scryptSync(masterSecret, SALT, 32);
+  const cached = derivedKeyCache.get(masterSecret);
+  if (cached) return cached;
+  if (derivedKeyCache.size >= 8) {
+    derivedKeyCache.clear();
+  }
+  const derived = scryptSync(masterSecret, SALT, 32);
+  derivedKeyCache.set(masterSecret, derived);
+  return derived;
 }
 
 /**
@@ -150,14 +164,17 @@ export function encryptUserProfileSensitiveFields(
 ): void {
   if (!profile || typeof profile !== "object") return;
   const p = profile as Record<string, unknown>;
+  const hasSalud = Boolean(p["salud-seguridad"]) && !isEncryptedField(p["salud-seguridad"]);
+  const hasLegal = Boolean(p["documentacion-legal"]) && !isEncryptedField(p["documentacion-legal"]);
+  if (!hasSalud && !hasLegal) return;
 
   const encKey = key || deriveFieldEncryptionKey();
 
-  if (p["salud-seguridad"]) {
+  if (hasSalud) {
     p["salud-seguridad"] = encryptSensitiveField(p["salud-seguridad"], encKey);
   }
 
-  if (p["documentacion-legal"]) {
+  if (hasLegal) {
     p["documentacion-legal"] = encryptSensitiveField(
       p["documentacion-legal"],
       encKey,
@@ -174,14 +191,17 @@ export function decryptUserProfileSensitiveFields(
 ): void {
   if (!profile || typeof profile !== "object") return;
   const p = profile as Record<string, unknown>;
+  const hasSalud = isEncryptedField(p["salud-seguridad"]);
+  const hasLegal = isEncryptedField(p["documentacion-legal"]);
+  if (!hasSalud && !hasLegal) return;
 
   const encKey = key || deriveFieldEncryptionKey();
 
-  if (p["salud-seguridad"]) {
+  if (hasSalud) {
     p["salud-seguridad"] = decryptSensitiveField(p["salud-seguridad"], encKey);
   }
 
-  if (p["documentacion-legal"]) {
+  if (hasLegal) {
     p["documentacion-legal"] = decryptSensitiveField(
       p["documentacion-legal"],
       encKey,

@@ -3,6 +3,7 @@ import { Model } from "mongoose";
 import { OrderDocument, OrderStatus } from "../../shop/schemas/order.schema";
 import { ProductDocument } from "../../shop/schemas/product.schema";
 import type { KvCacheService } from "../../kv/kv-cache.service";
+import { parsePositiveInt } from "../../common/utils/pagination.util";
 
 export const VALID_ORDER_TRANSITIONS: Record<string, Set<string>> = {
   [OrderStatus.PENDING]: new Set([OrderStatus.PAID, OrderStatus.CANCELLED]),
@@ -21,8 +22,8 @@ export interface AdminListProductsFilters {
 }
 
 export function clampPagination(rawLimit?: number, rawPage?: number) {
-  const limit = Math.min(Math.max(rawLimit ?? 50, 1), 100);
-  const page = Math.max(rawPage ?? 1, 1);
+  const limit = parsePositiveInt(rawLimit, 50, 100);
+  const page = parsePositiveInt(rawPage, 1, 10000);
   const skip = (page - 1) * limit;
   return { limit, page, skip };
 }
@@ -44,10 +45,12 @@ export function validateOrderStatusTransition(
     );
   }
 
+  const normalizedRole = (actorRole ?? "").toLowerCase();
   if (
     nextStatus === OrderStatus.PAID &&
     previousStatus !== OrderStatus.PAID &&
-    actorRole !== "admin"
+    normalizedRole !== "admin" &&
+    normalizedRole !== "superadmin"
   ) {
     logger?.warn(
       `Blocked order-to-PAID transition by non-admin actor: order=${orderNumber} actor=${actorId ?? "unknown"} role=${actorRole ?? "unknown"}`,
@@ -91,15 +94,27 @@ export async function executeUpdateOrderStatus(
     logger,
   );
 
-  order.status = dto.status;
-  if (dto.trackingNumber) order.trackingNumber = dto.trackingNumber;
+  // M-05: Atomically transition order status BEFORE restoring stock to prevent double-restock races.
+  const updateFields: Record<string, unknown> = { status: dto.status };
+  if (dto.trackingNumber) updateFields.trackingNumber = dto.trackingNumber;
+
+  const saved = await orderModel.findOneAndUpdate(
+    { orderNumber, status: previousStatus },
+    { $set: updateFields },
+    { new: true },
+  );
+  if (!saved) {
+    throw new BadRequestException(
+      "El estado del pedido cambió concurrentemente. Recarga e intenta nuevamente.",
+    );
+  }
 
   if (
     dto.status === OrderStatus.CANCELLED &&
     previousStatus !== OrderStatus.CANCELLED
   ) {
     await Promise.all(
-      order.items.map((item) =>
+      saved.items.map((item) =>
         productModel.updateOne(
           { slug: item.productSlug },
           { $inc: { stock: item.quantity } },
@@ -108,7 +123,6 @@ export async function executeUpdateOrderStatus(
     );
   }
 
-  const saved = await order.save();
   logger.log(
     `Order status updated: ${orderNumber} ${previousStatus} -> ${dto.status} by ${actorId ?? "unknown"}`,
   );

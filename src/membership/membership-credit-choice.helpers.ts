@@ -159,36 +159,38 @@ export async function requestRefundHelper(
     );
   }
 
-  // M-19: deduplicate
-  const existing = await deps.creditTransactionModel
-    .findOne({
-      userId,
-      transactionType: CreditTransactionType.CREDIT_REFUNDED,
-      "metadata.status": "pending-admin-approval",
-    })
-    .lean();
-  if (existing) {
-    throw new ConflictException(
-      `Ya tienes una solicitud de reembolso pendiente. Ref: ${existing.reference}`,
-    );
-  }
-
   const timestamp = Date.now();
   const shortUserId = userId.slice(-8);
   const reference = `REF-${shortUserId}-${timestamp}-${crypto.randomBytes(4).toString("hex")}`;
 
-  await deps.creditTransactionModel.create({
-    userId,
-    reference,
-    transactionType: CreditTransactionType.CREDIT_REFUNDED,
-    creditSource: CreditSource.MEMBERSHIP,
-    amount: credit.amount,
-    description: `Reembolso de crédito de renovación parcial (${credit.installmentsPaid} cuotas)`,
-    metadata: {
-      installmentsPaid: credit.installmentsPaid,
-      status: "pending-admin-approval",
+  // M-05: Atomic upsert prevents concurrent duplicate pending refund requests.
+  const prior = await deps.creditTransactionModel.findOneAndUpdate(
+    {
+      userId,
+      transactionType: CreditTransactionType.CREDIT_REFUNDED,
+      "metadata.status": "pending-admin-approval",
     },
-  });
+    {
+      $setOnInsert: {
+        userId,
+        reference,
+        transactionType: CreditTransactionType.CREDIT_REFUNDED,
+        creditSource: CreditSource.MEMBERSHIP,
+        amount: credit.amount,
+        description: `Reembolso de crédito de renovación parcial (${credit.installmentsPaid} cuotas)`,
+        metadata: {
+          installmentsPaid: credit.installmentsPaid,
+          status: "pending-admin-approval",
+        },
+      },
+    },
+    { upsert: true, new: false },
+  );
+  if (prior) {
+    throw new ConflictException(
+      `Ya tienes una solicitud de reembolso pendiente. Ref: ${prior.reference}`,
+    );
+  }
 
   await deps.usersService.updatePartialPaymentCredit(userId, {
     ...credit,

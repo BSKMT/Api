@@ -2,7 +2,6 @@ import {
   Controller,
   Post,
   Body,
-  Query,
   HttpCode,
   HttpStatus,
   Headers,
@@ -54,7 +53,6 @@ export class AlegraController {
   @HttpCode(HttpStatus.OK)
   async handleWebhook(
     @Body() body: unknown,
-    @Query("token") token?: string,
     @Headers("x-webhook-token") headerToken?: string,
     @Headers("authorization") authHeader?: string,
   ) {
@@ -71,10 +69,11 @@ export class AlegraController {
       );
     }
 
+    // L-02: Require webhook secret via headers only (never URL query string, which leaks to logs).
     const bearer = authHeader?.startsWith("Bearer ")
       ? authHeader.slice("Bearer ".length)
       : undefined;
-    const provided = headerToken ?? bearer ?? token ?? "";
+    const provided = headerToken ?? bearer ?? "";
     const secretBuf = Buffer.from(configuredSecret);
     const providedBuf = Buffer.from(provided);
     if (

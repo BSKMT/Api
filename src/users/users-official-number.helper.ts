@@ -89,27 +89,35 @@ export function resetIdentityIfDocumentChanged(
   sanitizedData: Record<string, unknown>,
 ): void {
   const personal = user.profile?.["datos-personales"] ?? {};
-  const oldType =
-    typeof personal.tipoDocumento === "string" ? personal.tipoDocumento : "";
-  const oldNumber =
-    typeof personal.numeroDocumento === "string"
-      ? personal.numeroDocumento
+  const normalizeText = (v: unknown): string =>
+    typeof v === "string"
+      ? v.trim().replace(/\s+/g, " ").toLowerCase()
       : "";
-  const newType =
-    typeof sanitizedData.tipoDocumento === "string"
-      ? sanitizedData.tipoDocumento
-      : "";
-  const newNumber =
-    typeof sanitizedData.numeroDocumento === "string"
-      ? sanitizedData.numeroDocumento
-      : "";
+  const normalizeNumber = (v: unknown): string =>
+    typeof v === "string" ? v.replace(/\D/g, "") : "";
 
-  const normalizeNumber = (n: string): string => n.replace(/\D/g, "");
-  const changed =
-    (newType && newType !== oldType) ||
-    (newNumber && normalizeNumber(newNumber) !== normalizeNumber(oldNumber));
+  const kycTextFields = [
+    "tipoDocumento",
+    "primerNombre",
+    "segundoNombre",
+    "primerApellido",
+    "segundoApellido",
+    "fechaNacimiento",
+  ] as const;
 
-  if (changed) {
+  const docNumberChanged =
+    Boolean(normalizeNumber(sanitizedData.numeroDocumento)) &&
+    normalizeNumber(sanitizedData.numeroDocumento) !==
+      normalizeNumber(personal.numeroDocumento);
+
+  const attestedFieldChanged = kycTextFields.some((field) => {
+    if (!(field in sanitizedData)) return false;
+    const oldVal = normalizeText(personal[field]);
+    const newVal = normalizeText(sanitizedData[field]);
+    return oldVal !== newVal;
+  });
+
+  if (docNumberChanged || attestedFieldChanged) {
     user.identityVerified = false;
     user.identityVerifiedAt = null;
     user.identityVerification = null;

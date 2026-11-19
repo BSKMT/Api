@@ -224,13 +224,41 @@ export class LoginOtpService {
     expiresInSeconds: number;
     maskedEmail: string;
   }> {
-    const otpRecord = await this.otpModel.findOne({
-      requestId,
-      status: "pending",
-    });
+    const now = new Date();
+    const cooldownCutoff = new Date(now.getTime() - 60_000);
+
+    const otpRecord = await this.otpModel.findOneAndUpdate(
+      {
+        requestId,
+        status: "pending",
+        attempts: { $lt: 5 },
+        expiresAt: { $gt: now },
+        resendCount: { $lt: 3 },
+        $or: [
+          { lastResentAt: null },
+          { lastResentAt: { $exists: false } },
+          { lastResentAt: { $lte: cooldownCutoff } },
+        ],
+      },
+      {
+        $inc: { resendCount: 1 },
+        $set: { lastResentAt: now },
+      },
+      { new: true },
+    );
+
     if (!otpRecord) {
-      throw new GoneException(
-        "La solicitud de verificación no existe o ha expirado.",
+      const existing = await this.otpModel.findOne({
+        requestId,
+        status: "pending",
+      });
+      if (!existing || existing.expiresAt <= now || existing.attempts >= 5) {
+        throw new GoneException(
+          "La solicitud de verificación no existe o ha expirado.",
+        );
+      }
+      throw new BadRequestException(
+        "Has superado el límite de reenvíos o debes esperar 60 segundos antes de solicitar otro código.",
       );
     }
 

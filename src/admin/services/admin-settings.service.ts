@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  Optional,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
@@ -15,6 +16,7 @@ import {
 import { getMongoDb } from "../../auth/better-auth";
 import { ObjectId } from "mongodb";
 import { maskEmail } from "../../common/utils/log-redact.util";
+import { KvCacheService } from "../../kv/kv-cache.service";
 @Injectable()
 export class AdminSettingsService {
   private readonly logger = new Logger(AdminSettingsService.name);
@@ -22,6 +24,7 @@ export class AdminSettingsService {
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     private readonly notificationsService: NotificationsService,
+    @Optional() private readonly kvCache?: KvCacheService,
   ) {}
 
   async listDeletionRequests() {
@@ -189,6 +192,42 @@ export class AdminSettingsService {
           { userId },
           { $set: { description: "[redacted on account deletion]" } },
         );
+      // M-13: Anonymize PII/bankDetails across support tickets, garage, and savings collections.
+      await db.collection("tickets").updateMany(
+        { "customer.userId": userId },
+        {
+          $set: {
+            "customer.name": "[usuario eliminado]",
+            "customer.email": "[redacted]",
+          },
+          $unset: {
+            "customer.phone": "",
+            "customer.birdContactId": "",
+          },
+        },
+      );
+      await db.collection("garagemotorcycles").deleteMany({ userId });
+      await db.collection("maintenancelogs").deleteMany({ userId });
+      await db.collection("odometerlogs").deleteMany({ userId });
+      await db.collection("savingsplans").updateMany(
+        { userId },
+        { $unset: { "extensionRequest.reason": "" } },
+      );
+      await db.collection("savingsrefundrequests").updateMany(
+        { userId },
+        {
+          $set: {
+            bankDetails: {
+              bankName: "[redacted]",
+              accountType: "[redacted]",
+              accountNumber: "[redacted]",
+              accountHolderName: "[redacted]",
+              identificationType: "[redacted]",
+              identificationNumber: "[redacted]",
+            },
+          },
+        },
+      );
     } catch (err) {
       // Best-effort — log loudly but do NOT block the deletion; the
       // critical step (removing the user record) already succeeded.
@@ -198,6 +237,11 @@ export class AdminSettingsService {
     }
 
     await this.userModel.deleteOne({ _id: userId });
+    if (user.betterAuthId && this.kvCache) {
+      await this.kvCache
+        .delete(`user:ba:${user.betterAuthId}`, true)
+        .catch(() => {});
+    }
 
     this.logger.log(
       `Account permanently deleted by admin: userId=${userId} email=${maskEmail(user.email)} actor=${actorId}`,
@@ -217,6 +261,11 @@ export class AdminSettingsService {
     user.accountDeletionRequested = false;
     user.accountDeletionRequestedAt = null;
     await user.save();
+    if (user.betterAuthId && this.kvCache) {
+      await this.kvCache
+        .delete(`user:ba:${user.betterAuthId}`, true)
+        .catch(() => {});
+    }
 
     try {
       await this.notificationsService.create({

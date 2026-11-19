@@ -14,6 +14,7 @@ import {
 import { AssignArphaRequestDto } from "../dto/assign-arpha-request.dto";
 import { UpdateArphaStatusDto } from "../dto/update-arpha-status.dto";
 import { ensureString } from "../../common/utils/sanitize-query.util";
+import { parsePositiveInt } from "../../common/utils/pagination.util";
 
 function validateNotFinalized(
   request: ArphaRequestDocument,
@@ -49,8 +50,8 @@ export class AdminArphaService {
     const requestType = ensureString(filters.requestType);
     if (requestType) filter.requestType = requestType;
 
-    const page = Math.max(1, filters.page ?? 1);
-    const limit = Math.min(100, Math.max(1, filters.limit ?? 25));
+    const page = parsePositiveInt(filters.page, 1, 10000);
+    const limit = parsePositiveInt(filters.limit, 25, 100);
     const skip = (page - 1) * limit;
 
     const [items, total] = await Promise.all([

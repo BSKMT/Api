@@ -136,10 +136,21 @@ export class BirdRealtimeController {
 
     const role = req.user?.role ?? "user";
     const displayName = req.user?.email ?? "";
-    const userId = (req.user as { userId?: string })?.userId;
+    const typedUser = req.user as {
+      userId?: string;
+      adminPermissions?: string[];
+    };
+    const userId = typedUser?.userId;
+    const adminPermissions = typedUser?.adminPermissions ?? [];
 
-    // F-12: Channel-level authorization enforcement with strict whitelist
-    assertChannelAuthorized(channelName, betterAuthId, userId, role);
+    // F-12 / M-12: Channel-level authorization enforcement with strict whitelist & adminPermissions
+    assertChannelAuthorized(
+      channelName,
+      betterAuthId,
+      userId,
+      role,
+      adminPermissions,
+    );
 
     return signChannelAuth(
       key,

@@ -14,8 +14,13 @@ import type { Request } from "express";
 import { SessionGuard } from "../../auth/session.guard";
 import { TicketsService } from "../tickets.service";
 import { CreateTicketDto } from "../dto/create-ticket.dto";
+import { CreateMemberTicketDto } from "../dto/create-member-ticket.dto";
 import { TicketReplyDto } from "../dto/ticket-reply.dto";
-import { TicketChannel } from "../schemas/ticket.schema";
+import {
+  TicketChannel,
+  TicketPriority,
+  type TicketDocument,
+} from "../schemas/ticket.schema";
 import { ParseObjectIdPipe } from "../../common/pipes/parse-object-id.pipe";
 import { UsersService } from "../../users/users.service";
 import {
@@ -25,6 +30,20 @@ import {
 
 interface AuthenticatedMemberRequest extends Request {
   user: { userId: string; email: string };
+}
+
+function isTicketOwner(
+  ticket: TicketDocument,
+  user: { userId: string; email: string },
+): boolean {
+  // M-10: When customer.userId is bound, require exact userId match (prevents email-reuse IDOR).
+  if (ticket.customer.userId) {
+    return ticket.customer.userId === user.userId;
+  }
+  return (
+    Boolean(ticket.customer.email) &&
+    ticket.customer.email.toLowerCase() === user.email.toLowerCase()
+  );
 }
 
 @Controller("panel/support")
@@ -43,7 +62,7 @@ export class TicketsPanelController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createMyTicket(
-    @Body() dto: CreateTicketDto,
+    @Body() memberDto: CreateMemberTicketDto,
     @Req() req: AuthenticatedMemberRequest,
   ) {
     const fullUser = await this.usersService.findById(req.user.userId);
@@ -52,14 +71,21 @@ export class TicketsPanelController {
       name: extractUserName(fullUser, req.user.email),
       email: req.user.email,
     };
-    dto.channel = TicketChannel.PANEL;
-    dto.customerName = actor.name;
-    dto.customerEmail = actor.email;
     const phone = extractUserPhone(fullUser);
-    if (phone) {
-      dto.customerPhone = phone;
-    }
-    return this.ticketsService.createTicket(dto, actor);
+    // H-08: Construct authoritative DTO server-side; ignore client priority/phone/tags/channel.
+    const dto: CreateTicketDto = {
+      subject: memberDto.subject,
+      description: memberDto.description,
+      category: memberDto.category,
+      priority: TicketPriority.MEDIA,
+      channel: TicketChannel.PANEL,
+      customerName: actor.name,
+      customerEmail: actor.email,
+      customerPhone: phone ?? undefined,
+      tags: [],
+    };
+    const created = await this.ticketsService.createTicket(dto, actor);
+    return this.ticketsService.findById(String(created._id), false);
   }
 
   @Get(":id")
@@ -68,10 +94,7 @@ export class TicketsPanelController {
     @Req() req: AuthenticatedMemberRequest,
   ) {
     const ticket = await this.ticketsService.findById(id, false);
-    if (
-      ticket.customer.userId !== req.user.userId &&
-      ticket.customer.email !== req.user.email
-    ) {
+    if (!isTicketOwner(ticket, req.user)) {
       throw new ForbiddenException(
         "No tienes autorización para ver este ticket",
       );
@@ -86,10 +109,7 @@ export class TicketsPanelController {
     @Req() req: AuthenticatedMemberRequest,
   ) {
     const ticket = await this.ticketsService.findById(id, false);
-    if (
-      ticket.customer.userId !== req.user.userId &&
-      ticket.customer.email !== req.user.email
-    ) {
+    if (!isTicketOwner(ticket, req.user)) {
       throw new ForbiddenException(
         "No tienes autorización para responder a este ticket",
       );
@@ -102,6 +122,8 @@ export class TicketsPanelController {
       isAgent: false,
     };
     dto.isInternalNote = false;
+    dto.sendSms = false;
+    dto.sendWhatsapp = false;
     await this.ticketsService.replyTicket(id, dto, actor);
     return this.ticketsService.findById(id, false);
   }

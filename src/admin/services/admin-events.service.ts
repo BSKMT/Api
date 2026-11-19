@@ -26,6 +26,7 @@ import {
   executeAdminConfirmRegistration,
   executeAdminCancelRegistration,
 } from "./admin-events.helpers";
+import { ensureString } from "../../common/utils/sanitize-query.util";
 
 @Injectable()
 export class AdminEventsService {
@@ -46,8 +47,10 @@ export class AdminEventsService {
     page?: number;
   }) {
     const filter: Record<string, unknown> = {};
-    if (filters.status) filter.status = filters.status;
-    if (filters.category) filter.category = filters.category;
+    const status = ensureString(filters.status);
+    const category = ensureString(filters.category);
+    if (status) filter.status = status;
+    if (category) filter.category = category;
 
     const { limit, page, skip } = clampEventsPagination(
       filters.limit,
@@ -175,7 +178,8 @@ export class AdminEventsService {
     }
 
     const filter: Record<string, unknown> = { eventSlug };
-    if (filters.status) filter.status = filters.status;
+    const status = ensureString(filters.status);
+    if (status) filter.status = status;
 
     const { limit, page, skip } = clampEventsPagination(
       filters.limit,

@@ -25,7 +25,7 @@ export async function cancelPendingOrdersOlderThan(
   };
   if (userId) filter.userId = userId;
 
-  const staleOrders = await orderModel.find(filter);
+  const staleOrders = await orderModel.find(filter).limit(200);
   const cancellationResults = await Promise.all(
     staleOrders.map(async (stale) => {
       const updated = await orderModel.findOneAndUpdate(
@@ -33,11 +33,11 @@ export async function cancelPendingOrdersOlderThan(
         { $set: { status: OrderStatus.CANCELLED } },
         { new: true },
       );
-      if (updated && logger) {
+      if (updated) {
         await restoreOrderStock(
           productModel,
           updated,
-          logger,
+          logger ?? new Logger("ShopOrderHelpers"),
           updated.orderNumber,
         );
         return 1;

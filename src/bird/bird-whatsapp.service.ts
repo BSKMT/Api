@@ -28,9 +28,9 @@ export class BirdWhatsappService {
     this.defaultTemplateSlug = process.env.BIRD_WHATSAPP_TEMPLATE_SLUG ?? "";
   }
 
-  /** Patron BSUID (Business-Scoped User ID de Meta / WhatsApp) o ID de grupo/contacto Bird */
+  /** Patron BSUID (Business-Scoped User ID de Meta / WhatsApp) o ID de grupo/contacto Bird (M-09: excluye dígitos puros para evitar bypass de +57) */
   private static readonly BSUID_PATTERN =
-    /^[A-Z]{2}\.\d+$|^wag_[a-zA-Z0-9]+$|^[a-zA-Z0-9_.-]{4,80}$/;
+    /^[A-Z]{2}\.\d+$|^wag_[a-zA-Z0-9]+$|^(?=.*[a-zA-Z])[a-zA-Z0-9_.-]{4,80}$/;
 
   /** Valida que un destinatario sea un teléfono E.164 (+57) o BSUID de Meta/WhatsApp. */
   isValidRecipient(recipient: string): boolean {

@@ -3,10 +3,11 @@ import { Model } from "mongoose";
 import { EventDocument } from "../../events/schemas/event.schema";
 import { EventRegistrationDocument } from "../../events/schemas/event-registration.schema";
 import type { KvCacheService } from "../../kv/kv-cache.service";
+import { parsePositiveInt } from "../../common/utils/pagination.util";
 
 export function clampEventsPagination(rawLimit?: number, rawPage?: number) {
-  const limit = Math.min(Math.max(rawLimit ?? 50, 1), 100);
-  const page = Math.max(rawPage ?? 1, 1);
+  const limit = parsePositiveInt(rawLimit, 50, 100);
+  const page = parsePositiveInt(rawPage, 1, 10000);
   const skip = (page - 1) * limit;
   return { limit, page, skip };
 }
@@ -98,15 +99,27 @@ export async function executeAdminConfirmRegistration(
     throw new BadRequestException("El registro ya está confirmado");
   }
 
-  if (registration.status === "CANCELLED") {
+  const prevStatus = registration.status;
+  if (prevStatus === "CANCELLED") {
     await incrementSeatOnReconfirm(eventModel, registration.eventSlug);
   }
 
-  registration.status = "CONFIRMED";
-  registration.confirmedAt = new Date();
-  await registration.save();
+  const updated = await registrationModel.findOneAndUpdate(
+    { _id: registrationId, status: prevStatus },
+    { $set: { status: "CONFIRMED", confirmedAt: new Date() } },
+    { new: true },
+  );
+  if (!updated) {
+    if (prevStatus === "CANCELLED") {
+      await eventModel.updateOne(
+        { slug: registration.eventSlug, registeredCount: { $gt: 0 } },
+        { $inc: { registeredCount: -1 } },
+      );
+    }
+    throw new BadRequestException("El estado del registro cambió concurrentemente");
+  }
   logger.log(`Registration admin-confirmed: id=${registrationId}`);
-  return registration;
+  return updated;
 }
 
 export async function executeAdminCancelRegistration(
@@ -115,22 +128,25 @@ export async function executeAdminCancelRegistration(
   registrationId: string,
   logger: Logger,
 ): Promise<EventRegistrationDocument> {
-  const registration = await registrationModel.findById(registrationId);
-  if (!registration) {
-    throw new NotFoundException("Registro no encontrado");
-  }
-  if (registration.status === "CANCELLED") {
+  // M-05: Atomic cancellation prevents double-decrement of registeredCount.
+  const updated = await registrationModel.findOneAndUpdate(
+    { _id: registrationId, status: { $ne: "CANCELLED" } },
+    { $set: { status: "CANCELLED", confirmedAt: null } },
+    { new: true },
+  );
+  if (!updated) {
+    const existing = await registrationModel.findById(registrationId).lean();
+    if (!existing) {
+      throw new NotFoundException("Registro no encontrado");
+    }
     throw new BadRequestException("El registro ya está cancelado");
   }
-  registration.status = "CANCELLED";
-  registration.confirmedAt = null;
-  await registration.save();
 
   await eventModel.findOneAndUpdate(
-    { slug: registration.eventSlug, registeredCount: { $gt: 0 } },
+    { slug: updated.eventSlug, registeredCount: { $gt: 0 } },
     { $inc: { registeredCount: -1 } },
   );
 
   logger.log(`Registration admin-cancelled: id=${registrationId}`);
-  return registration;
+  return updated;
 }

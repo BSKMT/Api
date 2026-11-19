@@ -19,7 +19,15 @@ export async function executeActivateMembership(
     throw new NotFoundException("Usuario no encontrado");
   }
 
-  user.role = UserRole.MEMBER;
+  // L-01: Never downgrade privileged staff/admin/gestor accounts to MEMBER upon membership activation.
+  const privilegedRoles = new Set<string>([
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+    UserRole.GESTOR,
+  ]);
+  if (!privilegedRoles.has(String(user.role))) {
+    user.role = UserRole.MEMBER;
+  }
   user.membershipLevel = "Legend";
   user.membershipStartDate = startDate;
   user.membershipExpiryDate = expiryDate;

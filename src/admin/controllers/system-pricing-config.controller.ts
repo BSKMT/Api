@@ -61,7 +61,18 @@ export class PublicPricingConfigController {
       );
     }
     const seasonYear = parseAndValidateSeasonYear(seasonYearStr);
-    return this.pricingConfigService.getConfig(seasonYear);
+    const config = await this.pricingConfigService.getConfig(seasonYear);
+    // L-10: Omit internal admin user identifier (`updatedBy`) from public endpoint.
+    const maybeDoc = config as unknown as {
+      toObject?: () => Record<string, unknown>;
+    };
+    const raw =
+      typeof maybeDoc?.toObject === "function"
+        ? maybeDoc.toObject()
+        : { ...(config as unknown as Record<string, unknown>) };
+    delete raw.updatedBy;
+    delete raw.__v;
+    return raw;
   }
 }
 

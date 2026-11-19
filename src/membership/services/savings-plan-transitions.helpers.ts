@@ -18,6 +18,7 @@ export async function evaluateSavingsPlanTransitions(
   userModel: Model<UserDocument>,
   userId: string,
   nowMs: number,
+  onUserDemoted?: (betterAuthId: string) => Promise<void>,
 ): Promise<{
   currentStatus: SavingsPlanStatus;
   gracePeriod1ExpiresAt: Date | undefined;
@@ -59,10 +60,14 @@ export async function evaluateSavingsPlanTransitions(
     currentStatus = SavingsPlanStatus.LAPSED_TEMPORARY;
     await plan.save();
 
-    await userModel.updateOne(
+    const demoted = await userModel.findOneAndUpdate(
       { _id: userId, role: UserRole.MEMBER },
-      { $set: { role: UserRole.USER } },
+      { $set: { role: UserRole.USER, membershipExpired: true } },
+      { new: true },
     );
+    if (demoted?.betterAuthId && onUserDemoted) {
+      await onUserDemoted(demoted.betterAuthId);
+    }
   }
 
   return { currentStatus, gracePeriod1ExpiresAt };

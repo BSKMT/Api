@@ -5,30 +5,98 @@ import {
   Body,
   HttpCode,
   HttpStatus,
-  BadRequestException,
+  UnauthorizedException,
   Logger,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { Throttle } from "@nestjs/throttler";
+import { timingSafeEqual } from "node:crypto";
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsInt,
+  IsObject,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  ValidateNested,
+} from "class-validator";
+import { Type } from "class-transformer";
 import { Public } from "../decorators";
 import { SecurityAuditService, AuditSeverity } from "./security-audit.service";
 import type { EnvironmentConfig } from "../../config/config.interface";
 
-interface IngestEventDto {
+class IngestEventDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
   requestId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
   type?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
   action?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
   eventType?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
   severity?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
   clientIp?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(16)
   method?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
   path?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(100)
+  @Max(599)
   statusCode?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
   userId?: string | null;
+
+  @IsOptional()
+  @IsObject()
   metadata?: Record<string, unknown>;
 }
 
-interface IngestPayloadDto {
-  events: IngestEventDto[];
+class IngestPayloadDto {
+  @IsArray()
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => IngestEventDto)
+  events!: IngestEventDto[];
+}
+
+function isConstantTimeEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a, "utf8");
+  const bufB = Buffer.from(b, "utf8");
+  return bufA.length === bufB.length && timingSafeEqual(bufA, bufB);
 }
 
 function parseAuditSeverity(val?: string): AuditSeverity {
@@ -48,22 +116,23 @@ export class BatchIngestController {
   ) {}
 
   @Public()
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
   @Post("batch-ingest")
   @HttpCode(HttpStatus.OK)
   async handleBatchIngest(
     @Headers("x-edge-secret") edgeSecret: string | undefined,
     @Body() payload: IngestPayloadDto,
   ) {
-    const expectedSecret =
-      this.configService.get<string>("INTERNAL_EDGE_SECRET", { infer: true }) ||
-      "bskmt-edge-shared-secret";
+    const expectedSecret = this.configService
+      .get<string>("INTERNAL_EDGE_SECRET", { infer: true })
+      ?.trim();
 
-    if (!edgeSecret || edgeSecret !== expectedSecret) {
-      throw new BadRequestException("Unauthorized edge request");
-    }
-
-    if (!payload?.events || !Array.isArray(payload.events)) {
-      throw new BadRequestException("Invalid events format");
+    if (
+      !expectedSecret ||
+      !edgeSecret ||
+      !isConstantTimeEqual(edgeSecret.trim(), expectedSecret)
+    ) {
+      throw new UnauthorizedException("Unauthorized edge request");
     }
 
     const results = await Promise.allSettled(

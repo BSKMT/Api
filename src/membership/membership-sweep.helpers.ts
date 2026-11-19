@@ -38,19 +38,31 @@ export async function sweepAbandonedPaymentsHelper(
 
       let revertedAmount = 0;
       if (tx.creditUsedAmount > 0 && !updated.creditReverted) {
-        const reverted = await deps.usersService.revertPartialPaymentCredit(
-          tx.userId,
-          tx.creditUsedAmount,
+        const claimed = await deps.transactionModel.findOneAndUpdate(
+          {
+            _id: updated._id,
+            creditReverted: false,
+            creditUsedAmount: { $gt: 0 },
+          },
+          { $set: { creditReverted: true } },
+          { new: true },
         );
-        if (reverted) {
-          await deps.transactionModel.updateOne(
-            { _id: updated._id, creditReverted: false },
-            { $set: { creditReverted: true } },
+        if (claimed) {
+          const reverted = await deps.usersService.revertPartialPaymentCredit(
+            claimed.userId,
+            claimed.creditUsedAmount,
           );
-          revertedAmount = tx.creditUsedAmount;
-          deps.logger.log(
-            `Credit reverted by sweeper: user=${maskUserId(tx.userId)} amount=${maskAmount(tx.creditUsedAmount)} ref=${maskReference(tx.reference)}`,
-          );
+          if (reverted) {
+            revertedAmount = claimed.creditUsedAmount;
+            deps.logger.log(
+              `Credit reverted by sweeper: user=${maskUserId(claimed.userId)} amount=${maskAmount(claimed.creditUsedAmount)} ref=${maskReference(claimed.reference)}`,
+            );
+          } else {
+            await deps.transactionModel.updateOne(
+              { _id: claimed._id },
+              { $set: { creditReverted: false } },
+            );
+          }
         }
       }
       return { swept: true, creditReverted: revertedAmount };

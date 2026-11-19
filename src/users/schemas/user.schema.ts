@@ -12,6 +12,7 @@ import {
   ContractorInfo,
 } from "./user-subdocuments.schema";
 import {
+  encryptSensitiveField,
   encryptUserProfileSensitiveFields,
   decryptUserProfileSensitiveFields,
 } from "../../common/crypto/field-encryption.helper";
@@ -215,16 +216,37 @@ UserSchema.post("find", (docs: unknown[]) => {
 UserSchema.post("findOne", (doc: unknown) =>
   decryptSensitiveProfileFields(doc),
 );
-UserSchema.pre("findOneAndUpdate", function () {
-  const update = this.getUpdate() as Record<string, unknown> | null;
-  if (!update) return;
+function encryptUpdatePayload(update: Record<string, unknown> | null): void {
+  if (!update || Array.isArray(update)) return;
   if (update.profile && typeof update.profile === "object") {
     encryptUserProfileSensitiveFields(update.profile);
   }
-  const setObj = update.$set as Record<string, unknown> | undefined;
-  if (setObj?.profile && typeof setObj.profile === "object") {
-    encryptUserProfileSensitiveFields(setObj.profile);
+  for (const dotKey of ["profile.salud-seguridad", "profile.documentacion-legal"]) {
+    if (update[dotKey] !== undefined && update[dotKey] !== null) {
+      update[dotKey] = encryptSensitiveField(update[dotKey]);
+    }
   }
+  const setObj = update.$set as Record<string, unknown> | undefined;
+  if (setObj && typeof setObj === "object") {
+    if (setObj.profile && typeof setObj.profile === "object") {
+      encryptUserProfileSensitiveFields(setObj.profile);
+    }
+    for (const dotKey of ["profile.salud-seguridad", "profile.documentacion-legal"]) {
+      if (setObj[dotKey] !== undefined && setObj[dotKey] !== null) {
+        setObj[dotKey] = encryptSensitiveField(setObj[dotKey]);
+      }
+    }
+  }
+}
+
+UserSchema.pre("findOneAndUpdate", function () {
+  encryptUpdatePayload(this.getUpdate() as Record<string, unknown> | null);
+});
+UserSchema.pre("updateOne", function () {
+  encryptUpdatePayload(this.getUpdate() as Record<string, unknown> | null);
+});
+UserSchema.pre("updateMany", function () {
+  encryptUpdatePayload(this.getUpdate() as Record<string, unknown> | null);
 });
 UserSchema.post("findOneAndUpdate", (doc: unknown) =>
   decryptSensitiveProfileFields(doc),

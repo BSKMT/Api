@@ -126,7 +126,10 @@ export class CloudinaryUrlService {
         const parsed = new URL(publicIdOrUrl);
         if (
           parsed.protocol !== "https:" ||
-          !parsed.hostname.endsWith("cloudinary.com")
+          !(
+            parsed.hostname === "res.cloudinary.com" ||
+            parsed.hostname.endsWith(".cloudinary.com")
+          )
         ) {
           return "";
         }

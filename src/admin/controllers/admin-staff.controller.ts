@@ -66,15 +66,15 @@ export class AdminStaffController {
   @Get("collaborators")
   @UseGuards(SessionGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.SUPERADMIN)
-  async listCollaborators() {
-    return this.contractorService.listCollaborators();
+  async listCollaborators(@Req() req: AuthenticatedUserRequest) {
+    return this.contractorService.listCollaborators(req.user.role);
   }
 
   @Get("gestores")
   @UseGuards(SessionGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.SUPERADMIN)
-  async listGestores() {
-    return this.contractorService.listCollaborators();
+  async listGestores(@Req() req: AuthenticatedUserRequest) {
+    return this.contractorService.listCollaborators(req.user.role);
   }
 
   /**
@@ -97,8 +97,8 @@ export class AdminStaffController {
   @Get("administrators")
   @UseGuards(SessionGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.SUPERADMIN)
-  async listAdministrators() {
-    return this.contractorService.listAdministrators();
+  async listAdministrators(@Req() req: AuthenticatedUserRequest) {
+    return this.contractorService.listAdministrators(req.user.role);
   }
 
   /**

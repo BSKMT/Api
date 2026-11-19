@@ -33,8 +33,10 @@ export interface RecordAuditEventParams {
 @Injectable()
 export class SecurityAuditService {
   private readonly logger = new Logger(SecurityAuditService.name);
-  private readonly hmacSecret: string;
+  private readonly hmacKey: Buffer;
   private readonly alertPhone?: string;
+  private readonly smsCooldownByEvent = new Map<string, number>();
+  private static readonly SMS_COOLDOWN_MS = 60_000;
 
   constructor(
     @InjectModel(SecurityAuditLog.name)
@@ -51,7 +53,11 @@ export class SecurityAuditService {
         "BETTER_AUTH_SECRET is required in production for SecurityAuditService",
       );
     }
-    this.hmacSecret = configuredSecret || `dev-test-audit-${process.pid}`;
+    const baseSecret = configuredSecret || `dev-test-audit-${process.pid}`;
+    // Domain-separated HMAC key derived specifically for immutable audit signatures
+    this.hmacKey = createHmac("sha256", baseSecret)
+      .update("bskmt:security-audit:hmac-v2")
+      .digest();
     this.alertPhone =
       this.configService.get<string>("SECDEVOPS_ALERT_PHONE", {
         infer: true,
@@ -67,25 +73,37 @@ export class SecurityAuditService {
     data: RecordAuditEventParams,
     timestamp: Date,
   ): string {
-    const payload = [
-      data.requestId,
-      data.eventType,
-      data.severity,
-      timestamp.toISOString(),
-      data.clientIp,
-      data.method,
-      data.path,
-      data.statusCode,
-      data.userId || "anonymous",
-    ].join("|");
+    const payload = JSON.stringify({
+      requestId: data.requestId,
+      eventType: data.eventType,
+      severity: data.severity,
+      timestamp: timestamp.toISOString(),
+      clientIp: data.clientIp,
+      method: data.method,
+      path: data.path,
+      statusCode: data.statusCode,
+      userId: data.userId || "anonymous",
+      userAgent: data.userAgent ?? null,
+      details: data.details ?? null,
+    });
 
-    return createHmac("sha256", this.hmacSecret).update(payload).digest("hex");
+    return createHmac("sha256", this.hmacKey).update(payload).digest("hex");
   }
 
   private dispatchCriticalAlertSms(
     params: RecordAuditEventParams,
     phone: string,
   ): void {
+    const now = Date.now();
+    const lastSent = this.smsCooldownByEvent.get(params.eventType) ?? 0;
+    if (now - lastSent < SecurityAuditService.SMS_COOLDOWN_MS) {
+      return;
+    }
+    if (this.smsCooldownByEvent.size >= 256) {
+      this.smsCooldownByEvent.clear();
+    }
+    this.smsCooldownByEvent.set(params.eventType, now);
+
     const alertMessage = `INCIDENTE CRITICO: ${params.eventType} en ${params.path} [${params.method}]. ReqId: ${params.requestId}`;
     this.birdSmsService
       ?.sendNotificationSms({

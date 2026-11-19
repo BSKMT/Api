@@ -107,6 +107,7 @@ function validateCsrfHeaderIfPresent(req: Request, secret: string): boolean {
 }
 
 const VERCEL_INTERNAL_PATHS = new Set([
+  "/health",
   "/api/health",
   "/api/membership/internal/cron/sweep-pending",
   "/api/events/internal/cron/sweep-stale-registrations",
@@ -166,13 +167,15 @@ export function setupSecurityMiddleware(
   panelUrl: string,
   landingPageUrl: string,
 ) {
-  app.set("trust proxy", 2);
-
   const isProduction =
     configService.get<string>("NODE_ENV", { infer: true }) === "production";
   const cfOriginSecret =
     configService.get<string>("CF_ORIGIN_SECRET", { infer: true })?.trim() ??
     "";
+
+  // F-12: Trust 2 hops (Cloudflare + Vercel) only when CF origin auth is configured;
+  // otherwise trust 1 hop (Vercel Edge only) so clients cannot spoof X-Forwarded-For.
+  app.set("trust proxy", cfOriginSecret ? 2 : 1);
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     const originCheck = evaluateOriginAccess(req, cfOriginSecret, isProduction);
@@ -237,19 +240,34 @@ export function setupSecurityMiddleware(
         "http://localhost:5173",
         "https://10.0.2.2",
       ];
+  const rawAllowedOrigins = [
+    ...configuredOrigins,
+    "https://bskmt.com",
+    "https://www.bskmt.com",
+    "https://dash.bskmt.com",
+    "https://console.bskmt.com",
+    "https://panel.bskmt.com",
+    "https://super.bskmt.com",
+    landingPageUrl,
+    panelUrl,
+    ...devOrigins,
+  ];
   const allowedOriginsList = Array.from(
-    new Set([
-      ...configuredOrigins,
-      "https://bskmt.com",
-      "https://www.bskmt.com",
-      "https://dash.bskmt.com",
-      "https://console.bskmt.com",
-      "https://panel.bskmt.com",
-      "https://super.bskmt.com",
-      landingPageUrl,
-      panelUrl,
-      ...devOrigins,
-    ]),
+    new Set(
+      rawAllowedOrigins.filter((originUrl) => {
+        if (!isProduction) return Boolean(originUrl);
+        try {
+          const parsed = new URL(originUrl);
+          return (
+            parsed.protocol === "https:" &&
+            parsed.hostname !== "localhost" &&
+            parsed.hostname !== "127.0.0.1"
+          );
+        } catch {
+          return false;
+        }
+      }),
+    ),
   );
 
   app.enableCors({
@@ -265,7 +283,6 @@ export function setupSecurityMiddleware(
       "X-Device-Platform",
       "X-App-Version",
       "X-Request-Id",
-      "X-CF-Origin-Secret",
       "Accept",
     ],
     maxAge: 86400,

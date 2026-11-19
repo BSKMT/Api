@@ -30,6 +30,7 @@ const ALLOWED_REFUND_PLAN_STATUSES = new Set<SavingsPlanStatus>([
 
 export async function executeRequestRefund(
   plan: SavingsPlanDocument,
+  savingsPlanModel: Model<SavingsPlanDocument>,
   refundRequestModel: Model<SavingsRefundRequestDocument>,
   notificationsService: NotificationsService,
   userId: string,
@@ -66,62 +67,87 @@ export async function executeRequestRefund(
     );
   }
 
+  // M-05: Atomically transition plan status BEFORE creating refund request to prevent concurrent duplicate filings.
+  const prevStatus = plan.status;
+  const claimedPlan = await savingsPlanModel.findOneAndUpdate(
+    {
+      _id: plan._id,
+      status: { $in: Array.from(ALLOWED_REFUND_PLAN_STATUSES) },
+      installmentsPaid: { $lt: 12 },
+    },
+    { $set: { status: SavingsPlanStatus.REFUND_REQUESTED } },
+    { new: true },
+  );
+  if (!claimedPlan) {
+    throw new BadRequestException(
+      "Tu plan ya tiene una solicitud de reembolso en curso o cambió de estado concurrentemente.",
+    );
+  }
+
   const now = new Date();
   const radicadoSeq = randomInt(1000, 10000);
-  const radicadoNumber = `RAD-BSK-FIN-${plan.seasonYear}-${radicadoSeq}`;
+  const radicadoNumber = `RAD-BSK-FIN-${claimedPlan.seasonYear}-${radicadoSeq}`;
 
-  const totalSavedAmount = plan.totalAmountSaved;
+  const totalSavedAmount = claimedPlan.totalAmountSaved;
   const retentionPercentage = 20;
   const retentionAmount = Math.round(totalSavedAmount * 0.2);
   const netRefundAmount = totalSavedAmount - retentionAmount;
 
-  const refundRequest = await refundRequestModel.create({
-    radicadoNumber,
-    userId,
-    savingsPlanId: String(plan._id),
-    totalSavedAmount,
-    retentionPercentage,
-    retentionAmount,
-    netRefundAmount,
-    bankDetails: {
-      bankName: dto.bankName,
-      accountType: dto.accountType,
-      accountNumber: dto.accountNumber,
-      accountHolderName: dto.accountHolderName,
-      identificationType: dto.identificationType,
-      identificationNumber: dto.identificationNumber,
-    },
-    status: SavingsRefundStatus.PENDING_CONSOLE_REVIEW,
-    consoleReview: {
-      status: "none",
-      notes: "",
-      reviewedBy: "",
-      reviewedAt: null,
-    },
-    financeReview: {
-      status: "none",
-      notes: "",
-      reviewedBy: "",
-      reviewedAt: null,
-      radicadoDocument: "",
-    },
-    appealCount: 0,
-    maxAppeals: 3,
-    appeals: [],
-    legalEscalation: { decision: "none" },
-    timeline: [
-      {
-        timestamp: now,
-        actor: "USUARIO",
-        action: "RADICACION_INICIAL",
-        details: `Radicación inicial de reembolso por ${netRefundAmount.toLocaleString("es-CO")} COP (80% de ${totalSavedAmount.toLocaleString("es-CO")} COP ahorrados).`,
-        radicado: radicadoNumber,
+  let refundRequest: SavingsRefundRequestDocument;
+  try {
+    refundRequest = await refundRequestModel.create({
+      radicadoNumber,
+      userId,
+      savingsPlanId: String(claimedPlan._id),
+      totalSavedAmount,
+      retentionPercentage,
+      retentionAmount,
+      netRefundAmount,
+      bankDetails: {
+        bankName: dto.bankName,
+        accountType: dto.accountType,
+        accountNumber: dto.accountNumber,
+        accountHolderName: dto.accountHolderName,
+        identificationType: dto.identificationType,
+        identificationNumber: dto.identificationNumber,
       },
-    ],
-  });
-
-  plan.status = SavingsPlanStatus.REFUND_REQUESTED;
-  await plan.save();
+      status: SavingsRefundStatus.PENDING_CONSOLE_REVIEW,
+      consoleReview: {
+        status: "none",
+        notes: "",
+        reviewedBy: "",
+        reviewedAt: null,
+      },
+      financeReview: {
+        status: "none",
+        notes: "",
+        reviewedBy: "",
+        reviewedAt: null,
+        radicadoDocument: "",
+      },
+      appealCount: 0,
+      maxAppeals: 3,
+      appeals: [],
+      legalEscalation: { decision: "none" },
+      timeline: [
+        {
+          timestamp: now,
+          actor: "USUARIO",
+          action: "RADICACION_INICIAL",
+          details: `Radicación inicial de reembolso por ${netRefundAmount.toLocaleString("es-CO")} COP (80% de ${totalSavedAmount.toLocaleString("es-CO")} COP ahorrados).`,
+          radicado: radicadoNumber,
+        },
+      ],
+    });
+  } catch (err) {
+    await savingsPlanModel
+      .updateOne(
+        { _id: claimedPlan._id, status: SavingsPlanStatus.REFUND_REQUESTED },
+        { $set: { status: prevStatus } },
+      )
+      .catch(() => {});
+    throw err;
+  }
 
   await notificationsService.create({
     userId,
@@ -180,30 +206,47 @@ export async function executeAppealRefund(
   const nextAppealNum = req.appealCount + 1;
   const now = new Date();
 
-  req.appealCount = nextAppealNum;
-  req.status = SavingsRefundStatus.APPEALED;
-  req.appeals.push({
-    appealNumber: nextAppealNum,
-    appealedAt: now,
-    userExplanation: dto.explanation,
-    status: "pending",
-  });
-
-  req.timeline.push({
-    timestamp: now,
-    actor: "USUARIO",
-    action: `APELACION_${nextAppealNum}_RADICADA`,
-    details: dto.explanation,
-    radicado: req.radicadoNumber,
-  });
-
-  await req.save();
+  // M-05: Atomic status transition prevents concurrent appeal submission bypassing maxAppeals.
+  const updated = await refundRequestModel.findOneAndUpdate(
+    {
+      _id: req._id,
+      status: SavingsRefundStatus.REJECTED,
+      appealCount: req.appealCount,
+    },
+    {
+      $set: {
+        appealCount: nextAppealNum,
+        status: SavingsRefundStatus.APPEALED,
+      },
+      $push: {
+        appeals: {
+          appealNumber: nextAppealNum,
+          appealedAt: now,
+          userExplanation: dto.explanation,
+          status: "pending",
+        },
+        timeline: {
+          timestamp: now,
+          actor: "USUARIO",
+          action: `APELACION_${nextAppealNum}_RADICADA`,
+          details: dto.explanation,
+          radicado: req.radicadoNumber,
+        },
+      },
+    },
+    { new: true },
+  );
+  if (!updated) {
+    throw new BadRequestException(
+      "Tu solicitud ya fue apelada o cambió de estado concurrentemente.",
+    );
+  }
 
   await notificationsService.create({
     userId,
     type: NotificationType.MEMBERSHIP_GRACE_PERIOD,
     title: `Apelación #${nextAppealNum} radicada`,
-    message: `Tu apelación #${nextAppealNum} de 3 para el radicado ${req.radicadoNumber} fue registrada y entró a revisión de la Dirección de Membresías y Gerencia Financiera.`,
+    message: `Tu apelación #${nextAppealNum} de 3 para el radicado ${updated.radicadoNumber} fue registrada y entró a revisión de la Dirección de Membresías y Gerencia Financiera.`,
     priority: NotificationPriority.HIGH,
     notifyCategory: "Membresia y pagos",
   });
@@ -211,8 +254,8 @@ export async function executeAppealRefund(
   return {
     success: true,
     appealNumber: nextAppealNum,
-    status: req.status,
-    appealsRemaining: req.maxAppeals - nextAppealNum,
+    status: updated.status,
+    appealsRemaining: updated.maxAppeals - nextAppealNum,
   };
 }
 

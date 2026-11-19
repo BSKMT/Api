@@ -223,7 +223,17 @@ export async function createMembershipPaymentHelper(
     isRenewal,
     creditUsedAmount: creditUsedAmount,
   });
-  await transaction.save();
+  try {
+    await transaction.save();
+  } catch (err) {
+    // M-05: Revert atomically reserved credit if transaction creation fails.
+    if (creditUsedAmount > 0) {
+      await deps.usersService
+        .revertPartialPaymentCredit(userId, creditUsedAmount)
+        .catch(() => {});
+    }
+    throw err;
+  }
 
   const description = formatMembershipDescription(
     isRenewal,

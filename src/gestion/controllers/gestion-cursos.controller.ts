@@ -31,6 +31,7 @@ import {
   CourseEnrollmentDocument,
 } from "../../events/schemas/course-enrollment.schema";
 import { ParseObjectIdPipe } from "../../common/pipes/parse-object-id.pipe";
+import { ensureString } from "../../common/utils/sanitize-query.util";
 import { IsString, IsNotEmpty, IsOptional, MaxLength } from "class-validator";
 
 export class ScanCourseCheckInDto {
@@ -86,17 +87,22 @@ export class GestionCursosController {
         "_id slug title level format duration durationHours date endDate enrolledCount maxCapacity coordinatorId coordinatorName coordinatorEmail status",
       )
       .sort({ createdAt: -1 })
+      .limit(100)
       .lean();
     return { courses };
   }
 
   @Get("roster")
-  async listRoster(@Query("courseSlug") courseSlug?: string) {
+  async listRoster(
+    @Req() req: AuthenticatedGestionRequest,
+    @Query("courseSlug") courseSlug?: unknown,
+  ) {
     return fetchEnrichedCourseRoster(
-      courseSlug,
+      ensureString(courseSlug),
       this.enrollmentModel,
       this.userModel,
       this.courseModel,
+      req.user,
     );
   }
 
@@ -130,6 +136,12 @@ export class GestionCursosController {
     }
 
     authorizeCourseCoordinator(course, req.user);
+
+    if (enrollment.status === "CANCELLED") {
+      throw new BadRequestException(
+        "No se puede confirmar asistencia de una matrícula cancelada.",
+      );
+    }
 
     if (
       course.nonMemberPrice &&
@@ -202,6 +214,23 @@ export class GestionCursosController {
     if (!course) throw new NotFoundException("Curso asociado no encontrado");
 
     authorizeCourseCoordinator(course, req.user);
+
+    // M-03: Enforce same cancellation and payment checks as scan-checkin.
+    if (enrollment.status === "CANCELLED") {
+      throw new BadRequestException(
+        "No se puede confirmar asistencia de una matrícula cancelada.",
+      );
+    }
+    if (
+      course.nonMemberPrice &&
+      course.nonMemberPrice > 0 &&
+      !enrollment.paymentConfirmed
+    ) {
+      throw new BadRequestException(
+        "El pago de la matrícula de este estudiante se encuentra pendiente.",
+      );
+    }
+
     await applyCourseCheckIn(enrollment, req.user);
 
     return {

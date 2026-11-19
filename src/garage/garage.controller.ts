@@ -16,6 +16,7 @@ import {
 import { Throttle } from "@nestjs/throttler";
 import type { Request } from "express";
 import { SessionGuard } from "../auth/session.guard";
+import { IdentityVerifiedGuard } from "../common/guards/identity-verified.guard";
 import { Public } from "../common/decorators";
 import { GarageService } from "./garage.service";
 import { CreateMotorcycleDto } from "./dto/create-motorcycle.dto";
@@ -24,6 +25,7 @@ import { UpdateOdometerDto } from "./dto/update-odometer.dto";
 import { CreateMaintenanceDto } from "./dto/create-maintenance.dto";
 import { AlliedServiceOrderDto } from "./dto/allied-service-order.dto";
 import { VerifyRuntDto } from "./dto/verify-runt.dto";
+import { LookupPlateDto } from "./dto/lookup-plate.dto";
 import { ensureString } from "../common/utils/sanitize-query.util";
 import { ParseObjectIdPipe } from "../common/pipes/parse-object-id.pipe";
 
@@ -108,34 +110,38 @@ export class GarageController {
   }
 
   @Get("lookup-plate")
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @UseGuards(IdentityVerifiedGuard)
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
   async lookupPlateGet(
-    @Query("plate") plate?: string,
-    @Query("documentNumber") documentNumber?: string,
-    @Query("documentType") documentType?: string,
+    @Req() req: AuthenticatedRequest,
+    @Query("plate") plate?: unknown,
   ) {
-    if (!plate?.trim()) {
-      return { error: "La placa es requerida" };
+    const cleanPlate = ensureString(plate)?.trim();
+    if (!cleanPlate || !/^[A-Za-z0-9-]{4,12}$/.test(cleanPlate)) {
+      return { error: "La placa es requerida y debe tener un formato válido" };
     }
     return await this.garageService.lookupVehicleByPlate(
-      plate,
-      documentNumber,
-      documentType,
+      req.user.userId,
+      cleanPlate,
     );
   }
 
   @Post("lookup-plate")
+  @UseGuards(IdentityVerifiedGuard)
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
   async lookupPlatePost(
-    @Body("plate") plate?: string,
-    @Body("documentNumber") documentNumber?: string,
-    @Body("documentType") documentType?: string,
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: LookupPlateDto,
   ) {
-    return await this.lookupPlateGet(plate, documentNumber, documentType);
+    return await this.garageService.lookupVehicleByPlate(
+      req.user.userId,
+      dto.plate,
+    );
   }
 
   @Get(["motorcycles/:id/diagnostic", "motorcycles/:id/verifik-diagnostic"])
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
   async getMotorcycleDiagnostic(
     @Req() req: AuthenticatedRequest,
     @Param("id", ParseObjectIdPipe) id: string,

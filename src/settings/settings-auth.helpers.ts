@@ -103,11 +103,14 @@ export async function handlePasswordChange(
   }
 
   const typedReq = req as Request & {
-    user?: { userId?: string; betterAuthId?: string };
+    user?: { userId?: string; betterAuthId?: string; sessionToken?: string };
   };
   const betterAuthId = typedReq.user?.betterAuthId;
   const cookieHeader = req.headers.cookie ?? "";
-  const currentToken = extractSessionTokenFromCookie(cookieHeader);
+  const currentToken =
+    extractSessionTokenFromCookie(cookieHeader) ||
+    typedReq.user?.sessionToken ||
+    "";
   if (betterAuthId && currentToken) {
     try {
       await revokeOtherSessionsFn(betterAuthId, currentToken);

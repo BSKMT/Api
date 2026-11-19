@@ -45,13 +45,18 @@ export async function processInvoiceWebhookEvent(
   logger: Logger,
 ): Promise<void> {
   const invoice = payload?.message?.invoice;
-  if (!invoice?.id) {
+  if (
+    !invoice ||
+    (typeof invoice.id !== "string" && typeof invoice.id !== "number") ||
+    String(invoice.id).trim().length === 0
+  ) {
     logger.warn("Alegra invoice webhook without valid invoice data");
     return;
   }
+  const safeInvoiceId = String(invoice.id);
 
   const record = await invoiceModel.findOne({
-    alegraInvoiceId: invoice.id,
+    alegraInvoiceId: safeInvoiceId,
   });
 
   if (!record) {

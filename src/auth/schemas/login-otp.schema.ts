@@ -77,13 +77,16 @@ export class LoginOtp {
   @Prop({ type: Number, required: true, default: 0 })
   attempts!: number;
 
+  @Prop({ type: Number, required: true, default: 0 })
+  resendCount!: number;
+
+  @Prop({ type: Date, required: false, default: null })
+  lastResentAt?: Date | null;
+
   /**
-   * Fecha de expiracion del documento (cleanup).
-   * TTL de 1 hora (3600 s) como red de seguridad — mas largo que el `expires_at`
-   * default de Bird (10 min) para que el documento sobreviva al ciclo de vida
-   * del codigo y se limpia solo sin interferir.
+   * Fecha de expiracion del documento (cleanup exacto en `expiresAt`).
    */
-  @Prop({ type: Date, required: true, expires: 3600 })
+  @Prop({ type: Date, required: true, expires: 0 })
   expiresAt!: Date;
 }
 

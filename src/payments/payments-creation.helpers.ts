@@ -12,8 +12,8 @@ import { CreatePaymentDto } from "./dto/create-payment.dto";
 import { ARPHA_PRICING } from "../arpha/schemas/arpha-request.schema";
 import { ArphaService } from "../arpha/arpha.service";
 import { UsersService } from "../users/users.service";
-import { UserRole } from "../users/schemas/user.schema";
 import { ShopService } from "../shop/shop.service";
+import { isActiveMember } from "../common/utils/membership-access.util";
 import {
   maskUserId,
   maskReference,
@@ -103,15 +103,7 @@ export async function verifyActiveMember(
 ): Promise<void> {
   const user = await usersService.findById(userId);
   if (!user) throw new NotFoundException("Usuario no encontrado");
-  const now = new Date();
-  const membershipExpired =
-    user.membershipExpiryDate != null &&
-    new Date(user.membershipExpiryDate) < now;
-  const isActiveMember =
-    (user.role as UserRole) === UserRole.MEMBER &&
-    !membershipExpired &&
-    !!user.membershipLevel;
-  if (!isActiveMember) {
+  if (!isActiveMember(user)) {
     throw new ForbiddenException(
       "No tienes una membresía activa para usar este tier de precio",
     );

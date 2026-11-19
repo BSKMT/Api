@@ -98,6 +98,11 @@ export async function executeCreateMotorcycle(
       "Límite de vehículos alcanzado para cuenta gratuita (1 moto). Actualiza a membresía Legend para garaje extendido.",
     );
   }
+  if (isLegend && currentCount >= 10) {
+    throw new BadRequestException(
+      "Has alcanzado el límite máximo de 10 motocicletas para membresía Legend.",
+    );
+  }
 
   const normalizedPlate = dto.plate.trim().toUpperCase();
   const existing = await motorcycleModel.findOne({

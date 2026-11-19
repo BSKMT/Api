@@ -9,6 +9,7 @@ import type { EventDocument } from "../events/schemas/event.schema";
 import type { OrderDocument } from "../shop/schemas/order.schema";
 import type { UsersService } from "../users/users.service";
 import { ALLIED_WORKSHOPS } from "./garage.constants";
+import { isActiveLegendMember } from "../common/utils/membership-access.util";
 import {
   buildEmptyDashboardResponse,
   autoSeedFromProfile,
@@ -57,7 +58,7 @@ export async function executeGetDashboard(
     throw new NotFoundException("Usuario no encontrado");
   }
 
-  const isLegend = user.membershipLevel === "Legend";
+  const isLegend = isActiveLegendMember(user);
 
   let motorcycles = await motorcycleModel
     .find({ userId })

@@ -11,6 +11,7 @@ import {
   CreditType,
 } from "../../users/schemas/user.schema";
 import { ensureString } from "../../common/utils/sanitize-query.util";
+import { parsePositiveInt } from "../../common/utils/pagination.util";
 
 export async function queryTransactions(
   transactionModel: Model<MembershipTransactionDocument>,
@@ -34,8 +35,8 @@ export async function queryTransactions(
   }
   if (filters.isRenewal !== undefined) filter.isRenewal = filters.isRenewal;
 
-  const limit = Math.min(Math.max(filters.limit ?? 50, 1), 100);
-  const page = Math.max(filters.page ?? 1, 1);
+  const limit = parsePositiveInt(filters.limit, 50, 100);
+  const page = parsePositiveInt(filters.page, 1, 10000);
   const skip = (page - 1) * limit;
 
   const [items, total] = await Promise.all([
@@ -73,8 +74,8 @@ export async function queryMembers(
     filter.membershipExpired = true;
   }
 
-  const limit = Math.min(Math.max(filters.limit ?? 50, 1), 100);
-  const page = filters.page ?? 1;
+  const limit = parsePositiveInt(filters.limit, 50, 100);
+  const page = parsePositiveInt(filters.page, 1, 10000);
   const skip = (page - 1) * limit;
 
   const SENSITIVE_PROFILE_EXCLUSIONS =
@@ -105,10 +106,11 @@ export async function queryMemberDetails(
   transactionModel: Model<MembershipTransactionDocument>,
   userId: string,
 ) {
+  // L-06: Exclude sensitive internal auth/KYC/medical/legal fields.
   const user = await userModel
     .findById(userId)
     .select(
-      "-password -refreshTokenHash -profile.salud-seguridad -profile.documentacion-legal",
+      "-password -refreshTokenHash -betterAuthId -pendingPhone -pendingEmail -identityVerification.verifikId -profile.salud-seguridad -profile.documentacion-legal",
     )
     .lean();
   if (!user) {
@@ -118,6 +120,7 @@ export async function queryMemberDetails(
   const transactions = await transactionModel
     .find({ userId })
     .sort({ createdAt: -1 })
+    .limit(200)
     .select("-webhookEvents -payerEmail -paymentMethod")
     .lean();
 
@@ -132,7 +135,10 @@ export async function queryPendingRefunds(
     .find({
       "partialPaymentCredit.type": CreditType.REFUND_REQUESTED,
     })
-    .select("-password -refreshTokenHash")
+    .select(
+      "_id email membershipLevel partialPaymentCredit",
+    )
+    .limit(500)
     .lean();
 
   const userIds = usersWithRequestedRefund.map((u) => String(u._id));

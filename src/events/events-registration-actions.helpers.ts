@@ -52,6 +52,7 @@ export async function executeRegisterForEvent(
   if (existing) {
     return updateCancelledRegistration(
       eventModel,
+      eventRegistrationModel,
       existing,
       registrationState,
       logger,
@@ -91,22 +92,57 @@ export async function executeConfirmRegistration(
 
   validateConfirmationPrerequisites(registration);
 
-  if (registration.status === "CANCELLED") {
-    const event = await eventModel.findOne({ slug: eventSlug });
-    if (event) {
-      try {
-        await incrementEventRegisteredCount(eventModel, eventSlug, event);
-      } catch {
-        throw new BadRequestException(
-          "El evento ha alcanzado su capacidad máxima",
-        );
-      }
+  // M-02: Verify event is published and has not ended before confirming registration.
+  const event = await eventModel.findOne({ slug: eventSlug });
+  if (!event) {
+    throw new NotFoundException("Evento no encontrado");
+  }
+  const eventStatus = (event.status ?? "").toUpperCase();
+  if (eventStatus === "CANCELLED" || eventStatus === "COMPLETED" || eventStatus === "DRAFT") {
+    throw new BadRequestException(
+      "Este evento ya no se encuentra disponible para confirmación.",
+    );
+  }
+  const cutoffDate = event.endDate ?? event.date;
+  if (cutoffDate && new Date(cutoffDate).getTime() < Date.now()) {
+    throw new BadRequestException(
+      "No se puede confirmar inscripción en un evento cuya fecha ya pasó.",
+    );
+  }
+
+  const prevStatus = registration.status;
+  if (prevStatus === "CANCELLED") {
+    try {
+      await incrementEventRegisteredCount(eventModel, eventSlug, event);
+    } catch {
+      throw new BadRequestException(
+        "El evento ha alcanzado su capacidad máxima",
+      );
     }
   }
 
-  registration.status = "CONFIRMED";
-  registration.confirmedAt = new Date();
-  const saved = await registration.save();
+  // Atomic transition to avoid double-confirmation / concurrent seat increment races.
+  const saved = await eventRegistrationModel.findOneAndUpdate(
+    { _id: registration._id, status: prevStatus },
+    { $set: { status: "CONFIRMED", confirmedAt: new Date() } },
+    { new: true },
+  );
+  if (!saved) {
+    if (prevStatus === "CANCELLED") {
+      await eventModel.updateOne(
+        { slug: eventSlug, registeredCount: { $gt: 0 } },
+        { $inc: { registeredCount: -1 } },
+      );
+    }
+    const latest = await eventRegistrationModel.findById(registration._id);
+    if (latest?.status === "CONFIRMED") {
+      return latest;
+    }
+    throw new ConflictException(
+      "El estado de la inscripción cambió concurrentemente. Intenta de nuevo.",
+    );
+  }
+
   logger.log(`Registration confirmed: user=${userId} event=${eventSlug}`);
   return saved;
 }

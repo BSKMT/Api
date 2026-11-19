@@ -127,11 +127,24 @@ export class ArphaService {
   async cancelRequest(
     userId: string,
     requestId: string,
-    callerUser?: { userId: string; role?: string; subrol?: string | null },
+    callerUser?: {
+      userId: string;
+      role?: string;
+      subrol?: string | null;
+      adminPermissions?: string[];
+    },
   ): Promise<{ message: string }> {
+    const adminPerms = Array.isArray(callerUser?.adminPermissions)
+      ? callerUser.adminPermissions
+      : [];
+    const isAuthorizedAdmin =
+      callerUser?.role === UserRole.ADMIN &&
+      (adminPerms.includes("*") ||
+        adminPerms.includes("arpha") ||
+        adminPerms.includes("events"));
     const isLeaderOrAdmin =
-      callerUser?.role === UserRole.ADMIN ||
       callerUser?.role === UserRole.SUPERADMIN ||
+      isAuthorizedAdmin ||
       callerUser?.subrol === UserSubrole.LIDER_ARPHA;
 
     const query = isLeaderOrAdmin

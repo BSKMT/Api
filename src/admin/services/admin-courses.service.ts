@@ -19,6 +19,8 @@ import {
 } from "../../events/schemas/course-enrollment.schema";
 import { CreateCourseDto } from "../dto/create-course.dto";
 import { UpdateCourseDto } from "../dto/update-course.dto";
+import { ensureString } from "../../common/utils/sanitize-query.util";
+import { parsePositiveInt } from "../../common/utils/pagination.util";
 
 @Injectable()
 export class AdminCoursesService {
@@ -45,12 +47,15 @@ export class AdminCoursesService {
     page?: number;
   }) {
     const filter: Record<string, unknown> = {};
-    if (filters.status) filter.status = filters.status;
-    if (filters.level) filter.level = filters.level;
-    if (filters.format) filter.format = filters.format;
+    const status = ensureString(filters.status);
+    const level = ensureString(filters.level);
+    const format = ensureString(filters.format);
+    if (status) filter.status = status;
+    if (level) filter.level = level;
+    if (format) filter.format = format;
 
-    const limit = Math.min(Math.max(filters.limit ?? 50, 1), 100);
-    const page = filters.page ?? 1;
+    const limit = parsePositiveInt(filters.limit, 50, 100);
+    const page = parsePositiveInt(filters.page, 1, 10000);
     const skip = (page - 1) * limit;
 
     const [items, total] = await Promise.all([
@@ -172,11 +177,13 @@ export class AdminCoursesService {
     }
 
     const filter: Record<string, unknown> = { courseSlug };
-    if (filters.status) filter.status = filters.status;
+    const status = ensureString(filters.status);
+    if (status) filter.status = status;
 
     const items = await this.enrollmentModel
       .find(filter)
       .sort({ createdAt: -1 })
+      .limit(500)
       .lean();
 
     return {
@@ -191,18 +198,22 @@ export class AdminCoursesService {
   }
 
   async adminCancelEnrollment(enrollmentId: string) {
-    const enrollment = await this.enrollmentModel.findById(enrollmentId);
+    // M-05: Atomic status transition prevents double-decrement of enrolledCount.
+    const enrollment = await this.enrollmentModel.findOneAndUpdate(
+      { _id: enrollmentId, status: { $ne: "CANCELLED" } },
+      { $set: { status: "CANCELLED" } },
+      { new: true },
+    );
     if (!enrollment) {
-      throw new NotFoundException("Inscripción no encontrada");
-    }
-    if (enrollment.status === "CANCELLED") {
+      const existing = await this.enrollmentModel.findById(enrollmentId).lean();
+      if (!existing) {
+        throw new NotFoundException("Inscripción no encontrada");
+      }
       throw new BadRequestException("La inscripción ya está cancelada");
     }
-    enrollment.status = "CANCELLED";
-    await enrollment.save();
 
     await this.courseModel.updateOne(
-      { slug: enrollment.courseSlug },
+      { slug: enrollment.courseSlug, enrolledCount: { $gt: 0 } },
       { $inc: { enrolledCount: -1 } },
     );
 

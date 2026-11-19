@@ -6,7 +6,14 @@ export function assertChannelAuthorized(
   betterAuthId: string,
   userId?: string,
   role = "user",
+  adminPermissions: string[] = [],
 ): void {
+  const perms = Array.isArray(adminPermissions) ? adminPermissions : [];
+  const hasAdminSupportPerm =
+    role === "superadmin" ||
+    (role === "admin" &&
+      (perms.includes("*") || perms.includes("support") || perms.includes("users")));
+
   if (
     channelName.startsWith("private-user-") ||
     channelName.startsWith("presence-user-")
@@ -17,7 +24,7 @@ export function assertChannelAuthorized(
     const isOwner =
       channelOwner === betterAuthId ||
       (Boolean(userId) && channelOwner === userId);
-    if (!isOwner && role !== "admin" && role !== "superadmin") {
+    if (!isOwner && !hasAdminSupportPerm) {
       throw new ForbiddenException(
         "No tienes autorización para unirte a este canal personal de usuario",
       );
@@ -29,7 +36,11 @@ export function assertChannelAuthorized(
     channelName.startsWith("private-admin") ||
     channelName.startsWith("presence-admin")
   ) {
-    if (role !== "admin" && role !== "superadmin") {
+    // M-12: Require explicit support/* permission for admin realtime channels.
+    const canJoinAdmin =
+      role === "superadmin" ||
+      (role === "admin" && (perms.includes("*") || perms.includes("support")));
+    if (!canJoinAdmin) {
       throw new ForbiddenException(
         "Acceso denegado a canales de administración",
       );

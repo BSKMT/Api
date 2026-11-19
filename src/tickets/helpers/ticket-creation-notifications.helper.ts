@@ -3,7 +3,11 @@ import { BirdEmailService } from "../../bird/bird-email.service";
 import { BirdSmsService } from "../../bird/bird-sms.service";
 import { BirdWhatsappService } from "../../bird/bird-whatsapp.service";
 import { BirdRealtimeService } from "../../bird/bird-realtime.service";
-import { TicketDocument, TicketPriority } from "../schemas/ticket.schema";
+import {
+  TicketChannel,
+  TicketDocument,
+  TicketPriority,
+} from "../schemas/ticket.schema";
 import { maskEmail, maskPhone } from "../../common/utils/log-redact.util";
 import { normalizePhoneNumberHelper } from "../../bird/bird-contact-extraction.helpers";
 
@@ -128,18 +132,29 @@ export async function sendTicketCreationNotifications(
 
   await dispatchCreationEmail(birdEmailService, ticket, logger);
 
-  const normalizedPhone = normalizePhoneNumberHelper(ticket.customer.phone);
-  if (normalizedPhone && birdWhatsappService) {
-    await dispatchCreationWhatsapp(
-      birdWhatsappService,
-      ticket,
-      normalizedPhone,
-      logger,
-    );
-  }
+  // H-01: Prevent unauthenticated SMS/WhatsApp pumping on public web contact forms
+  const isUnauthenticatedContact =
+    ticket.channel === TicketChannel.WEB_CONTACT && !ticket.customer.userId;
 
-  if (normalizedPhone && birdSmsService) {
-    await dispatchCreationSms(birdSmsService, ticket, normalizedPhone, logger);
+  if (!isUnauthenticatedContact) {
+    const normalizedPhone = normalizePhoneNumberHelper(ticket.customer.phone);
+    if (normalizedPhone && birdWhatsappService) {
+      await dispatchCreationWhatsapp(
+        birdWhatsappService,
+        ticket,
+        normalizedPhone,
+        logger,
+      );
+    }
+
+    if (normalizedPhone && birdSmsService) {
+      await dispatchCreationSms(
+        birdSmsService,
+        ticket,
+        normalizedPhone,
+        logger,
+      );
+    }
   }
 
   if (birdRealtimeService?.isRealtimeConfigured()) {

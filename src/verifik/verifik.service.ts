@@ -174,12 +174,16 @@ export class VerifikService {
     );
     const cleanPlate = plate.trim().toUpperCase();
 
-    // 1. Primary: /v2/co/runt/vehiculo
-    const result = await this.getRuntVehicle("/v2/co/runt/vehiculo", {
-      documentType: cleanDocType,
-      documentNumber: cleanDocNumber,
-      plate: cleanPlate,
-    });
+    // 1. Primary: /v2/co/runt/vehiculo (owner document + plate)
+    const result = await this.getRuntVehicle(
+      "/v2/co/runt/vehiculo",
+      {
+        documentType: cleanDocType,
+        documentNumber: cleanDocNumber,
+        plate: cleanPlate,
+      },
+      true,
+    );
 
     // 2. Secondary fallback: /v2/co/runt/vehicle-by-plate (full history with document)
     if (!result.ok && result.reason !== "unauthorized") {
@@ -190,23 +194,15 @@ export class VerifikService {
           documentNumber: cleanDocNumber,
           plate: cleanPlate,
         },
+        true,
       );
       if (altResult.ok) {
         return altResult;
       }
     }
 
-    // 3. Tertiary fallback: /v2/co/runt/vehicle-by-plate-only (plate only)
-    if (!result.ok && result.reason !== "unauthorized") {
-      const plateOnlyResult = await this.getRuntVehicle(
-        "/v2/co/runt/vehicle-by-plate-only",
-        { plate: cleanPlate },
-      );
-      if (plateOnlyResult.ok) {
-        return plateOnlyResult;
-      }
-    }
-
+    // Do NOT silently fall back to plate-only here (H-02/H-03):
+    // callers that need non-ownership plate lookup call verifyRuntVehicleByPlate() explicitly.
     return result;
   }
 
@@ -214,25 +210,30 @@ export class VerifikService {
     plate: string,
   ): Promise<VerifikRuntLookupResult> {
     const cleanPlate = plate.trim().toUpperCase();
-    return this.getRuntVehicle("/v2/co/runt/propietarios", {
-      plate: cleanPlate,
-    });
+    return this.getRuntVehicle(
+      "/v2/co/runt/propietarios",
+      {
+        plate: cleanPlate,
+      },
+      false,
+    );
   }
 
   async verifyRuntVehicleByPlate(
     plate: string,
   ): Promise<VerifikRuntLookupResult> {
     const cleanPlate = plate.trim().toUpperCase();
-    // 1. Primary: vehicle-by-plate-only
+    // 1. Primary: vehicle-by-plate-only (non-ownership)
     const result = await this.getRuntVehicle(
       "/v2/co/runt/vehicle-by-plate-only",
       { plate: cleanPlate },
+      false,
     );
     if (result.ok) {
       return result;
     }
 
-    // 2. Fallback: propietarios
+    // 2. Fallback: propietarios (non-ownership)
     const ownersResult = await this.verifyRuntVehicleOwners(cleanPlate);
     if (ownersResult.ok) {
       return ownersResult;
@@ -543,6 +544,7 @@ export class VerifikService {
       license,
       syncedAt: new Date().toISOString(),
       source: "VERIFIK_OFFICIAL",
+      ownershipVerified: Boolean(vehicleResult?.ok && vehicleResult.ownershipVerified),
       runtUnavailable,
       runtMessage: runtUnavailable ? runtMessage : undefined,
     };
@@ -614,6 +616,7 @@ export class VerifikService {
   private async getRuntVehicle(
     path: string,
     params: Record<string, string>,
+    ownershipVerified: boolean,
   ): Promise<VerifikRuntLookupResult> {
     const fetchResult = await executeVerifikFetch(
       this.configService,
@@ -685,6 +688,7 @@ export class VerifikService {
     return {
       ok: true,
       record: normalizeRuntVehicle(payloadData, body.id, params.plate || ""),
+      ownershipVerified,
     };
   }
 }

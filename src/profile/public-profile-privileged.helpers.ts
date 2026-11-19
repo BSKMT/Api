@@ -29,21 +29,26 @@ export interface UserProfileData {
   cuotasProgress: string;
 }
 
-function extractUserData(targetUser: Record<string, unknown>): UserProfileData {
+function extractUserData(
+  targetUser: Record<string, unknown>,
+  options: { includeSalud: boolean; includeLegal: boolean },
+): UserProfileData {
   const profile =
     (targetUser.profile as
       Record<string, Record<string, unknown>> | undefined) ?? {};
   const personal = profile["datos-personales"] ?? {};
   const contacto = profile["contacto"] ?? {};
   const moto = profile["motocicleta"] ?? {};
-  const salud =
-    decryptSensitiveField<Record<string, unknown>>(
-      profile["salud-seguridad"],
-    ) ?? {};
-  const legal =
-    decryptSensitiveField<Record<string, unknown>>(
-      profile["documentacion-legal"],
-    ) ?? {};
+  const salud = options.includeSalud
+    ? (decryptSensitiveField<Record<string, unknown>>(
+        profile["salud-seguridad"],
+      ) ?? {})
+    : {};
+  const legal = options.includeLegal
+    ? (decryptSensitiveField<Record<string, unknown>>(
+        profile["documentacion-legal"],
+      ) ?? {})
+    : {};
   const membEco = profile["membresia-ecosistema"] ?? {};
 
   const fullName = [
@@ -225,24 +230,61 @@ export function buildPrivilegedSection(
     subrol?: string | null;
     adminPermissions?: string[];
   },
+  isSerialized = false,
 ): OperationalSection | null {
   const reqRole = (requester.role || "").toLowerCase();
   const reqSubrol = (requester.subrol || "").toLowerCase();
-  const adminPermissions = requester.adminPermissions ?? [];
+  const adminPermissions = Array.isArray(requester.adminPermissions)
+    ? requester.adminPermissions
+    : [];
 
   const rawTarget = (targetUser ?? {}) as Record<string, unknown>;
-  const u = extractUserData(rawTarget);
 
   if (reqRole === "superadmin" || reqRole === "gerente") {
+    const u = extractUserData(rawTarget, {
+      includeSalud: true,
+      includeLegal: true,
+    });
     return buildSuperadminSection(u, rawTarget);
   }
 
+  // H-06: Require explicit "users" or "*" permission (or a verified QR scan with operational permission)
+  // before exposing administrative operational sections.
   if (reqRole === "admin") {
+    const hasUsersPerm =
+      adminPermissions.includes("*") || adminPermissions.includes("users");
+    const hasArphaPerm =
+      adminPermissions.includes("*") ||
+      adminPermissions.includes("arpha") ||
+      adminPermissions.includes("events");
+    if (!hasUsersPerm && !(isSerialized && hasArphaPerm)) {
+      return null;
+    }
+    const u = extractUserData(rawTarget, {
+      includeSalud: hasArphaPerm,
+      includeLegal: false,
+    });
     return buildAdminSection(u, rawTarget, adminPermissions);
   }
 
+  // H-06: Gestor staff MUST present a scanned serialized QR token before decrypting
+  // medical records or exposing home/dispatch addresses.
   const isGestor = reqRole === "gestor" || Boolean(reqSubrol);
   if (isGestor) {
+    if (!isSerialized) {
+      return null;
+    }
+    const needsSalud = reqSubrol.includes("arpha");
+    const needsLegal =
+      reqSubrol.includes("evento") ||
+      reqSubrol === "gestor_campo" ||
+      reqSubrol.includes("curso") ||
+      reqRole === "event-manager" ||
+      reqRole === "road-captain";
+    const u = extractUserData(rawTarget, {
+      includeSalud: needsSalud,
+      includeLegal: needsLegal,
+    });
     return buildGestorOperationalSection(u, rawTarget, reqRole, reqSubrol);
   }
 

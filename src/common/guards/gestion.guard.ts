@@ -64,8 +64,10 @@ export class GestionGuard implements CanActivate {
 
     // Role 'admin' has access if unrestricted or if permission matches required module
     if (request.user.role === UserRole.ADMIN) {
-      const adminPerms = request.user.adminPermissions;
-      if (!Array.isArray(adminPerms) || adminPerms.includes("*")) {
+      const adminPerms = Array.isArray(request.user.adminPermissions)
+        ? request.user.adminPermissions
+        : [];
+      if (adminPerms.includes("*")) {
         return true;
       }
       if (!requiredSubroles || requiredSubroles.length === 0) {

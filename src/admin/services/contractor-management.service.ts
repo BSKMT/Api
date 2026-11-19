@@ -129,16 +129,22 @@ export class ContractorManagementService {
 
   /**
    * Lista todos los colaboradores/contratistas de gestión (Fascia).
+   * H-07: Nunca expone cuentas SUPERADMIN a llamadores no-superadmin.
    */
-  async listCollaborators() {
+  async listCollaborators(callerRole?: string) {
+    const isSuperAdmin = (callerRole || "").toLowerCase() === UserRole.SUPERADMIN;
+    const filter: Record<string, unknown> = {
+      $or: [
+        { role: UserRole.GESTOR },
+        { contractorInfo: { $ne: null } },
+        { subrol: { $ne: null } },
+      ],
+    };
+    if (!isSuperAdmin) {
+      filter.role = { $ne: UserRole.SUPERADMIN };
+    }
     return this.userModel
-      .find({
-        $or: [
-          { role: UserRole.GESTOR },
-          { contractorInfo: { $ne: null } },
-          { subrol: { $ne: null } },
-        ],
-      })
+      .find(filter)
       .select("email username role subrol contractorInfo isActive createdAt")
       .sort({ createdAt: -1 })
       .limit(500)
@@ -146,12 +152,15 @@ export class ContractorManagementService {
   }
 
   /**
-   * Lista todos los administradores ejecutivos y superadministradores.
+   * Lista todos los administradores ejecutivos (y superadministradores solo si el llamador es SUPERADMIN).
    */
-  async listAdministrators() {
+  async listAdministrators(callerRole?: string) {
+    const isSuperAdmin = (callerRole || "").toLowerCase() === UserRole.SUPERADMIN;
     return this.userModel
       .find({
-        role: { $in: [UserRole.ADMIN, UserRole.SUPERADMIN] },
+        role: isSuperAdmin
+          ? { $in: [UserRole.ADMIN, UserRole.SUPERADMIN] }
+          : UserRole.ADMIN,
       })
       .select(
         "email username role subrol adminPermissions contractorInfo isActive createdAt",

@@ -23,6 +23,7 @@ import {
   UploadImageDto,
   UploadBase64Dto,
   GenerateSignatureDto,
+  OptimizeUrlQueryDto,
 } from "./dto/upload.dto";
 import {
   sanitizeFolder,
@@ -138,25 +139,18 @@ export class CloudinaryController {
 
   @Public()
   @Get("optimize")
-  getOptimizedUrl(
-    @Query("url") url: string,
-    @Query("width") width?: string,
-    @Query("height") height?: string,
-    @Query("crop") crop?: string,
-    @Query("quality") quality?: string,
-    @Query("format") format?: string,
-  ) {
-    if (!url) {
-      throw new BadRequestException('El parámetro "url" es requerido.');
-    }
-
-    const optimizedUrl = this.cloudinaryService.getOptimizedUrl(url, {
-      width: width ? Number.parseInt(width, 10) : undefined,
-      height: height ? Number.parseInt(height, 10) : undefined,
-      crop: crop || undefined,
-      quality: quality || "auto",
-      format: format || "auto",
+  getOptimizedUrl(@Query() query: OptimizeUrlQueryDto) {
+    const optimizedUrl = this.cloudinaryService.getOptimizedUrl(query.url, {
+      width: query.width,
+      height: query.height,
+      crop: query.crop || undefined,
+      quality: query.quality || "auto",
+      format: query.format || "auto",
     });
+
+    if (!optimizedUrl) {
+      throw new BadRequestException("URL de imagen inválida o no permitida.");
+    }
 
     return {
       success: true,
@@ -190,23 +184,35 @@ export class CloudinaryController {
       );
     }
 
+    // M-08/F-15: Canonical strict publicId regex prevents path traversal, encoding bypasses, and cross-namespace deletes.
     if (
-      !resolvedPublicId.startsWith("bskmt/") ||
-      resolvedPublicId.includes("..")
+      !/^bskmt\/[a-zA-Z0-9/_-]{1,200}$/.test(resolvedPublicId) ||
+      resolvedPublicId.includes("..") ||
+      resolvedPublicId.includes("//")
     ) {
       throw new ForbiddenException(
-        "Solo se permite eliminar recursos ubicados dentro del prefijo 'bskmt/'.",
+        "Solo se permite eliminar recursos válidos ubicados dentro del prefijo 'bskmt/'.",
       );
     }
 
     const userRole = req.user?.role;
+    const isAdmin = isAdminOrSuperAdmin(
+      typeof userRole === "string" ? userRole : undefined,
+    );
+    const adminOnlyPrefixes = [
+      "bskmt/documents/",
+      "bskmt/profiles/",
+      "bskmt/users/",
+      "bskmt/contracts/",
+      "bskmt/legal/",
+      "bskmt/general/",
+    ];
     if (
-      (resolvedPublicId.startsWith("bskmt/documents/") ||
-        resolvedPublicId.startsWith("bskmt/profiles/")) &&
-      !isAdminOrSuperAdmin(typeof userRole === "string" ? userRole : undefined)
+      !isAdmin &&
+      adminOnlyPrefixes.some((prefix) => resolvedPublicId.startsWith(prefix))
     ) {
       throw new ForbiddenException(
-        "Solo Administradores o Superadministradores pueden eliminar documentos o perfiles en Cloudinary.",
+        "Solo Administradores o Superadministradores pueden eliminar este tipo de recurso en Cloudinary.",
       );
     }
 

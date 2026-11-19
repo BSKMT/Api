@@ -12,6 +12,7 @@ import type { Request } from "express";
 import { ContactService } from "./contact.service";
 import { ContactDto } from "./dto/contact.dto";
 import { Public } from "../common/decorators";
+import { verifyTurnstileAttestation } from "../common/utils/turnstile.util";
 
 /**
  * ContactController - Endpoint publico del formulario de contacto.
@@ -44,9 +45,14 @@ export class ContactController {
   ) {
     const clientIp =
       (req.headers["cf-connecting-ip"] as string | undefined) || req.ip || "";
-    const edgeVerified =
-      Boolean(req.cfOriginVerified) &&
-      req.headers["x-turnstile-verified"] === "1";
+    const requestId =
+      (req.headers["x-request-id"] as string | undefined)?.trim() || "";
+    const edgeVerified = verifyTurnstileAttestation(
+      req.headers["x-turnstile-attestation"],
+      "contact",
+      clientIp,
+      requestId,
+    );
     return this.contactService.handleContact(dto, clientIp, edgeVerified);
   }
 }

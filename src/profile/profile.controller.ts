@@ -34,7 +34,7 @@ export class RespondFriendRequestDto {
 }
 
 interface AuthenticatedRequest extends Request {
-  user: { userId: string };
+  user: { userId: string; sessionToken?: string };
 }
 
 @Controller("profile")
@@ -225,6 +225,7 @@ export class ProfileController {
       req.user.userId,
       dto.newEmail,
       dto.code,
+      req.user.sessionToken,
     );
     return { message: "Correo actualizado y verificado", emailVerified: true };
   }

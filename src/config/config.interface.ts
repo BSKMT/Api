@@ -185,6 +185,11 @@ export interface EnvironmentConfig {
   CF_ORIGIN_SECRET?: string;
 
   /**
+   * Shared secret for Cloudflare Edge Gateway (`bskmt-edge-gateway`) internal batch ingestion & webhook delivery.
+   */
+  INTERNAL_EDGE_SECRET?: string;
+
+  /**
    * VULN-08: Comma-separated list of E.164 country prefixes allowed for SMS dispatches (default: "+57").
    */
   ALLOWED_SMS_PREFIXES?: string;

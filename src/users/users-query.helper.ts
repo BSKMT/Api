@@ -1,5 +1,6 @@
 import { Model } from "mongoose";
-import { UserDocument } from "./schemas/user.schema";
+import { UserDocument, UserRole } from "./schemas/user.schema";
+import { parsePositiveInt } from "../common/utils/pagination.util";
 
 export async function executeListUsers(
   userModel: Model<UserDocument>,
@@ -9,12 +10,25 @@ export async function executeListUsers(
     subrol?: string;
     limit?: number;
     page?: number;
+    excludeSuperAdmin?: boolean;
   },
 ) {
   const filter: Record<string, unknown> = {};
 
   if (filters.role && typeof filters.role === "string") {
-    filter.role = filters.role.trim().toLowerCase();
+    const normalizedRole = filters.role.trim().toLowerCase();
+    if (filters.excludeSuperAdmin && normalizedRole === UserRole.SUPERADMIN) {
+      return {
+        items: [],
+        total: 0,
+        page: 1,
+        limit: parsePositiveInt(filters.limit, 20, 100),
+        totalPages: 0,
+      };
+    }
+    filter.role = normalizedRole;
+  } else if (filters.excludeSuperAdmin) {
+    filter.role = { $ne: UserRole.SUPERADMIN };
   }
   if (filters.subrol && typeof filters.subrol === "string") {
     filter.subrol = filters.subrol.trim().toLowerCase();
@@ -33,8 +47,8 @@ export async function executeListUsers(
     ];
   }
 
-  const limit = Math.min(Math.max(filters.limit ?? 20, 1), 100);
-  const page = Math.max(filters.page ?? 1, 1);
+  const limit = parsePositiveInt(filters.limit, 20, 100);
+  const page = parsePositiveInt(filters.page, 1, 10000);
   const skip = (page - 1) * limit;
 
   const [items, total] = await Promise.all([

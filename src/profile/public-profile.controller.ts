@@ -59,12 +59,13 @@ export class PublicProfileController {
 
     validateAntiIdorAccess(
       isSerialized,
+      requester!,
       isStaff,
       isOwner,
       user.profileCompleted ?? false,
     );
 
-    return buildPublicProfileResponse(user, requester!, isOwner);
+    return buildPublicProfileResponse(user, requester!, isOwner, isSerialized);
   }
 
   @Post("friend-request")

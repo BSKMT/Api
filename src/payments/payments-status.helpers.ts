@@ -10,6 +10,7 @@ import {
   verifyBoldWebhookSignature,
   parseBoldWebhookEvent,
   findWebhookTransaction,
+  markPaymentWebhookSeen,
   recordWebhookEvent,
   mapBoldStatus,
   isAmountMismatch,
@@ -59,6 +60,7 @@ export async function handleWebhookHelper(
   const statusFromEvent = mapBoldStatus(parsed.eventType);
   if (isAmountMismatch(deps.logger, transaction, parsed, statusFromEvent)) {
     await transaction.save();
+    await markPaymentWebhookSeen(deps.kvCache, parsed);
     return;
   }
 
@@ -69,6 +71,8 @@ export async function handleWebhookHelper(
     statusFromEvent,
   );
   await transaction.save();
+  // L-05: Mark webhook seen in KV only AFTER DB persistence succeeds.
+  await markPaymentWebhookSeen(deps.kvCache, parsed);
   deps.logger.log(
     `Webhook processed: ${parsed.eventType} for reference: ${parsed.referenceId}`,
   );

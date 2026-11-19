@@ -13,6 +13,7 @@ import {
   CreditType,
   PartialPaymentCredit,
   FriendRequest,
+  REQUIRED_PROFILE_SECTIONS,
 } from "./schemas/user.schema";
 import { executeCreateUser } from "./users-create.helper";
 import * as credit from "./users-credit.helper";
@@ -20,6 +21,7 @@ import {
   executeEnsureOfficialNumber,
   executeUpdateProfileSection,
   executeDeleteProfileSection,
+  isSectionValid,
 } from "./users-profile.helper";
 import {
   executeListUsers,
@@ -268,12 +270,46 @@ export class UsersService {
     return saved;
   }
 
+  async saveProfileMotorcycleSection(
+    userId: string,
+    motoProfile: Record<string, unknown>,
+  ): Promise<UserDocument> {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException("Usuario no encontrado.");
+    }
+    const profile = user.profile ?? {};
+    profile["motocicleta"] = motoProfile;
+    user.profile = profile;
+
+    const isComplete = isSectionValid(
+      "motocicleta",
+      motoProfile,
+      Boolean(user.identityVerified),
+    );
+    const completedSections = [...(user.completedSections ?? [])];
+    if (isComplete && !completedSections.includes("motocicleta")) {
+      completedSections.push("motocicleta");
+    }
+    user.completedSections = completedSections;
+    user.profileCompleted =
+      REQUIRED_PROFILE_SECTIONS.every((s) => completedSections.includes(s)) &&
+      Boolean(user.identityVerified);
+
+    user.markModified("profile");
+    const saved = await user.save();
+    await this.invalidateUserCache(saved.betterAuthId);
+    this.birdContactService?.syncUser(saved).catch(() => {});
+    return saved;
+  }
+
   async listUsers(filters: {
     search?: string;
     role?: string;
     subrol?: string;
     limit?: number;
     page?: number;
+    excludeSuperAdmin?: boolean;
   }) {
     return executeListUsers(this.userModel, filters);
   }

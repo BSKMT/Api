@@ -207,10 +207,11 @@ export class GestionArphaService {
       request.assignedGestorId != null &&
       String(request.assignedGestorId) === String(user.userId);
 
+    // M-03: Field gestores can only self-claim UNASSIGNED PENDING requests (prevents hijacking).
     const isFieldGestorClaiming =
       user.subrol === UserSubrole.GESTOR_CAMPO_ARPHA &&
-      (!request.assignedGestorId ||
-        request.status === ArphaRequestStatus.PENDING);
+      !request.assignedGestorId &&
+      request.status === ArphaRequestStatus.PENDING;
 
     if (!isLeaderOrAdmin && !isAssignedGestor && !isFieldGestorClaiming) {
       throw new ForbiddenException(

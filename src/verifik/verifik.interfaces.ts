@@ -59,7 +59,12 @@ export interface VerifikRuntVehicleRecord {
 }
 
 export type VerifikRuntLookupResult =
-  | { ok: true; record: VerifikRuntVehicleRecord }
+  | {
+      ok: true;
+      record: VerifikRuntVehicleRecord;
+      /** True ONLY when Verifik matched both documentNumber + plate on an owner-bound endpoint. */
+      ownershipVerified: boolean;
+    }
   | {
       ok: false;
       reason: "not_found" | "invalid_input" | "unauthorized" | "unavailable";
@@ -152,6 +157,7 @@ export interface VerifikFullDiagnosticRecord {
   license?: VerifikDriverLicenseRecord | null;
   syncedAt: string;
   source: "VERIFIK_OFFICIAL";
+  ownershipVerified?: boolean;
   runtUnavailable?: boolean;
   runtMessage?: string;
 }
