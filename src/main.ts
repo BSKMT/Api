@@ -1,6 +1,9 @@
-process.env.DOTENV_CONFIG_QUIET ??= "true";
-import "dotenv/config";
+import { config as loadDotenv } from "dotenv";
 import url from "node:url";
+
+if (process.env.VERCEL !== "1" && process.env.NODE_ENV !== "production") {
+  loadDotenv({ quiet: true });
+}
 
 // 1. Remove Node's native warning listener that writes DEP0169 directly to stderr
 process.removeAllListeners("warning");

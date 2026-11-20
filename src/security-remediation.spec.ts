@@ -11,6 +11,11 @@ import { UpdateSettingsDto } from "./settings/dto/update-settings.dto";
 import { assertChannelAuthorized } from "./bird/bird-realtime-auth.helpers";
 import { BirdWhatsappService } from "./bird/bird-whatsapp.service";
 import { BirdService } from "./bird/bird.service";
+import { evaluateOriginAccess } from "./bootstrap/security";
+import { AlliedWorkshopGuard } from "./garage/guards/allied-workshop.guard";
+import { InternalEdgeSecretGuard } from "./common/guards/internal-edge-secret.guard";
+import { ParseObjectIdPipe } from "./common/pipes/parse-object-id.pipe";
+import type { ExecutionContext } from "@nestjs/common";
 
 describe("Security Remediation Regression Suite (Ciclo 8)", () => {
   describe("H-01: Turnstile HMAC Attestation", () => {
@@ -192,6 +197,102 @@ describe("Security Remediation Regression Suite (Ciclo 8)", () => {
       expect(svc.isValidRecipient("14155551234")).toBe(false);
       expect(svc.isValidRecipient("CO.123456789")).toBe(true);
       expect(svc.isValidRecipient("wag_abc123")).toBe(true);
+    });
+  });
+
+  describe("VULN-17 & Auth-Before-Validation: Origin Secret & AlliedWorkshopGuard", () => {
+    it("accepts both X-BSKMT-Origin-Secret (Cloudflare Transform Rule) and X-CF-Origin-Secret (Workers)", () => {
+      const secret = "a".repeat(64);
+      expect(
+        evaluateOriginAccess(
+          { headers: { "x-bskmt-origin-secret": secret }, path: "/api/events" },
+          secret,
+          true,
+        ),
+      ).toEqual({ allowed: true, verified: true });
+      expect(
+        evaluateOriginAccess(
+          { headers: { "x-cf-origin-secret": secret }, path: "/api/events" },
+          secret,
+          true,
+        ),
+      ).toEqual({ allowed: true, verified: true });
+      expect(
+        evaluateOriginAccess({ headers: {}, path: "/api/events" }, secret, true),
+      ).toEqual({ allowed: false, verified: false });
+      expect(
+        evaluateOriginAccess({ headers: {}, path: "/health" }, secret, true),
+      ).toEqual({ allowed: true, verified: false });
+    });
+
+    it("rejects unauthenticated allied workshop requests in Guard before DTO validation", () => {
+      const guard = new AlliedWorkshopGuard();
+      const prev = process.env.ALLIED_WORKSHOP_TOKENS;
+      const mkCtx = (headers: Record<string, string>, body: unknown) =>
+        ({
+          switchToHttp: () => ({
+            getRequest: () => ({ headers, body }),
+          }),
+        }) as unknown as ExecutionContext;
+      try {
+        delete process.env.ALLIED_WORKSHOP_TOKENS;
+        expect(() => guard.canActivate(mkCtx({}, {}))).toThrow();
+
+        process.env.ALLIED_WORKSHOP_TOKENS = "tok_secret_123456:TallerBsk";
+        expect(() => guard.canActivate(mkCtx({}, {}))).toThrow();
+        expect(() =>
+          guard.canActivate(mkCtx({ "x-workshop-token": "wrong" }, {})),
+        ).toThrow();
+        expect(
+          guard.canActivate(
+            mkCtx({ "x-workshop-token": "tok_secret_123456" }, {}),
+          ),
+        ).toBe(true);
+        expect(
+          guard.canActivate(mkCtx({}, { workshopAuthToken: "tok_secret_123456" })),
+        ).toBe(true);
+      } finally {
+        if (prev === undefined) delete process.env.ALLIED_WORKSHOP_TOKENS;
+        else process.env.ALLIED_WORKSHOP_TOKENS = prev;
+      }
+    });
+
+    it("rejects unauthenticated internal edge batch requests before DTO validation", () => {
+      const guard = new InternalEdgeSecretGuard();
+      const prev = process.env.INTERNAL_EDGE_SECRET;
+      const mkCtx = (headers: Record<string, string>) =>
+        ({
+          switchToHttp: () => ({
+            getRequest: () => ({ headers }),
+          }),
+        }) as unknown as ExecutionContext;
+      try {
+        delete process.env.INTERNAL_EDGE_SECRET;
+        expect(() => guard.canActivate(mkCtx({}))).toThrow();
+
+        process.env.INTERNAL_EDGE_SECRET = "edge_secret_32_bytes_minimum_value";
+        expect(() => guard.canActivate(mkCtx({}))).toThrow();
+        expect(() =>
+          guard.canActivate(mkCtx({ "x-edge-secret": "wrong" })),
+        ).toThrow();
+        expect(
+          guard.canActivate(
+            mkCtx({ "x-edge-secret": "edge_secret_32_bytes_minimum_value" }),
+          ),
+        ).toBe(true);
+      } finally {
+        if (prev === undefined) delete process.env.INTERNAL_EDGE_SECRET;
+        else process.env.INTERNAL_EDGE_SECRET = prev;
+      }
+    });
+
+    it("rejects 12-char non-hex strings in ParseObjectIdPipe", () => {
+      const pipe = new ParseObjectIdPipe();
+      expect(() => pipe.transform("123456789012")).toThrow();
+      expect(() => pipe.transform("../etc/passw")).toThrow();
+      expect(pipe.transform("507f1f77bcf86cd799439011")).toBe(
+        "507f1f77bcf86cd799439011",
+      );
     });
   });
 });

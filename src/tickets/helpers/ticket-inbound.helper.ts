@@ -14,6 +14,7 @@ import { UsersService } from "../../users/users.service";
 import { BirdWhatsappService } from "../../bird/bird-whatsapp.service";
 import { BirdSmsService } from "../../bird/bird-sms.service";
 import { BirdRealtimeService } from "../../bird/bird-realtime.service";
+import { maskEmail, maskPhone } from "../../common/utils/log-redact.util";
 import {
   resolveInboundCustomer,
   dispatchInboundAutoResponse,
@@ -42,8 +43,9 @@ export async function processInboundMessage(
   ctx: InboundContext,
 ): Promise<TicketDocument> {
   const { channel, from, to, text, senderName, messageId } = params;
+  const maskedFrom = from.includes("@") ? maskEmail(from) : maskPhone(from);
   ctx.logger.log(
-    `handleInboundMessage: canal=${channel}, remitente=${from}, mensaje="${text.slice(0, 50)}..."`,
+    `handleInboundMessage: canal=${channel}, remitente=${maskedFrom}, len=${text.length}`,
   );
 
   const { customerName, customerEmail, customerPhone, userId } =

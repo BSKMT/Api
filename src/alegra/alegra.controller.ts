@@ -29,8 +29,9 @@ import type { EnvironmentConfig } from "../config/config.interface";
  *  - A10: Los errores se manejan graceful — siempre se responde 200
  *    para que Alegra no reintente innecesariamente.
  *
- * Nota: Si ALEGRA_WEBHOOK_SECRET está configurado en variables de entorno,
- * se exige el parámetro ?token=<secret> para autenticar la procedencia.
+ * Nota: ALEGRA_WEBHOOK_SECRET es obligatorio en entorno y se autentica
+ * exclusivamente vía cabeceras (`X-Webhook-Token` o `Authorization: Bearer`)
+ * en tiempo constante (nunca por query string).
  */
 @Controller("alegra")
 export class AlegraController {

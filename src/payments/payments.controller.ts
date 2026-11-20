@@ -31,6 +31,7 @@ import { CreatePaymentDto } from "./dto/create-payment.dto";
 import { SubmitCompanionDto } from "./dto/submit-companion.dto";
 import { SessionGuard } from "../auth/session.guard";
 import { IdentityVerifiedGuard } from "../common/guards/identity-verified.guard";
+import { InternalEdgeSecretGuard } from "../common/guards/internal-edge-secret.guard";
 import { Public } from "../common/decorators";
 import { ensureString } from "../common/utils/sanitize-query.util";
 import { ConfigService } from "@nestjs/config";
@@ -128,6 +129,7 @@ export class PaymentsController {
    */
   @Public()
   @Post("webhook/batch")
+  @UseGuards(InternalEdgeSecretGuard)
   @HttpCode(HttpStatus.OK)
   async handleWebhookBatch(
     @Headers("x-edge-secret") edgeSecret: string | undefined,

@@ -17,6 +17,7 @@ import { Throttle } from "@nestjs/throttler";
 import type { Request } from "express";
 import { SessionGuard } from "../auth/session.guard";
 import { IdentityVerifiedGuard } from "../common/guards/identity-verified.guard";
+import { AlliedWorkshopGuard } from "./guards/allied-workshop.guard";
 import { Public } from "../common/decorators";
 import { GarageService } from "./garage.service";
 import { CreateMotorcycleDto } from "./dto/create-motorcycle.dto";
@@ -175,6 +176,7 @@ export class GarageController {
 
   @Public()
   @Post("allied/service-order")
+  @UseGuards(AlliedWorkshopGuard)
   @HttpCode(HttpStatus.CREATED)
   @Throttle({ default: { ttl: 60000, limit: 10 } })
   async recordAlliedServiceOrder(@Body() dto: AlliedServiceOrderDto) {

@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   UnauthorizedException,
+  UseGuards,
   Logger,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
@@ -25,6 +26,7 @@ import {
 } from "class-validator";
 import { Type } from "class-transformer";
 import { Public } from "../decorators";
+import { InternalEdgeSecretGuard } from "../guards/internal-edge-secret.guard";
 import { SecurityAuditService, AuditSeverity } from "./security-audit.service";
 import type { EnvironmentConfig } from "../../config/config.interface";
 
@@ -116,6 +118,7 @@ export class BatchIngestController {
   ) {}
 
   @Public()
+  @UseGuards(InternalEdgeSecretGuard)
   @Throttle({ default: { ttl: 60000, limit: 60 } })
   @Post("batch-ingest")
   @HttpCode(HttpStatus.OK)

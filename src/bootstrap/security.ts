@@ -125,19 +125,28 @@ function isVercelInternalCronOrHealthPath(rawPath = ""): boolean {
   );
 }
 
-function evaluateOriginAccess(
-  req: Request,
+export function evaluateOriginAccess(
+  req: Pick<Request, "headers" | "path">,
   cfOriginSecret: string,
   isProduction: boolean,
 ): { allowed: boolean; verified: boolean } {
   if (!cfOriginSecret) {
     return { allowed: true, verified: !isProduction };
   }
-  const headerVal = req.headers["x-cf-origin-secret"];
-  const providedSecret = Array.isArray(headerVal) ? headerVal[0] : headerVal;
-  const isSecretValid =
-    typeof providedSecret === "string" &&
-    isConstantTimeMatch(providedSecret, cfOriginSecret);
+  // Cloudflare Request Header Transform Rules forbid headers starting with `x-cf-*` / `cf-*`.
+  // Support `x-bskmt-origin-secret` (Cloudflare Transform Rules) AND `x-cf-origin-secret` (Workers BFF).
+  const bskmtHeader = req.headers["x-bskmt-origin-secret"];
+  const cfHeader = req.headers["x-cf-origin-secret"];
+  const candidates = [
+    Array.isArray(bskmtHeader) ? bskmtHeader[0] : bskmtHeader,
+    Array.isArray(cfHeader) ? cfHeader[0] : cfHeader,
+  ];
+  const isSecretValid = candidates.some(
+    (provided) =>
+      typeof provided === "string" &&
+      provided.length > 0 &&
+      isConstantTimeMatch(provided, cfOriginSecret),
+  );
   if (isSecretValid) {
     return { allowed: true, verified: true };
   }

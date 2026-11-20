@@ -148,7 +148,7 @@ export async function executeRecordAlliedServiceOrder(
   }
 
   logger.log(
-    `Allied service order registered: ${verificationCode} for moto ${moto.plate}`,
+    `Allied service order registered: ${verificationCode} for motoId=${String(moto._id)}`,
   );
 
   return {
