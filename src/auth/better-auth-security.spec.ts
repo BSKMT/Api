@@ -41,9 +41,9 @@ describe("Better Auth Security & Quality Remediation Suite", () => {
     });
 
     it("matches session token cookies strictly by exact cookie name", () => {
-      expect(
-        hasSessionTokenCookie("better-auth.session_token=tok.sig"),
-      ).toBe(true);
+      expect(hasSessionTokenCookie("better-auth.session_token=tok.sig")).toBe(
+        true,
+      );
       expect(
         hasSessionTokenCookie(
           "foo=bar; __Secure-better-auth.session_token=tok.sig",
@@ -189,7 +189,7 @@ describe("Better Auth Security & Quality Remediation Suite", () => {
           name: "Pilot",
           createdAt: new Date(),
           updatedAt: new Date(),
-        } as BetterAuthUser),
+        }),
       ).toThrow(MockApiError);
     });
 
@@ -222,12 +222,17 @@ describe("Better Auth Security & Quality Remediation Suite", () => {
         path: "/sign-in/email",
       });
       expect(memberResult).toEqual({
-        data: expect.objectContaining({ otpPending: true }) as BetterAuthSession,
+        data: expect.objectContaining({
+          otpPending: true,
+        }) as BetterAuthSession,
       });
 
-      const staffPasskeyResult = await hooks.session.create.before(baseSession, {
-        path: "/passkey/verify-authentication",
-      });
+      const staffPasskeyResult = await hooks.session.create.before(
+        baseSession,
+        {
+          path: "/passkey/verify-authentication",
+        },
+      );
       expect(staffPasskeyResult).toBe(false);
     });
   });

@@ -8,11 +8,7 @@ import {
 import { randomBytes } from "node:crypto";
 import { Model } from "mongoose";
 import { LoginOtpDocument } from "./schemas/login-otp.schema";
-import {
-  getAuth,
-  getMongoDb,
-  VERIFIED_CLIENT_IP_HEADER,
-} from "./better-auth";
+import { getAuth, getMongoDb, VERIFIED_CLIENT_IP_HEADER } from "./better-auth";
 import { maskEmail } from "../common/utils/log-redact.util";
 import {
   extractCookiesFromHeaders,

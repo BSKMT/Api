@@ -25,21 +25,21 @@ export class AdminSettingsService {
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     private readonly notificationsService: NotificationsService,
     @Optional() private readonly kvCache?: KvCacheService,
-  ) {}
+  ) { }
 
   async listDeletionRequests() {
     const users = (await this.userModel
       .find({ accountDeletionRequested: true })
       .select("email role membershipLevel accountDeletionRequestedAt profile")
       .lean()) as unknown as {
-      _id: { toString(): string };
-      email: string;
-      role: string;
-      membershipLevel?: string | null;
-      accountDeletionRequestedAt?: Date | null;
-      profile?: Record<string, Record<string, unknown>>;
-      createdAt?: Date;
-    }[];
+        _id: { toString(): string };
+        email: string;
+        role: string;
+        membershipLevel?: string | null;
+        accountDeletionRequestedAt?: Date | null;
+        profile?: Record<string, Record<string, unknown>>;
+        createdAt?: Date;
+      }[];
 
     return {
       count: users.length,
@@ -239,7 +239,7 @@ export class AdminSettingsService {
     if (user.betterAuthId && this.kvCache) {
       await this.kvCache
         .delete(`user:ba:${user.betterAuthId}`, true)
-        .catch(() => {});
+        .catch(() => { });
     }
 
     this.logger.log(
@@ -263,7 +263,7 @@ export class AdminSettingsService {
     if (user.betterAuthId && this.kvCache) {
       await this.kvCache
         .delete(`user:ba:${user.betterAuthId}`, true)
-        .catch(() => {});
+        .catch(() => { });
     }
 
     try {
