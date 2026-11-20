@@ -26,7 +26,7 @@ import { applyVerifiedCloudflareIp } from "../bootstrap/security";
 import { SENSITIVE_AUTH_PATHS } from "../bootstrap/auth-handler";
 import { VERIFIED_CLIENT_IP_HEADER } from "./better-auth";
 import type { UserDocument } from "../users/schemas/user.schema";
-import type { BetterAuthSession, BetterAuthUser } from "./better-auth.types";
+import type { BetterAuthSession } from "./better-auth.types";
 
 describe("Better Auth Security & Quality Remediation Suite", () => {
   describe("Safe Better Auth cookie parsing and Max-Age rewriting", () => {
@@ -132,9 +132,10 @@ describe("Better Auth Security & Quality Remediation Suite", () => {
         }),
       } as unknown as Db;
 
+      const warn = jest.fn();
       const logger = {
         log: jest.fn(),
-        warn: jest.fn(),
+        warn,
         error: jest.fn(),
       } as unknown as Logger;
 
@@ -150,7 +151,7 @@ describe("Better Auth Security & Quality Remediation Suite", () => {
         { lastRequest: 1 },
         { background: true },
       );
-      expect(logger.warn).not.toHaveBeenCalled();
+      expect(warn).not.toHaveBeenCalled();
     });
   });
 
