@@ -7,7 +7,6 @@ import {
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { User, UserDocument } from "../users/schemas/user.schema";
-import { getAuth } from "../auth/better-auth";
 import { UpdateSettingsDto } from "./dto/update-settings.dto";
 import type { Request } from "express";
 import { sanitizeForLog } from "../common/utils/log-redact.util";
@@ -17,8 +16,8 @@ import {
   type LeanUser,
 } from "./settings.constants";
 import {
-  discardOrphanSessionFromAuthResponse,
   handlePasswordChange,
+  verifyUserPasswordWithBetterAuth,
 } from "./settings-auth.helpers";
 import { buildUserDataExport } from "./settings-export.helpers";
 import {
@@ -123,28 +122,25 @@ export class SettingsService {
       );
     }
 
-    const auth = await getAuth();
-    let authResponse: Response;
-    try {
-      authResponse = await auth.api.signInEmail({
-        body: { email: user.email, password },
-        asResponse: true,
-      });
-    } catch {
-      throw new BadRequestException(
-        "La contraseña no es válida. Verifica e inténtalo de nuevo.",
-      );
-    }
-
-    if (!authResponse.ok) {
-      throw new BadRequestException(
-        "La contraseña no es válida. Verifica e inténtalo de nuevo.",
-      );
-    }
-
     if (user.accountDeletionRequested) {
       throw new BadRequestException(
         "Ya tienes una solicitud de eliminacion pendiente",
+      );
+    }
+
+    let passwordValid = false;
+    try {
+      passwordValid = await verifyUserPasswordWithBetterAuth(
+        user.betterAuthId,
+        password,
+      );
+    } catch {
+      passwordValid = false;
+    }
+
+    if (!passwordValid) {
+      throw new BadRequestException(
+        "La contraseña no es válida. Verifica e inténtalo de nuevo.",
       );
     }
 
@@ -156,8 +152,6 @@ export class SettingsService {
         .delete(`user:ba:${user.betterAuthId}`, true)
         .catch(() => {});
     }
-
-    await discardOrphanSessionFromAuthResponse(authResponse, user, this.logger);
 
     this.logger.log(
       `Account deletion requested by user ${userId}: ${sanitizeForLog(reason ?? "no reason")}`,

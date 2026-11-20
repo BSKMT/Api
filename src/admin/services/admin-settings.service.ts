@@ -105,12 +105,12 @@ export class AdminSettingsService {
       }
 
       await db.collection("user").deleteOne({ $or: idFilters });
-      await db
-        .collection("session")
-        .deleteMany({ userId: { $in: userFilters } });
-      await db
-        .collection("account")
-        .deleteMany({ userId: { $in: userFilters } });
+      await Promise.all([
+        db.collection("session").deleteMany({ userId: { $in: userFilters } }),
+        db.collection("account").deleteMany({ userId: { $in: userFilters } }),
+        db.collection("passkey").deleteMany({ userId: { $in: userFilters } }),
+        db.collection("twoFactor").deleteMany({ userId: { $in: userFilters } }),
+      ]);
     } catch (err) {
       this.logger.error(
         `Failed to delete better-auth data: ${err instanceof Error ? err.message : String(err)}`,

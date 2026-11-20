@@ -8,6 +8,8 @@ import {
   extractCsrfCookieTokens,
   resolveCsrfSecret,
 } from "../common/csrf/csrf-cookie.helper";
+import { hasSessionTokenCookie } from "../auth/better-auth-cookie.helper";
+import { VERIFIED_CLIENT_IP_HEADER } from "../auth/better-auth";
 
 function isConstantTimeMatch(provided: string, expected: string): boolean {
   const bufA = Buffer.from(provided, "utf8");
@@ -61,7 +63,7 @@ function isNativeAppClient(req: Request): boolean {
   if (
     req.headers["sec-fetch-site"] ||
     req.headers["sec-fetch-mode"] ||
-    cookieHeader.includes("better-auth.session_token") ||
+    hasSessionTokenCookie(cookieHeader) ||
     cookieHeader.includes("bskmt.csrf")
   ) {
     return false;
@@ -93,7 +95,7 @@ function validateCsrfHeaderIfPresent(req: Request, secret: string): boolean {
   }
 
   // If the request carries session cookies without a CSRF token, require verified CF origin (BFF proxy)
-  const isSessionCookie = cookieHeader.includes("better-auth.session_token");
+  const isSessionCookie = hasSessionTokenCookie(cookieHeader);
   if (isSessionCookie) {
     const isCfVerified =
       (req as Request & { cfOriginVerified?: boolean }).cfOriginVerified ===
@@ -156,18 +158,34 @@ export function evaluateOriginAccess(
   return { allowed: false, verified: false };
 }
 
-function applyVerifiedCloudflareIp(req: Request, verified: boolean): void {
+export function applyVerifiedCloudflareIp(
+  req: Request,
+  verified: boolean,
+): string {
+  // Nunca confiar en un valor enviado por el cliente para nuestra cabecera interna
+  delete req.headers[VERIFIED_CLIENT_IP_HEADER];
+
   if (!verified) {
     delete req.headers["cf-connecting-ip"];
-    return;
+    const fallbackIp = req.ip || req.socket?.remoteAddress || "unknown";
+    req.headers[VERIFIED_CLIENT_IP_HEADER] = fallbackIp;
+    return fallbackIp;
   }
+
   const cfConnectingIp = req.headers["cf-connecting-ip"];
   const realClientIp = Array.isArray(cfConnectingIp)
     ? cfConnectingIp[0]
     : cfConnectingIp;
   if (typeof realClientIp === "string" && realClientIp.trim().length > 0) {
-    req.headers["x-forwarded-for"] = realClientIp.trim();
+    const cleanIp = realClientIp.trim();
+    req.headers["x-forwarded-for"] = cleanIp;
+    req.headers[VERIFIED_CLIENT_IP_HEADER] = cleanIp;
+    return cleanIp;
   }
+
+  const fallbackIp = req.ip || req.socket?.remoteAddress || "unknown";
+  req.headers[VERIFIED_CLIENT_IP_HEADER] = fallbackIp;
+  return fallbackIp;
 }
 
 export function setupSecurityMiddleware(

@@ -16,7 +16,7 @@ export function createPasswordResetCallback(
     token: string;
   }): Promise<void> => {
     const landingPageUrl = getLandingPageUrl();
-    const resetUrl = `${landingPageUrl}/restaurar-contrasena#token=${token}`;
+    const resetUrl = `${landingPageUrl}/restaurar-contrasena#token=${encodeURIComponent(token)}`;
     const emailService = getEmailService();
 
     if (emailService) {
@@ -52,7 +52,7 @@ export function createVerificationEmailCallback(
     token: string;
   }): Promise<void> => {
     const landingPageUrl = getLandingPageUrl();
-    const verificationUrl = `${landingPageUrl}/verificar-correo#token=${token}`;
+    const verificationUrl = `${landingPageUrl}/verificar-correo#token=${encodeURIComponent(token)}`;
     const emailService = getEmailService();
 
     if (emailService) {

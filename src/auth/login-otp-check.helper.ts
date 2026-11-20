@@ -16,6 +16,7 @@ import {
   extractCookiesFromHeaders,
   extractSessionTokenFromCookies,
 } from "./login-otp-crypto.helper";
+import { rewriteSessionSetCookieMaxAge } from "./better-auth-cookie.helper";
 import { maskEmail } from "../common/utils/log-redact.util";
 
 const STANDARD_SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24h when rememberMe=false
@@ -256,16 +257,20 @@ export async function processBirdCheckResult(
       );
     }
 
-    await promoteBetterAuthSessionOnOtpSuccess(
+    const { maxAgeSeconds } = await promoteBetterAuthSessionOnOtpSuccess(
       rawCookies,
       otpRecord.betterAuthId,
     );
 
     const isProd = process.env.NODE_ENV === "production";
-    const setCookieHeaders = rawCookies.map((sc) => {
+    const normalizedSetCookies = rawCookies.map((sc) => {
       if (sc.includes(";")) return sc;
       return `${sc}; Path=/; SameSite=Lax; HttpOnly${isProd ? "; Secure" : ""}`;
     });
+    const setCookieHeaders = rewriteSessionSetCookieMaxAge(
+      normalizedSetCookies,
+      maxAgeSeconds,
+    );
     const cookies = extractCookiesFromHeaders(rawCookies);
     return { cookies, setCookieHeaders };
   }

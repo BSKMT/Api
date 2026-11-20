@@ -5,6 +5,7 @@ import {
   scryptSync,
 } from "node:crypto";
 import { Logger } from "@nestjs/common";
+import { extractSessionTokenFromSetCookies } from "./better-auth-cookie.helper";
 
 export function deriveSessionEncryptionKey(secret: string): Buffer {
   return scryptSync(secret, "session-cookies-v1", 32);
@@ -67,17 +68,5 @@ export function extractCookiesFromHeaders(
 export function extractSessionTokenFromCookies(
   cookies: string[],
 ): string | null {
-  for (const sc of cookies) {
-    const semi = sc.indexOf(";");
-    const pair = (semi === -1 ? sc : sc.slice(0, semi)).trim();
-    const eq = pair.indexOf("=");
-    if (eq <= 0) continue;
-    const name = pair.slice(0, eq).trim();
-    if (name.endsWith("better-auth.session_token")) {
-      const rawVal = decodeURIComponent(pair.slice(eq + 1).trim());
-      const tokenPart = rawVal.split(".")[0]?.trim();
-      if (tokenPart) return tokenPart;
-    }
-  }
-  return null;
+  return extractSessionTokenFromSetCookies(cookies);
 }

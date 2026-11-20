@@ -8,7 +8,11 @@ import {
 import { randomBytes } from "node:crypto";
 import { Model } from "mongoose";
 import { LoginOtpDocument } from "./schemas/login-otp.schema";
-import { getAuth, getMongoDb } from "./better-auth";
+import {
+  getAuth,
+  getMongoDb,
+  VERIFIED_CLIENT_IP_HEADER,
+} from "./better-auth";
 import { maskEmail } from "../common/utils/log-redact.util";
 import {
   extractCookiesFromHeaders,
@@ -23,6 +27,7 @@ const OTP_PENDING_SESSION_TTL_MS = 10 * 60 * 1000;
 export async function markBetterAuthSessionOtpPending(
   cookies: string[],
   remember: boolean,
+  logger?: Logger,
 ): Promise<void> {
   const token = extractSessionTokenFromCookies(cookies);
   if (!token) return;
@@ -38,8 +43,10 @@ export async function markBetterAuthSessionOtpPending(
         },
       },
     );
-  } catch {
-    // Non-fatal: session will still be gated by encrypted cookies
+  } catch (err) {
+    logger?.warn(
+      `Failed to stamp otpPending TTL metadata on session: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }
 
@@ -98,7 +105,17 @@ export async function extractSessionFromAuthResponse(
 
   const body = (await authResponse.json().catch(() => ({}))) as {
     user?: { id?: string; email?: string };
+    twoFactorRedirect?: boolean;
   };
+  if (body.twoFactorRedirect === true) {
+    logger.warn(
+      `Sign-in intercepted by twoFactor plugin for ${maskEmail(email)}; session cookie not issued.`,
+    );
+    throw new UnauthorizedException(
+      "Tu cuenta tiene 2FA adicional habilitado y requiere completar la verificación correspondiente.",
+      { cause: "twoFactorRedirect" },
+    );
+  }
   const betterAuthId = body.user?.id ?? "";
   const userEmail = body.user?.email ?? email.toLowerCase();
 
@@ -131,7 +148,10 @@ export async function authenticateAndExtractSession(
   try {
     const auth = await getAuth();
     const headers = new Headers();
-    if (clientIp) headers.set("x-forwarded-for", clientIp);
+    if (clientIp) {
+      headers.set(VERIFIED_CLIENT_IP_HEADER, clientIp);
+      headers.set("x-forwarded-for", clientIp);
+    }
     if (userAgent) headers.set("user-agent", userAgent);
     authResponse = await auth.api.signInEmail({
       body: { email, password, rememberMe: remember },
@@ -192,7 +212,11 @@ export async function executeDispatchOtpAndSave(
     remember = false,
   } = params;
 
-  await markBetterAuthSessionOtpPending(session.sessionCookies, remember);
+  await markBetterAuthSessionOtpPending(
+    session.sessionCookies,
+    remember,
+    logger,
+  );
 
   try {
     await assertEmailThrottle(

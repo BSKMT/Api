@@ -12,11 +12,8 @@ import { IS_PUBLIC_KEY } from "../common/decorators/public.decorator";
 import { KvCacheService } from "../kv/kv-cache.service";
 
 /**
- * `better-auth/node` is published as an ES Module (`.mjs`). The project
- * is compiled to CommonJS, so a top-level `import` would compile to
- * `require()` and throw `ERR_REQUIRE_ESM` at runtime. We lazily load the
- * `fromNodeHeaders` function via a cached dynamic `import()` so the
- * dynamic import only fires once per cold start.
+ * Lazily loads `fromNodeHeaders` from `better-auth/node` (ESM) once per cold start
+ * so both Node ESM runtime and Jest `ts-jest` test suites resolve cleanly.
  */
 type FromNodeHeadersFn = (headers: unknown) => Headers;
 interface BetterAuthNodeModule {

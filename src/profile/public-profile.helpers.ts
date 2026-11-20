@@ -1,21 +1,44 @@
 import type { Request } from "express";
 import { getAuth } from "../auth/better-auth";
+import { hasSessionTokenCookie } from "../auth/better-auth-cookie.helper";
+
+type FromNodeHeadersFn = (headers: unknown) => Headers;
+interface BetterAuthNodeModule {
+  fromNodeHeaders: FromNodeHeadersFn;
+}
+
+let fromNodeHeadersPromise: Promise<FromNodeHeadersFn> | null = null;
+
+async function loadFromNodeHeaders(): Promise<FromNodeHeadersFn> {
+  fromNodeHeadersPromise ??= (async (): Promise<FromNodeHeadersFn> => {
+    const mod = (await import("better-auth/node")) as BetterAuthNodeModule;
+    return mod.fromNodeHeaders;
+  })();
+  return fromNodeHeadersPromise;
+}
 
 /**
- * Extracts the userId from the Better Auth session cookie if present.
+ * Extracts the userId from the Better Auth session cookie if present and fully verified
+ * (rejecting otpPending sessions and bypassing any cookie cache).
  */
 export async function getUserIdFromSession(
   req: Request,
 ): Promise<string | null> {
   const cookieHeader = req.headers.cookie ?? "";
-  if (!cookieHeader) return null;
-  if (!cookieHeader.includes("better-auth.session_token")) return null;
+  if (!hasSessionTokenCookie(cookieHeader)) return null;
   try {
-    const auth = await getAuth();
-    const headers = new Headers();
-    headers.set("cookie", cookieHeader);
-    const session = await auth.api.getSession({ headers });
-    return session?.user?.id ?? null;
+    const [auth, fromNodeHeaders] = await Promise.all([
+      getAuth(),
+      loadFromNodeHeaders(),
+    ]);
+    const session = await auth.api.getSession({
+      headers: fromNodeHeaders(req.headers),
+      query: { disableCookieCache: true },
+    });
+    if (!session || session.session?.otpPending === true) {
+      return null;
+    }
+    return session.user?.id ?? null;
   } catch {
     return null;
   }

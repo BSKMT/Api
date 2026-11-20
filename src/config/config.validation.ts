@@ -177,6 +177,7 @@ export const configValidationSchema = Joi.object({
   GOOGLE_CLIENT_ID: Joi.string().allow("").default(""),
   GOOGLE_CLIENT_SECRET: Joi.string().allow("").default(""),
   PASSKEY_RP_ID: Joi.string().allow("").default(""),
+  PASSKEY_EXTRA_ORIGINS: Joi.string().allow("").default(""),
 
   BIRD_WHATSAPP_TEMPLATE_SLUG: Joi.string().allow("").default(""),
 

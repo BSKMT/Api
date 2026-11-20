@@ -2,25 +2,61 @@ import { BadRequestException, Logger } from "@nestjs/common";
 import type { Request } from "express";
 import { getAuth, getMongoDb } from "../auth/better-auth";
 import type { UserDocument } from "../users/schemas/user.schema";
-
+import {
+  extractAllSessionTokensFromSetCookies,
+  extractSessionTokenFromCookieHeader,
+} from "../auth/better-auth-cookie.helper";
 import { ObjectId } from "mongodb";
 
+type FromNodeHeadersFn = (headers: unknown) => Headers;
+interface BetterAuthNodeModule {
+  fromNodeHeaders: FromNodeHeadersFn;
+}
+
+let fromNodeHeadersPromise: Promise<FromNodeHeadersFn> | null = null;
+
+async function loadFromNodeHeaders(): Promise<FromNodeHeadersFn> {
+  fromNodeHeadersPromise ??= (async (): Promise<FromNodeHeadersFn> => {
+    const mod = (await import("better-auth/node")) as BetterAuthNodeModule;
+    return mod.fromNodeHeaders;
+  })();
+  return fromNodeHeadersPromise;
+}
+
 export function extractSessionTokenFromCookie(cookieHeader: string): string {
-  const cookies = cookieHeader.split(";").map((c) => c.trim());
-  for (const cookie of cookies) {
-    const eq = cookie.indexOf("=");
-    if (eq <= 0) continue;
-    const name = cookie.slice(0, eq).trim();
-    const value = cookie.slice(eq + 1).trim();
-    if (
-      name === "better-auth.session_token" ||
-      name === "__Secure-better-auth.session_token"
-    ) {
-      const decoded = decodeURIComponent(value);
-      return decoded.split(".")[0];
-    }
+  return extractSessionTokenFromCookieHeader(cookieHeader) ?? "";
+}
+
+/**
+ * Verifica la contraseña del usuario directamente contra el hash scrypt almacenado
+ * por Better Auth en la colección `account` (sin crear sesiones huérfanas ni
+ * disparar hooks de sesión, y compatible con cuentas con 2FA habilitado).
+ */
+export async function verifyUserPasswordWithBetterAuth(
+  betterAuthId: string | undefined,
+  password: string,
+): Promise<boolean> {
+  if (!betterAuthId || !password) return false;
+  const userFilters: (string | ObjectId)[] = [betterAuthId];
+  if (ObjectId.isValid(betterAuthId)) {
+    userFilters.push(new ObjectId(betterAuthId));
   }
-  return "";
+  const db = getMongoDb();
+  const credentialAccount = await db.collection("account").findOne(
+    {
+      providerId: "credential",
+      userId: { $in: userFilters },
+    },
+    { projection: { password: 1 } },
+  );
+  const hash =
+    typeof credentialAccount?.["password"] === "string"
+      ? credentialAccount["password"]
+      : "";
+  if (!hash) return false;
+  const auth = await getAuth();
+  const ctx = await auth.$context;
+  return ctx.password.verify({ hash, password });
 }
 
 export async function discardOrphanSessionFromAuthResponse(
@@ -30,21 +66,7 @@ export async function discardOrphanSessionFromAuthResponse(
 ): Promise<void> {
   try {
     const setCookies = authResponse.headers.getSetCookie?.() ?? [];
-    const tokensToDelete: string[] = [];
-    for (const sc of setCookies) {
-      const semi = sc.indexOf(";");
-      const pair = (semi === -1 ? sc : sc.slice(0, semi)).trim();
-      const eq = pair.indexOf("=");
-      if (eq <= 0) continue;
-      const name = pair.slice(0, eq).trim();
-      const value = pair.slice(eq + 1).trim();
-      if (
-        name === "better-auth.session_token" ||
-        name === "__Secure-better-auth.session_token"
-      ) {
-        tokensToDelete.push(decodeURIComponent(value).split(".")[0]);
-      }
-    }
+    const tokensToDelete = extractAllSessionTokensFromSetCookies(setCookies);
 
     if (tokensToDelete.length > 0) {
       const userFilters: (string | ObjectId)[] = [user.betterAuthId];
@@ -84,11 +106,18 @@ export async function handlePasswordChange(
       "La nueva contraseña debe ser diferente a la actual",
     );
   }
-  const auth = await getAuth();
+  const [auth, fromNodeHeaders] = await Promise.all([
+    getAuth(),
+    loadFromNodeHeaders(),
+  ]);
   try {
     await auth.api.changePassword({
-      body: { currentPassword, newPassword },
-      headers: req.headers,
+      body: {
+        currentPassword,
+        newPassword,
+        revokeOtherSessions: true,
+      },
+      headers: fromNodeHeaders(req.headers),
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "";
@@ -102,6 +131,7 @@ export async function handlePasswordChange(
     );
   }
 
+  // Defensa en profundidad: asegurar que no queden sesiones residuales fuera de la actual
   const typedReq = req as Request & {
     user?: { userId?: string; betterAuthId?: string; sessionToken?: string };
   };

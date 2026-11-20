@@ -15,6 +15,7 @@ export interface BetterAuthUser {
   createdAt: Date;
   updatedAt: Date;
   role?: string;
+  username?: string;
   primerNombre?: string;
   segundoNombre?: string;
   primerApellido?: string;
@@ -61,6 +62,20 @@ export interface SignInEmailFn {
   (params: SignInEmailDataParams): Promise<unknown>;
 }
 
+export interface BetterAuthPasswordHasher {
+  hash: (password: string) => Promise<string>;
+  verify: (data: { hash: string; password: string }) => Promise<boolean>;
+}
+
+export interface BetterAuthContextLike {
+  password: BetterAuthPasswordHasher;
+}
+
+export type BetterAuthApiErrorCtor = new (
+  status: string,
+  body?: { message?: string; code?: string },
+) => Error;
+
 export interface AuthInstance {
   handler: (request: Request) => Promise<Response>;
   api: {
@@ -69,7 +84,11 @@ export interface AuthInstance {
       query?: { disableCookieCache?: boolean };
     }) => Promise<BetterAuthSessionData | null>;
     changePassword: (params: {
-      body: { currentPassword: string; newPassword: string };
+      body: {
+        currentPassword: string;
+        newPassword: string;
+        revokeOtherSessions?: boolean;
+      };
       headers: AuthHeaders;
     }) => Promise<unknown>;
     signInEmail: SignInEmailFn;
@@ -86,6 +105,7 @@ export interface AuthInstance {
       session?: BetterAuthSession;
     } | null>;
   };
+  $context: Promise<BetterAuthContextLike>;
   options: unknown;
   $ERROR_CODES: Record<string, string>;
   $Infer: {

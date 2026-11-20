@@ -20,15 +20,10 @@ import { SessionGuard } from "../auth/session.guard";
 import { UpdateSettingsDto } from "./dto/update-settings.dto";
 import { ChangePasswordDto } from "./dto/security.dto";
 import { DeleteAccountDto } from "./dto/delete-account.dto";
+import { extractSessionTokenFromCookieHeader } from "../auth/better-auth-cookie.helper";
 
 function getCurrentToken(req: Request): string {
-  const cookies = req.headers.cookie ?? "";
-  const match = /(?:__Secure-)?better-auth\.session_token=([^;]+)/.exec(
-    cookies,
-  );
-  if (!match) return "";
-  const raw = decodeURIComponent(match[1].trim());
-  return raw.split(".")[0];
+  return extractSessionTokenFromCookieHeader(req.headers.cookie) ?? "";
 }
 
 @Controller("settings")

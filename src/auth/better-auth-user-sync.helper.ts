@@ -1,6 +1,9 @@
 import { Logger } from "@nestjs/common";
 import { Db, ObjectId, WithId, Document } from "mongodb";
-import type { BetterAuthUser } from "./better-auth.types";
+import type {
+  BetterAuthApiErrorCtor,
+  BetterAuthUser,
+} from "./better-auth.types";
 import { maskEmail } from "../common/utils/log-redact.util";
 
 export interface ParsedUserData {
@@ -46,6 +49,7 @@ export function validateAntiAccountTakeover(
   existingUser: WithId<Document>,
   user: BetterAuthUser,
   authLogger: Logger,
+  APIErrorCtor?: BetterAuthApiErrorCtor,
 ): void {
   if (
     existingUser["betterAuthId"] &&
@@ -54,18 +58,24 @@ export function validateAntiAccountTakeover(
     authLogger.warn(
       `[databaseHooks] Intento de colisión o secuestro de cuenta para email=${maskEmail(user.email)}. Existente betterAuthId=${existingUser["betterAuthId"]}, entrante=${user.id}`,
     );
-    throw new Error(
-      "Este correo ya está asociado a otra cuenta activa. Inicia sesión con tus credenciales originales.",
-    );
+    const message =
+      "Este correo ya está asociado a otra cuenta activa. Inicia sesión con tus credenciales originales.";
+    if (APIErrorCtor) {
+      throw new APIErrorCtor("CONFLICT", { message });
+    }
+    throw new Error(message);
   }
 
   if (!existingUser["betterAuthId"] && !user.emailVerified) {
     authLogger.warn(
       `[databaseHooks] Rechazando vinculación de cuenta huérfana con email no verificado=${maskEmail(user.email)}`,
     );
-    throw new Error(
-      "Debes verificar tu correo antes de poder vincular tu cuenta existente.",
-    );
+    const message =
+      "Debes verificar tu correo antes de poder vincular tu cuenta existente.";
+    if (APIErrorCtor) {
+      throw new APIErrorCtor("FORBIDDEN", { message });
+    }
+    throw new Error(message);
   }
 }
 
@@ -165,12 +175,20 @@ export async function cleanupOrphanBetterAuthUser(
       idFilters.push({ _id: new ObjectId(userId) });
     }
 
-    await mongoDb.collection("account").deleteMany({
-      userId: { $in: userFilters },
-    });
-    await mongoDb.collection("session").deleteMany({
-      userId: { $in: userFilters },
-    });
+    await Promise.all([
+      mongoDb.collection("account").deleteMany({
+        userId: { $in: userFilters },
+      }),
+      mongoDb.collection("session").deleteMany({
+        userId: { $in: userFilters },
+      }),
+      mongoDb.collection("passkey").deleteMany({
+        userId: { $in: userFilters },
+      }),
+      mongoDb.collection("twoFactor").deleteMany({
+        userId: { $in: userFilters },
+      }),
+    ]);
     await mongoDb.collection("user").deleteOne({ $or: idFilters });
   } catch (cleanupErr) {
     authLogger.error(

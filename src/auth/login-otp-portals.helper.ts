@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  GoneException,
-  Logger,
-  UnauthorizedException,
-} from "@nestjs/common";
+import { BadRequestException, GoneException, Logger } from "@nestjs/common";
 import { Model } from "mongoose";
 import { UserDocument, UserRole } from "../users/schemas/user.schema";
 import { LoginOtpDocument } from "./schemas/login-otp.schema";
@@ -72,12 +67,13 @@ export async function findAndValidateStandardUser(
   return { authEmail, targetEmail: normalizedEmail, isEligible };
 }
 
-const GENERIC_FASCIA_ERROR =
-  "Error al iniciar sesión en Fascia. Verifica tus credenciales.";
-const GENERIC_CONSOLE_ERROR =
-  "Error al iniciar sesión en la Consola Administrativa.";
-const GENERIC_SUPERADMIN_ERROR =
-  "Error al iniciar sesión como Superadministrador.";
+const INVALID_CANDIDATE_EMAIL = "nonexistent-user@invalid.bskmt.local";
+
+function maskUsername(username: string): string {
+  const clean = username.trim();
+  if (clean.length <= 2) return "**";
+  return `${clean.slice(0, 2)}***`;
+}
 
 export async function findAndValidateFasciaUser(
   userModel: Model<UserDocument>,
@@ -92,9 +88,13 @@ export async function findAndValidateFasciaUser(
   const user = await userModel.findOne({ username: normalizedUsername }).lean();
   if (!user) {
     logger.warn(
-      `Fascia login fallido: usuario "${normalizedUsername}" no encontrado.`,
+      `Fascia login candidato no encontrado (se ejecutará verificación constante): usuario "${maskUsername(normalizedUsername)}".`,
     );
-    throw new UnauthorizedException(GENERIC_FASCIA_ERROR);
+    return {
+      authEmail: INVALID_CANDIDATE_EMAIL,
+      targetEmail: INVALID_CANDIDATE_EMAIL,
+      isEligible: false,
+    };
   }
 
   const isGestor =
@@ -109,7 +109,7 @@ export async function findAndValidateFasciaUser(
 
   if (!isEligible) {
     logger.warn(
-      `Fascia login candidato no elegible (se verificará contraseña primero): usuario "${normalizedUsername}"`,
+      `Fascia login candidato no elegible (se verificará contraseña primero): usuario "${maskUsername(normalizedUsername)}"`,
     );
   }
 
@@ -143,9 +143,13 @@ export async function findAndValidateConsoleUser(
 
   if (!user) {
     logger.warn(
-      `Console login fallido: no coincide email "${maskEmail(normalizedEmail)}" con usuario "${normalizedUsername}".`,
+      `Console login candidato no encontrado (se ejecutará verificación constante): email "${maskEmail(normalizedEmail)}" usuario "${maskUsername(normalizedUsername)}".`,
     );
-    throw new UnauthorizedException(GENERIC_CONSOLE_ERROR);
+    return {
+      authEmail: INVALID_CANDIDATE_EMAIL,
+      targetEmail: normalizedEmail,
+      isEligible: false,
+    };
   }
 
   const isEligible =
@@ -156,7 +160,7 @@ export async function findAndValidateConsoleUser(
 
   if (!isEligible) {
     logger.warn(
-      `Console login candidato no elegible (se verificará contraseña primero): usuario "${normalizedUsername}"`,
+      `Console login candidato no elegible (se verificará contraseña primero): usuario "${maskUsername(normalizedUsername)}"`,
     );
   }
 
@@ -186,9 +190,13 @@ export async function findAndValidateSuperAdminUser(
 
   if (!user) {
     logger.warn(
-      `Superadmin login fallido: credenciales no coinciden para "${maskEmail(normalizedEmail)}".`,
+      `Superadmin login candidato no encontrado (se ejecutará verificación constante): "${maskEmail(normalizedEmail)}".`,
     );
-    throw new UnauthorizedException(GENERIC_SUPERADMIN_ERROR);
+    return {
+      authEmail: INVALID_CANDIDATE_EMAIL,
+      targetEmail: normalizedEmail,
+      isEligible: false,
+    };
   }
 
   const isEligible =
@@ -198,7 +206,7 @@ export async function findAndValidateSuperAdminUser(
 
   if (!isEligible) {
     logger.warn(
-      `Superadmin login candidato no elegible (se verificará contraseña primero): usuario "${normalizedUsername}"`,
+      `Superadmin login candidato no elegible (se verificará contraseña primero): usuario "${maskUsername(normalizedUsername)}"`,
     );
   }
 

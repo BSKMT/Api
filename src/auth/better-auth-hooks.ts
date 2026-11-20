@@ -1,6 +1,10 @@
 import { Logger } from "@nestjs/common";
 import { Db, ObjectId } from "mongodb";
-import type { BetterAuthSession, BetterAuthUser } from "./better-auth.types";
+import type {
+  BetterAuthApiErrorCtor,
+  BetterAuthSession,
+  BetterAuthUser,
+} from "./better-auth.types";
 import { maskEmail } from "../common/utils/log-redact.util";
 import {
   parseUserPersonalData,
@@ -49,6 +53,7 @@ export function createBetterAuthHooks(
   mongoDb: Db,
   authLogger: Logger,
   getBirdContactService?: () => BirdContactService | null,
+  APIErrorCtor?: BetterAuthApiErrorCtor,
 ) {
   const ALLOWED_DOMAINS = ALLOWED_USER_EMAIL_DOMAINS;
 
@@ -59,9 +64,12 @@ export function createBetterAuthHooks(
           const email = (user.email ?? "").toLowerCase();
           const domain = email.split("@")[1] ?? "";
           if (!ALLOWED_DOMAINS.has(domain)) {
-            throw new Error(
-              "El dominio del correo no esta permitido. Usa Microsoft (outlook, hotmail, live), Google (gmail), Apple (icloud, me, mac) o Yahoo.",
-            );
+            const message =
+              "El dominio del correo no esta permitido. Usa Microsoft (outlook, hotmail, live), Google (gmail), Apple (icloud, me, mac) o Yahoo.";
+            if (APIErrorCtor) {
+              throw new APIErrorCtor("BAD_REQUEST", { message });
+            }
+            throw new Error(message);
           }
           return { data: user };
         },
@@ -82,7 +90,12 @@ export function createBetterAuthHooks(
             });
 
             if (existingUser) {
-              validateAntiAccountTakeover(existingUser, user, authLogger);
+              validateAntiAccountTakeover(
+                existingUser,
+                user,
+                authLogger,
+                APIErrorCtor,
+              );
               await syncExistingMongooseUser(
                 mongoDb,
                 existingUser,
@@ -124,24 +137,31 @@ export function createBetterAuthHooks(
               `[databaseHooks] Failed to insert Mongoose user for betterAuthId=${user.id} email=${maskEmail(user.email)}: ${err instanceof Error ? err.message : String(err)}`,
             );
             await cleanupOrphanBetterAuthUser(mongoDb, user.id, authLogger);
-            throw new Error(
-              "No se pudo crear el usuario. Intenta de nuevo en unos minutos.",
-            );
+            if (APIErrorCtor && err instanceof APIErrorCtor) {
+              throw err;
+            }
+            const message =
+              "No se pudo crear el usuario. Intenta de nuevo en unos minutos.";
+            if (APIErrorCtor) {
+              throw new APIErrorCtor("INTERNAL_SERVER_ERROR", { message });
+            }
+            throw new Error(message);
           }
         },
       },
       update: {
         after: async (user: BetterAuthUser): Promise<void> => {
           try {
-            await mongoDb.collection("users").updateOne(
-              { betterAuthId: user.id },
-              {
-                $set: {
-                  emailVerified: user.emailVerified ?? false,
-                  updatedAt: new Date(),
-                },
-              },
-            );
+            const updateFields: Record<string, unknown> = {
+              emailVerified: user.emailVerified ?? false,
+              updatedAt: new Date(),
+            };
+            if (typeof user.email === "string" && user.email.trim()) {
+              updateFields["email"] = user.email.trim().toLowerCase();
+            }
+            await mongoDb
+              .collection("users")
+              .updateOne({ betterAuthId: user.id }, { $set: updateFields });
 
             try {
               const birdContactService = getBirdContactService?.();
@@ -158,7 +178,7 @@ export function createBetterAuthHooks(
             }
           } catch (err) {
             authLogger.error(
-              "[databaseHooks] Failed to sync emailVerified:",
+              "[databaseHooks] Failed to sync user update:",
               err,
             );
           }
@@ -171,9 +191,9 @@ export function createBetterAuthHooks(
           session: BetterAuthSession,
           ctx?: { path?: string },
         ): Promise<{ data: BetterAuthSession } | false> => {
+          const path = (ctx?.path ?? "").toLowerCase();
           const staffUser = await isStaffOrSubroleUser(mongoDb, session.userId);
           if (staffUser) {
-            const path = (ctx?.path ?? "").toLowerCase();
             if (
               path.includes("/sign-in/social") ||
               path.includes("/callback") ||
@@ -186,26 +206,12 @@ export function createBetterAuthHooks(
             }
             return { data: { ...session, otpPending: true } };
           }
-          return { data: session };
-        },
-        after: async (
-          session: BetterAuthSession,
-          ctx?: { path?: string },
-        ): Promise<void> => {
-          const path = ctx?.path ?? "";
-          const isSocialOrPasskey =
-            path.includes("/sign-in/social") ||
-            path.includes("/callback") ||
-            path.includes("/passkey/verify-authentication");
-          const staffUser = await isStaffOrSubroleUser(mongoDb, session.userId);
-          if (staffUser && (isSocialOrPasskey || session.otpPending)) {
-            await mongoDb
-              .collection("session")
-              .updateOne(
-                { token: session.token },
-                { $set: { otpPending: true } },
-              );
+          // Fail-closed: toda sesión nacida vía /sign-in/email requiere completar login-otp
+          // desde el mismo momento de inserción en MongoDB (elimina ventana de carrera).
+          if (path === "/sign-in/email" || path.startsWith("/sign-in/email/")) {
+            return { data: { ...session, otpPending: true } };
           }
+          return { data: session };
         },
       },
     },

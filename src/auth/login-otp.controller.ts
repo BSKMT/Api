@@ -20,6 +20,16 @@ import {
 } from "./dto/login-otp.dto";
 import { Public } from "../common/decorators";
 import { issueCsrfCookie } from "../common/csrf/csrf-cookie.helper";
+import { VERIFIED_CLIENT_IP_HEADER } from "./better-auth";
+
+function getVerifiedClientIp(req: Request): string {
+  const internalIp = req.headers[VERIFIED_CLIENT_IP_HEADER];
+  const candidate = Array.isArray(internalIp) ? internalIp[0] : internalIp;
+  if (typeof candidate === "string" && candidate.trim().length > 0) {
+    return candidate.trim();
+  }
+  return req.ip || "";
+}
 
 /**
  * LoginOtpController — Endpoints para el flujo de verificacion de login
@@ -48,8 +58,7 @@ export class LoginOtpController {
     @Body() dto: LoginOtpInitiateDto,
     @Req() req: Request,
   ): Promise<{ requestId: string }> {
-    const clientIp =
-      (req.headers["cf-connecting-ip"] as string | undefined) || req.ip || "";
+    const clientIp = getVerifiedClientIp(req);
     const userAgent = req.headers["user-agent"] ?? "";
     return this.loginOtpService.initiateLogin(
       dto.email,
@@ -69,8 +78,7 @@ export class LoginOtpController {
     @Body() dto: LoginOtpFasciaInitiateDto,
     @Req() req: Request,
   ): Promise<{ requestId: string }> {
-    const clientIp =
-      (req.headers["cf-connecting-ip"] as string | undefined) || req.ip || "";
+    const clientIp = getVerifiedClientIp(req);
     const userAgent = req.headers["user-agent"] ?? "";
     return this.loginOtpService.initiateFasciaLogin(
       dto.username,
@@ -90,8 +98,7 @@ export class LoginOtpController {
     @Body() dto: LoginOtpConsoleInitiateDto,
     @Req() req: Request,
   ): Promise<{ requestId: string }> {
-    const clientIp =
-      (req.headers["cf-connecting-ip"] as string | undefined) || req.ip || "";
+    const clientIp = getVerifiedClientIp(req);
     const userAgent = req.headers["user-agent"] ?? "";
     return this.loginOtpService.initiateConsoleLogin(
       dto.email,
@@ -112,8 +119,7 @@ export class LoginOtpController {
     @Body() dto: LoginOtpSuperAdminInitiateDto,
     @Req() req: Request,
   ): Promise<{ requestId: string }> {
-    const clientIp =
-      (req.headers["cf-connecting-ip"] as string | undefined) || req.ip || "";
+    const clientIp = getVerifiedClientIp(req);
     const userAgent = req.headers["user-agent"] ?? "";
     return this.loginOtpService.initiateSuperAdminLogin(
       dto.email,

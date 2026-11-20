@@ -1,7 +1,11 @@
 import type { Request, Response, NextFunction } from "express";
-import type { AuthInstance } from "../auth/better-auth";
+import {
+  VERIFIED_CLIENT_IP_HEADER,
+  type AuthInstance,
+} from "../auth/better-auth";
+import { hasSessionTokenCookie } from "../auth/better-auth-cookie.helper";
 
-/** Typed shape of the `better-auth/node` module (avoids unsafe dynamic import). */
+/** Typed shape of the `better-auth/node` module (compatible with Jest CJS & ESM runtime). */
 interface BetterAuthNodeModule {
   toNodeHandler: (auth: AuthInstance) => (req: Request, res: Response) => void;
   fromNodeHeaders: (headers: unknown) => Headers;
@@ -14,16 +18,23 @@ export const SENSITIVE_AUTH_PATHS = new Set([
   "/sign-in/email",
   "/sign-up/email",
   "/send-verification-email",
+  "/verify-email",
   "/reset-password",
   "/request-password-reset",
   "/forget-password",
   "/change-password",
   "/change-email",
   "/delete-user",
+  "/passkey/generate-register-options",
+  "/passkey/verify-registration",
   "/passkey/generate-authenticate-options",
   "/passkey/verify-authentication",
+  "/two-factor/enable",
+  "/two-factor/disable",
+  "/two-factor/send-otp",
   "/two-factor/verify-totp",
   "/two-factor/verify-otp",
+  "/two-factor/verify-backup-code",
 ]);
 
 const OTP_PENDING_ALLOWED_AUTH_PATHS = new Set([
@@ -43,6 +54,16 @@ export function shouldSkipAuthRoute(path: string): boolean {
 }
 
 function resolveAuthClientIp(req: Request): string {
+  const internalIp = req.headers[VERIFIED_CLIENT_IP_HEADER];
+  const resolvedInternal = Array.isArray(internalIp)
+    ? internalIp[0]
+    : internalIp;
+  if (
+    typeof resolvedInternal === "string" &&
+    resolvedInternal.trim().length > 0
+  ) {
+    return resolvedInternal.trim();
+  }
   const verifiedReq = req as Request & { cfOriginVerified?: boolean };
   const canTrustCf =
     verifiedReq.cfOriginVerified === true ||
@@ -129,7 +150,12 @@ export async function createBetterAuthMiddleware(auth: AuthInstance) {
     if (shouldSkipAuthRoute(path)) {
       return next();
     }
-    if (path === "/sign-in/email" || path.startsWith("/sign-in/social")) {
+    if (
+      path === "/sign-in/email" ||
+      path.startsWith("/sign-in/social") ||
+      path.startsWith("/callback/") ||
+      path === "/callback"
+    ) {
       return res.status(404).json({ message: "Not Found" });
     }
     if (SENSITIVE_AUTH_PATHS.has(path)) {
@@ -143,7 +169,7 @@ export async function createBetterAuthMiddleware(auth: AuthInstance) {
     const cookieHeader = req.headers.cookie ?? "";
     if (
       !OTP_PENDING_ALLOWED_AUTH_PATHS.has(path) &&
-      cookieHeader.includes("better-auth.session_token")
+      hasSessionTokenCookie(cookieHeader)
     ) {
       try {
         const session = await auth.api.getSession({

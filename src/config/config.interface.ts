@@ -150,10 +150,11 @@ export interface EnvironmentConfig {
   /** Node environment runtime */
   NODE_ENV?: "development" | "production" | "test";
 
-  /** Google OAuth & Passkey config */
+  /** Google OAuth (legacy env) & Passkey config */
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   PASSKEY_RP_ID?: string;
+  PASSKEY_EXTRA_ORIGINS?: string;
 
   /** Bird WhatsApp template override */
   BIRD_WHATSAPP_TEMPLATE_SLUG?: string;

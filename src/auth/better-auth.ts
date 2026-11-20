@@ -1,7 +1,8 @@
-import { MongoClient } from "mongodb";
+import { Db, MongoClient } from "mongodb";
 import { Logger } from "@nestjs/common";
 import type { BirdEmailService } from "../bird/bird-email.service";
 import type {
+  BetterAuthApiErrorCtor,
   BetterAuthCoreModule,
   BetterAuthMongoModule,
   BetterAuthDeps,
@@ -29,21 +30,30 @@ export type {
 } from "./better-auth.types";
 export type Session = BetterAuthSessionData;
 
+/**
+ * Cabecera interna sobrescrita incondicionalmente por `security.ts` tras validar
+ * el origen de Cloudflare, evitando spoofing de IP en sesiones y rate limiting.
+ */
+export const VERIFIED_CLIENT_IP_HEADER = "x-bskmt-client-ip";
+
 interface BetterAuthExtendedDeps extends BetterAuthDeps {
   passkeyPlugin: (options?: Record<string, unknown>) => unknown;
   twoFactorPlugin: (options?: Record<string, unknown>) => unknown;
+  APIError: BetterAuthApiErrorCtor;
 }
 
 let depsPromise: Promise<BetterAuthExtendedDeps> | null = null;
 
 async function loadBetterAuthDeps(): Promise<BetterAuthExtendedDeps> {
   depsPromise ??= (async (): Promise<BetterAuthExtendedDeps> => {
-    const [coreRaw, mongoRaw, passkeyRaw, twoFactorRaw] = await Promise.all([
-      import("better-auth"),
-      import("better-auth/adapters/mongodb"),
-      import("@better-auth/passkey"),
-      import("better-auth/plugins/two-factor"),
-    ]);
+    const [coreRaw, mongoRaw, passkeyRaw, twoFactorRaw, apiRaw] =
+      await Promise.all([
+        import("better-auth"),
+        import("better-auth/adapters/mongodb"),
+        import("@better-auth/passkey"),
+        import("better-auth/plugins/two-factor"),
+        import("better-auth/api"),
+      ]);
     const core = coreRaw as unknown as BetterAuthCoreModule;
     const mongoMod = mongoRaw as unknown as BetterAuthMongoModule;
     const passkeyMod = passkeyRaw as unknown as {
@@ -52,26 +62,41 @@ async function loadBetterAuthDeps(): Promise<BetterAuthExtendedDeps> {
     const twoFactorMod = twoFactorRaw as unknown as {
       twoFactor: (options?: Record<string, unknown>) => unknown;
     };
+    const apiMod = apiRaw as unknown as {
+      APIError: BetterAuthApiErrorCtor;
+    };
     return {
       betterAuth: core.betterAuth,
       mongodbAdapter: mongoMod.mongodbAdapter,
       passkeyPlugin: passkeyMod.passkey,
       twoFactorPlugin: twoFactorMod.twoFactor,
+      APIError: apiMod.APIError,
     };
   })();
   return depsPromise;
 }
 
-const mongoUrl = process.env.MONGODB_URI;
-if (!mongoUrl) {
-  throw new Error("MONGODB_URI environment variable is required");
+let mongoClientInstance: MongoClient | null = null;
+let mongoDbInstance: Db | null = null;
+
+function getMongoClient(): MongoClient {
+  if (!mongoClientInstance) {
+    const mongoUrl = process.env.MONGODB_URI;
+    if (!mongoUrl) {
+      throw new Error("MONGODB_URI environment variable is required");
+    }
+    mongoClientInstance = new MongoClient(mongoUrl, {
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 10_000,
+      connectTimeoutMS: 10_000,
+    });
+  }
+  return mongoClientInstance;
 }
 
-const mongoClient = new MongoClient(mongoUrl);
-const mongoDb = mongoClient.db();
-
-export function getMongoDb() {
-  return mongoDb;
+export function getMongoDb(): Db {
+  mongoDbInstance ??= getMongoClient().db();
+  return mongoDbInstance;
 }
 
 let authInstance: AuthInstance | null = null;
@@ -101,31 +126,37 @@ export function setAuthDependencies(
 }
 
 async function initAuth(): Promise<AuthInstance> {
-  const { betterAuth, mongodbAdapter, passkeyPlugin, twoFactorPlugin } =
-    await loadBetterAuthDeps();
+  const {
+    betterAuth,
+    mongodbAdapter,
+    passkeyPlugin,
+    twoFactorPlugin,
+    APIError,
+  } = await loadBetterAuthDeps();
 
-  await ensureBetterAuthIndexesAndMigrations(mongoDb, authLogger);
+  const client = getMongoClient();
+  const db = getMongoDb();
+  const isProd = process.env.NODE_ENV === "production";
+
+  await ensureBetterAuthIndexesAndMigrations(db, authLogger);
 
   const getLandingPage = () =>
     injectedLandingPageUrl ??
     process.env.LANDING_PAGE_URL ??
-    (process.env.NODE_ENV === "production"
-      ? "https://bskmt.com"
-      : "http://localhost:4321");
+    (isProd ? "https://bskmt.com" : "http://localhost:4321");
+
+  const secret = process.env.BETTER_AUTH_SECRET;
+  if (!secret) {
+    throw new Error("BETTER_AUTH_SECRET environment variable is required");
+  }
 
   return betterAuth({
     appName: "BSK Motorcycle Team",
-    database: mongodbAdapter(mongoDb, { client: mongoClient }),
+    database: mongodbAdapter(db, { client }),
     baseURL:
       process.env.BETTER_AUTH_URL ??
-      (process.env.NODE_ENV === "production"
-        ? "https://api.bskmt.com"
-        : "http://localhost:3000"),
-    secret:
-      process.env.BETTER_AUTH_SECRET ??
-      (() => {
-        throw new Error("BETTER_AUTH_SECRET environment variable is required");
-      })(),
+      (isProd ? "https://api.bskmt.com" : "http://localhost:3000"),
+    secret,
 
     emailAndPassword: {
       enabled: true,
@@ -163,38 +194,62 @@ async function initAuth(): Promise<AuthInstance> {
       cookieCache: { enabled: false },
     },
 
+    rateLimit: {
+      enabled: isProd,
+      window: 60,
+      max: 100,
+      storage: "database",
+      customRules: {
+        "/sign-up/email": { window: 60, max: 5 },
+        "/send-verification-email": { window: 300, max: 3 },
+        "/verify-email": { window: 60, max: 10 },
+        "/request-password-reset": { window: 300, max: 3 },
+        "/forget-password": { window: 300, max: 3 },
+        "/reset-password": { window: 60, max: 5 },
+        "/change-password": { window: 60, max: 5 },
+        "/change-email": { window: 300, max: 3 },
+        "/delete-user": { window: 300, max: 3 },
+        "/passkey/*": { window: 60, max: 10 },
+        "/two-factor/*": { window: 60, max: 5 },
+      },
+    },
+
     advanced: {
       ipAddress: {
-        ipAddressHeaders: ["cf-connecting-ip", "x-forwarded-for"],
+        ipAddressHeaders: [VERIFIED_CLIENT_IP_HEADER],
       },
-      useSecureCookies: process.env.NODE_ENV === "production",
+      useSecureCookies: isProd,
+      crossSubDomainCookies: {
+        enabled: isProd,
+        domain: ".bskmt.com",
+      },
       defaultCookieAttributes: {
         path: "/",
         sameSite:
           process.env.COOKIE_SAME_SITE?.toLowerCase() === "strict"
             ? "strict"
             : "lax",
-        secure: process.env.NODE_ENV === "production",
+        secure: isProd,
         httpOnly: true,
-        ...(process.env.NODE_ENV === "production"
-          ? { domain: ".bskmt.com" }
-          : {}),
+      },
+      database: {
+        joins: true,
+        validateSchema: false,
       },
     },
 
     trustedOrigins: getTrustedOrigins(),
     disabledPaths: ["/sign-in/email", "/sign-in/social"],
     databaseHooks: createBetterAuthHooks(
-      mongoDb,
+      db,
       authLogger,
       () => injectedBirdContactService,
+      APIError,
     ),
 
     plugins: [
       passkeyPlugin({
-        rpID:
-          process.env.PASSKEY_RP_ID ??
-          (process.env.NODE_ENV === "production" ? "bskmt.com" : "localhost"),
+        rpID: process.env.PASSKEY_RP_ID ?? (isProd ? "bskmt.com" : "localhost"),
         rpName: "BSK Motorcycle Team",
         origin: getPasskeyOrigins(),
       }),
@@ -211,17 +266,6 @@ async function initAuth(): Promise<AuthInstance> {
         },
       }),
     ],
-
-    ...(process.env.GOOGLE_CLIENT_ID
-      ? {
-          socialProviders: {
-            google: {
-              clientId: process.env.GOOGLE_CLIENT_ID,
-              clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
-            },
-          },
-        }
-      : {}),
   });
 }
 
