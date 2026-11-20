@@ -121,14 +121,14 @@ describe("Better Auth Security & Quality Remediation Suite", () => {
     it("drops obsolete account_issuer_accountId_uidx idempotently without backfilling issuer", async () => {
       const dropIndex = jest.fn().mockRejectedValue({ code: 27 });
       const updateMany = jest.fn();
-      const createIndex = jest.fn().mockResolvedValue("ok");
+      const createIndexes = jest.fn().mockResolvedValue(["ok"]);
 
       const mockDb = {
         collection: jest.fn((name: string) => {
           if (name === "account") {
             return { dropIndex, updateMany };
           }
-          return { createIndex };
+          return { createIndexes };
         }),
       } as unknown as Db;
 
@@ -143,14 +143,10 @@ describe("Better Auth Security & Quality Remediation Suite", () => {
 
       expect(dropIndex).toHaveBeenCalledWith("account_issuer_accountId_uidx");
       expect(updateMany).not.toHaveBeenCalled();
-      expect(createIndex).toHaveBeenCalledWith(
-        { key: 1 },
-        { unique: true, background: true },
-      );
-      expect(createIndex).toHaveBeenCalledWith(
-        { lastRequest: 1 },
-        { background: true },
-      );
+      expect(createIndexes).toHaveBeenCalledWith([
+        { key: { key: 1 }, unique: true },
+        { key: { lastRequest: 1 } },
+      ]);
       expect(warn).not.toHaveBeenCalled();
     });
   });

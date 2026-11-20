@@ -67,36 +67,45 @@ export const ANDROID_APP_PASSKEY_ORIGIN =
 
 const ANDROID_ORIGIN_REGEX = /^android:apk-key-hash:[A-Za-z0-9_-]{43}$/;
 
+function isAllowedExtraWebOrigin(parsed: URL, isProduction: boolean): boolean {
+  if (parsed.protocol === "https:") {
+    return (
+      !isProduction ||
+      (parsed.hostname !== "localhost" && parsed.hostname !== "127.0.0.1")
+    );
+  }
+  return (
+    !isProduction &&
+    parsed.protocol === "http:" &&
+    (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")
+  );
+}
+
+function normalizeExtraPasskeyOrigin(
+  entry: string,
+  isProduction: boolean,
+): string | null {
+  const trimmed = entry.trim();
+  if (!trimmed) return null;
+  if (ANDROID_ORIGIN_REGEX.test(trimmed)) {
+    return trimmed;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    return isAllowedExtraWebOrigin(parsed, isProduction) ? parsed.origin : null;
+  } catch {
+    return null;
+  }
+}
+
 function parseExtraPasskeyOrigins(isProduction: boolean): string[] {
   const raw = process.env.PASSKEY_EXTRA_ORIGINS?.trim();
   if (!raw) return [];
   const origins: string[] = [];
   for (const entry of raw.split(",")) {
-    const trimmed = entry.trim();
-    if (!trimmed) continue;
-    if (ANDROID_ORIGIN_REGEX.test(trimmed)) {
-      origins.push(trimmed);
-      continue;
-    }
-    try {
-      const parsed = new URL(trimmed);
-      if (isProduction) {
-        if (
-          parsed.protocol === "https:" &&
-          parsed.hostname !== "localhost" &&
-          parsed.hostname !== "127.0.0.1"
-        ) {
-          origins.push(parsed.origin);
-        }
-      } else if (
-        parsed.protocol === "https:" ||
-        (parsed.protocol === "http:" &&
-          (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1"))
-      ) {
-        origins.push(parsed.origin);
-      }
-    } catch {
-      // Ignorar entradas malformadas
+    const normalized = normalizeExtraPasskeyOrigin(entry, isProduction);
+    if (normalized) {
+      origins.push(normalized);
     }
   }
   return origins;

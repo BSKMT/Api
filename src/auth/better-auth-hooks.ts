@@ -49,6 +49,72 @@ export const ALLOWED_USER_EMAIL_DOMAINS = new Set([
   "yahoo.es",
 ]);
 
+async function syncProvisionedUserToBird(
+  birdContactService: BirdContactService | null | undefined,
+  params: {
+    email: string;
+    primerNombre: string;
+    primerApellido: string;
+    externalId: string;
+    role: string;
+    subrol: string | null;
+    membershipLevel: string | null;
+    membershipExpired: boolean;
+  },
+  authLogger: Logger,
+): Promise<void> {
+  if (!birdContactService) return;
+  try {
+    await birdContactService.syncContact(params);
+  } catch (birdErr) {
+    authLogger.warn(
+      `[databaseHooks] Bird CRM sync warning para ${maskEmail(params.email)}: ${birdErr instanceof Error ? birdErr.message : String(birdErr)}`,
+    );
+  }
+}
+
+async function provisionMongooseUserFromBetterAuth(
+  mongoDb: Db,
+  user: BetterAuthUser,
+  authLogger: Logger,
+  APIErrorCtor?: BetterAuthApiErrorCtor,
+): Promise<{
+  insertedId: ObjectId | null;
+  parsed: ReturnType<typeof parseUserPersonalData>;
+  role: string;
+  subrol: string | null;
+  membershipLevel: string | null;
+  membershipExpired: boolean;
+}> {
+  const parsed = parseUserPersonalData(user);
+  const existingUser = await mongoDb.collection("users").findOne({
+    $or: [{ email: user.email.toLowerCase() }, { betterAuthId: user.id }],
+  });
+
+  if (!existingUser) {
+    const insertedId = await insertNewMongooseUser(mongoDb, user, parsed);
+    return {
+      insertedId,
+      parsed,
+      role: "user",
+      subrol: null,
+      membershipLevel: null,
+      membershipExpired: false,
+    };
+  }
+
+  validateAntiAccountTakeover(existingUser, user, authLogger, APIErrorCtor);
+  await syncExistingMongooseUser(mongoDb, existingUser, user, parsed);
+  return {
+    insertedId: existingUser._id,
+    parsed,
+    role: (existingUser["role"] as string) || "user",
+    subrol: (existingUser["subrol"] as string) || null,
+    membershipLevel: (existingUser["membershipLevel"] as string) || null,
+    membershipExpired: Boolean(existingUser["membershipExpired"]),
+  };
+}
+
 export function createBetterAuthHooks(
   mongoDb: Db,
   authLogger: Logger,
@@ -74,64 +140,29 @@ export function createBetterAuthHooks(
           return { data: user };
         },
         after: async (user: BetterAuthUser): Promise<void> => {
-          let insertedId: ObjectId | null = null;
-          let role = "user";
-          let subrol: string | null = null;
-          let membershipLevel: string | null = null;
-          let membershipExpired = false;
-
           try {
-            const parsed = parseUserPersonalData(user);
-            const existingUser = await mongoDb.collection("users").findOne({
-              $or: [
-                { email: user.email.toLowerCase() },
-                { betterAuthId: user.id },
-              ],
-            });
-
-            if (existingUser) {
-              validateAntiAccountTakeover(
-                existingUser,
-                user,
-                authLogger,
-                APIErrorCtor,
-              );
-              await syncExistingMongooseUser(
-                mongoDb,
-                existingUser,
-                user,
-                parsed,
-              );
-              insertedId = existingUser._id;
-              role = (existingUser["role"] as string) || "user";
-              subrol = (existingUser["subrol"] as string) || null;
-              membershipLevel =
-                (existingUser["membershipLevel"] as string) || null;
-              membershipExpired = Boolean(existingUser["membershipExpired"]);
-            } else {
-              insertedId = await insertNewMongooseUser(mongoDb, user, parsed);
-            }
-
-            // Sincronizar contacto en Bird CRM en la audiencia correspondiente
-            try {
-              const birdContactService = getBirdContactService?.();
-              if (birdContactService) {
-                await birdContactService.syncContact({
-                  email: user.email,
-                  primerNombre: parsed.primerNombre,
-                  primerApellido: parsed.primerApellido,
-                  externalId: insertedId ? String(insertedId) : user.id,
-                  role,
-                  subrol,
-                  membershipLevel,
-                  membershipExpired,
-                });
-              }
-            } catch (birdErr) {
-              authLogger.warn(
-                `[databaseHooks] Bird CRM sync warning para ${maskEmail(user.email)}: ${birdErr instanceof Error ? birdErr.message : String(birdErr)}`,
-              );
-            }
+            const provisioned = await provisionMongooseUserFromBetterAuth(
+              mongoDb,
+              user,
+              authLogger,
+              APIErrorCtor,
+            );
+            await syncProvisionedUserToBird(
+              getBirdContactService?.(),
+              {
+                email: user.email,
+                primerNombre: provisioned.parsed.primerNombre,
+                primerApellido: provisioned.parsed.primerApellido,
+                externalId: provisioned.insertedId
+                  ? String(provisioned.insertedId)
+                  : user.id,
+                role: provisioned.role,
+                subrol: provisioned.subrol,
+                membershipLevel: provisioned.membershipLevel,
+                membershipExpired: provisioned.membershipExpired,
+              },
+              authLogger,
+            );
           } catch (err) {
             authLogger.error(
               `[databaseHooks] Failed to insert Mongoose user for betterAuthId=${user.id} email=${maskEmail(user.email)}: ${err instanceof Error ? err.message : String(err)}`,

@@ -45,28 +45,22 @@ export async function ensureBetterAuthIndexesAndMigrations(
     await Promise.all([
       mongoDb
         .collection("session")
-        .createIndex(
-          { expiresAt: 1 },
-          { expireAfterSeconds: 0, background: true },
-        ),
-      mongoDb
-        .collection("session")
-        .createIndex({ userId: 1 }, { background: true }),
+        .createIndexes([
+          { key: { expiresAt: 1 }, expireAfterSeconds: 0 },
+          { key: { userId: 1 } },
+        ]),
       mongoDb
         .collection("verification")
-        .createIndex(
-          { expiresAt: 1 },
-          { expireAfterSeconds: 0, background: true },
-        ),
-      mongoDb
-        .collection("verification")
-        .createIndex({ identifier: 1 }, { background: true }),
+        .createIndexes([
+          { key: { expiresAt: 1 }, expireAfterSeconds: 0 },
+          { key: { identifier: 1 } },
+        ]),
       mongoDb
         .collection("rateLimit")
-        .createIndex({ key: 1 }, { unique: true, background: true }),
-      mongoDb
-        .collection("rateLimit")
-        .createIndex({ lastRequest: 1 }, { background: true }),
+        .createIndexes([
+          { key: { key: 1 }, unique: true },
+          { key: { lastRequest: 1 } },
+        ]),
     ]);
   } catch (indexErr) {
     logger.warn(
