@@ -12,7 +12,9 @@ export function assertChannelAuthorized(
   const hasAdminSupportPerm =
     role === "superadmin" ||
     (role === "admin" &&
-      (perms.includes("*") || perms.includes("support") || perms.includes("users")));
+      (perms.includes("*") ||
+        perms.includes("support") ||
+        perms.includes("users")));
 
   if (
     channelName.startsWith("private-user-") ||

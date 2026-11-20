@@ -209,10 +209,9 @@ export class AdminSettingsService {
       await db.collection("garagemotorcycles").deleteMany({ userId });
       await db.collection("maintenancelogs").deleteMany({ userId });
       await db.collection("odometerlogs").deleteMany({ userId });
-      await db.collection("savingsplans").updateMany(
-        { userId },
-        { $unset: { "extensionRequest.reason": "" } },
-      );
+      await db
+        .collection("savingsplans")
+        .updateMany({ userId }, { $unset: { "extensionRequest.reason": "" } });
       await db.collection("savingsrefundrequests").updateMany(
         { userId },
         {

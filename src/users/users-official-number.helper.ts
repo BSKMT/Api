@@ -90,9 +90,7 @@ export function resetIdentityIfDocumentChanged(
 ): void {
   const personal = user.profile?.["datos-personales"] ?? {};
   const normalizeText = (v: unknown): string =>
-    typeof v === "string"
-      ? v.trim().replace(/\s+/g, " ").toLowerCase()
-      : "";
+    typeof v === "string" ? v.trim().replace(/\s+/g, " ").toLowerCase() : "";
   const normalizeNumber = (v: unknown): string =>
     typeof v === "string" ? v.replace(/\D/g, "") : "";
 

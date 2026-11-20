@@ -98,7 +98,11 @@ export async function executeConfirmRegistration(
     throw new NotFoundException("Evento no encontrado");
   }
   const eventStatus = (event.status ?? "").toUpperCase();
-  if (eventStatus === "CANCELLED" || eventStatus === "COMPLETED" || eventStatus === "DRAFT") {
+  if (
+    eventStatus === "CANCELLED" ||
+    eventStatus === "COMPLETED" ||
+    eventStatus === "DRAFT"
+  ) {
     throw new BadRequestException(
       "Este evento ya no se encuentra disponible para confirmación.",
     );

@@ -64,7 +64,9 @@ export class ShopController {
   @Public()
   @Get("upcoming")
   async getUpcomingReleases(@Query("limit") limit?: string) {
-    return this.shopService.getUpcomingReleases(parsePositiveInt(limit, 10, 100));
+    return this.shopService.getUpcomingReleases(
+      parsePositiveInt(limit, 10, 100),
+    );
   }
 
   @Public()

@@ -135,9 +135,7 @@ export async function queryPendingRefunds(
     .find({
       "partialPaymentCredit.type": CreditType.REFUND_REQUESTED,
     })
-    .select(
-      "_id email membershipLevel partialPaymentCredit",
-    )
+    .select("_id email membershipLevel partialPaymentCredit")
     .limit(500)
     .lean();
 

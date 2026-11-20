@@ -17,7 +17,10 @@ export async function executeListUsers(
 
   if (filters.role && typeof filters.role === "string") {
     const normalizedRole = filters.role.trim().toLowerCase();
-    if (filters.excludeSuperAdmin && normalizedRole === UserRole.SUPERADMIN) {
+    if (
+      filters.excludeSuperAdmin &&
+      normalizedRole === String(UserRole.SUPERADMIN)
+    ) {
       return {
         items: [],
         total: 0,

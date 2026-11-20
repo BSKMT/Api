@@ -164,8 +164,11 @@ export function encryptUserProfileSensitiveFields(
 ): void {
   if (!profile || typeof profile !== "object") return;
   const p = profile as Record<string, unknown>;
-  const hasSalud = Boolean(p["salud-seguridad"]) && !isEncryptedField(p["salud-seguridad"]);
-  const hasLegal = Boolean(p["documentacion-legal"]) && !isEncryptedField(p["documentacion-legal"]);
+  const hasSalud =
+    Boolean(p["salud-seguridad"]) && !isEncryptedField(p["salud-seguridad"]);
+  const hasLegal =
+    Boolean(p["documentacion-legal"]) &&
+    !isEncryptedField(p["documentacion-legal"]);
   if (!hasSalud && !hasLegal) return;
 
   const encKey = key || deriveFieldEncryptionKey();

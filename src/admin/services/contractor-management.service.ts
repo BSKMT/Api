@@ -132,7 +132,8 @@ export class ContractorManagementService {
    * H-07: Nunca expone cuentas SUPERADMIN a llamadores no-superadmin.
    */
   async listCollaborators(callerRole?: string) {
-    const isSuperAdmin = (callerRole || "").toLowerCase() === UserRole.SUPERADMIN;
+    const isSuperAdmin =
+      (callerRole || "").toLowerCase() === String(UserRole.SUPERADMIN);
     const filter: Record<string, unknown> = {
       $or: [
         { role: UserRole.GESTOR },
@@ -155,7 +156,8 @@ export class ContractorManagementService {
    * Lista todos los administradores ejecutivos (y superadministradores solo si el llamador es SUPERADMIN).
    */
   async listAdministrators(callerRole?: string) {
-    const isSuperAdmin = (callerRole || "").toLowerCase() === UserRole.SUPERADMIN;
+    const isSuperAdmin =
+      (callerRole || "").toLowerCase() === String(UserRole.SUPERADMIN);
     return this.userModel
       .find({
         role: isSuperAdmin

@@ -221,7 +221,10 @@ function encryptUpdatePayload(update: Record<string, unknown> | null): void {
   if (update.profile && typeof update.profile === "object") {
     encryptUserProfileSensitiveFields(update.profile);
   }
-  for (const dotKey of ["profile.salud-seguridad", "profile.documentacion-legal"]) {
+  for (const dotKey of [
+    "profile.salud-seguridad",
+    "profile.documentacion-legal",
+  ]) {
     if (update[dotKey] !== undefined && update[dotKey] !== null) {
       update[dotKey] = encryptSensitiveField(update[dotKey]);
     }
@@ -231,7 +234,10 @@ function encryptUpdatePayload(update: Record<string, unknown> | null): void {
     if (setObj.profile && typeof setObj.profile === "object") {
       encryptUserProfileSensitiveFields(setObj.profile);
     }
-    for (const dotKey of ["profile.salud-seguridad", "profile.documentacion-legal"]) {
+    for (const dotKey of [
+      "profile.salud-seguridad",
+      "profile.documentacion-legal",
+    ]) {
       if (setObj[dotKey] !== undefined && setObj[dotKey] !== null) {
         setObj[dotKey] = encryptSensitiveField(setObj[dotKey]);
       }

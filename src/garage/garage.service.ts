@@ -443,9 +443,7 @@ export class GarageService {
         );
         if (docResult.ok) {
           record = docResult.record;
-          await this.kvCache
-            ?.set(cacheKey, record, 600, true)
-            .catch(() => {});
+          await this.kvCache?.set(cacheKey, record, 600, true).catch(() => {});
           return record;
         }
         this.logger.warn(
@@ -453,7 +451,8 @@ export class GarageService {
         );
       }
 
-      const res = await this.verifikService.verifyRuntVehicleByPlate(cleanPlate);
+      const res =
+        await this.verifikService.verifyRuntVehicleByPlate(cleanPlate);
       if (!res.ok) {
         throw new BadRequestException(res.message);
       }

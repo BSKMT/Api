@@ -116,7 +116,9 @@ export async function executeAdminConfirmRegistration(
         { $inc: { registeredCount: -1 } },
       );
     }
-    throw new BadRequestException("El estado del registro cambió concurrentemente");
+    throw new BadRequestException(
+      "El estado del registro cambió concurrentemente",
+    );
   }
   logger.log(`Registration admin-confirmed: id=${registrationId}`);
   return updated;

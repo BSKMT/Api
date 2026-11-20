@@ -18,7 +18,7 @@ export function isActiveMember(
 ): boolean {
   if (!user) return false;
   const role = (user.role ?? "").toLowerCase();
-  if (role !== UserRole.MEMBER) return false;
+  if (role !== String(UserRole.MEMBER)) return false;
   if (!user.membershipLevel) return false;
   if (user.membershipExpired === true) return false;
   if (!user.membershipExpiryDate) return false;

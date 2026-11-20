@@ -57,7 +57,7 @@ export class AdminUsersController {
     @Query("page") page?: unknown,
   ) {
     const isSuperAdmin =
-      (req.user?.role || "").toLowerCase() === UserRole.SUPERADMIN;
+      (req.user?.role || "").toLowerCase() === String(UserRole.SUPERADMIN);
     return this.usersService.listUsers({
       search: ensureString(search),
       role: ensureString(role),

@@ -100,10 +100,11 @@ export class ChannelVerificationService {
     }
 
     // F-10: Enforce the same ALLOWED_USER_EMAIL_DOMAINS allowlist as signup for non-staff users.
+    const normalizedUserRole = String(user.role ?? "").toLowerCase();
     const isStaff =
-      user.role === UserRole.ADMIN ||
-      user.role === UserRole.SUPERADMIN ||
-      user.role === UserRole.GESTOR ||
+      normalizedUserRole === String(UserRole.ADMIN) ||
+      normalizedUserRole === String(UserRole.SUPERADMIN) ||
+      normalizedUserRole === String(UserRole.GESTOR) ||
       Boolean(user.subrol);
     const domain = normalizedEmail.split("@")[1] ?? "";
     if (

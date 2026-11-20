@@ -87,7 +87,9 @@ export class AdminMembershipService {
       .select("betterAuthId")
       .lean();
     if (u?.betterAuthId) {
-      await this.kvCache.delete(`user:ba:${u.betterAuthId}`, true).catch(() => {});
+      await this.kvCache
+        .delete(`user:ba:${u.betterAuthId}`, true)
+        .catch(() => {});
     }
   }
 

@@ -544,7 +544,9 @@ export class VerifikService {
       license,
       syncedAt: new Date().toISOString(),
       source: "VERIFIK_OFFICIAL",
-      ownershipVerified: Boolean(vehicleResult?.ok && vehicleResult.ownershipVerified),
+      ownershipVerified: Boolean(
+        vehicleResult?.ok && vehicleResult.ownershipVerified,
+      ),
       runtUnavailable,
       runtMessage: runtUnavailable ? runtMessage : undefined,
     };

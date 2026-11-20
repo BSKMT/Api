@@ -218,7 +218,11 @@ describe("Security Remediation Regression Suite (Ciclo 8)", () => {
         ),
       ).toEqual({ allowed: true, verified: true });
       expect(
-        evaluateOriginAccess({ headers: {}, path: "/api/events" }, secret, true),
+        evaluateOriginAccess(
+          { headers: {}, path: "/api/events" },
+          secret,
+          true,
+        ),
       ).toEqual({ allowed: false, verified: false });
       expect(
         evaluateOriginAccess({ headers: {}, path: "/health" }, secret, true),
@@ -249,7 +253,9 @@ describe("Security Remediation Regression Suite (Ciclo 8)", () => {
           ),
         ).toBe(true);
         expect(
-          guard.canActivate(mkCtx({}, { workshopAuthToken: "tok_secret_123456" })),
+          guard.canActivate(
+            mkCtx({}, { workshopAuthToken: "tok_secret_123456" }),
+          ),
         ).toBe(true);
       } finally {
         if (prev === undefined) delete process.env.ALLIED_WORKSHOP_TOKENS;

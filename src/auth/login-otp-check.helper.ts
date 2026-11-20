@@ -71,7 +71,7 @@ async function promoteBetterAuthSessionOnOtpSuccess(
         );
       if (userDoc) {
         const role = typeof userDoc["role"] === "string" ? userDoc["role"] : "";
-        const subrol = userDoc["subrol"];
+        const subrol: unknown = userDoc["subrol"];
         isPrivileged =
           PRIVILEGED_ROLES.has(role) ||
           (typeof subrol === "string" && subrol.trim().length > 0);
