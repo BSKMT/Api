@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import { HydratedDocument } from "mongoose";
+import type { AuthPortal } from "../better-auth.types";
 
 /**
  * Estado del OTP de login:
@@ -67,6 +68,13 @@ export class LoginOtp {
   /** Estado actual del OTP. */
   @Prop({ type: String, required: true, default: "pending", index: true })
   status!: LoginOtpStatus;
+
+  /**
+   * Portal de autenticación desde el cual se inició el flujo OTP.
+   * Permite sesiones aisladas por portal (standard vs fascia/console/superadmin).
+   */
+  @Prop({ type: String, required: false, default: "standard" })
+  authPortal?: AuthPortal;
 
   /**
    * Numero de intentos fallidos de verificacion registrados localmente.

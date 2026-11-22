@@ -7,14 +7,19 @@ export function assertChannelAuthorized(
   userId?: string,
   role = "user",
   adminPermissions: string[] = [],
+  authPortal = "standard",
 ): void {
   const perms = Array.isArray(adminPermissions) ? adminPermissions : [];
+  const hasConsolePortal =
+    authPortal === "console" || authPortal === "superadmin";
+  const hasStaffPortal = authPortal === "fascia" || hasConsolePortal;
   const hasAdminSupportPerm =
-    role === "superadmin" ||
-    (role === "admin" &&
-      (perms.includes("*") ||
-        perms.includes("support") ||
-        perms.includes("users")));
+    hasStaffPortal &&
+    (role === "superadmin" ||
+      (role === "admin" &&
+        (perms.includes("*") ||
+          perms.includes("support") ||
+          perms.includes("users"))));
 
   if (
     channelName.startsWith("private-user-") ||
@@ -38,10 +43,11 @@ export function assertChannelAuthorized(
     channelName.startsWith("private-admin") ||
     channelName.startsWith("presence-admin")
   ) {
-    // M-12: Require explicit support/* permission for admin realtime channels.
+    // M-12: Require explicit support/* permission and elevated portal session for admin realtime channels.
     const canJoinAdmin =
-      role === "superadmin" ||
-      (role === "admin" && (perms.includes("*") || perms.includes("support")));
+      hasConsolePortal &&
+      (role === "superadmin" ||
+        (role === "admin" && (perms.includes("*") || perms.includes("support"))));
     if (!canJoinAdmin) {
       throw new ForbiddenException(
         "Acceso denegado a canales de administración",

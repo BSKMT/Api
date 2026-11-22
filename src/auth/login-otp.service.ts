@@ -27,6 +27,7 @@ import {
 } from "./login-otp-portals.helper";
 import { verifyTurnstileToken } from "../common/utils/turnstile.util";
 import { maskEmail } from "../common/utils/log-redact.util";
+import type { AuthPortal } from "./better-auth.types";
 
 @Injectable()
 export class LoginOtpService {
@@ -62,6 +63,7 @@ export class LoginOtpService {
     userAgent?: string;
     errorMessage?: string;
     isEligible?: boolean;
+    authPortal?: AuthPortal;
   }): Promise<{ requestId: string }> {
     const {
       authEmail,
@@ -72,6 +74,7 @@ export class LoginOtpService {
       userAgent,
       errorMessage = LoginOtpService.GENERIC_AUTH_ERROR,
       isEligible = true,
+      authPortal = "standard",
     } = params;
 
     const session = await authenticateAndExtractSession(
@@ -104,6 +107,7 @@ export class LoginOtpService {
         maxSends: this.EMAIL_INITIATE_MAX,
         errorMessage,
         remember,
+        authPortal,
       },
     );
   }
@@ -124,6 +128,7 @@ export class LoginOtpService {
       remember: rememberMe === true,
       clientIp,
       userAgent,
+      authPortal: "standard",
     });
   }
 
@@ -147,6 +152,7 @@ export class LoginOtpService {
       remember: rememberMe === true,
       clientIp,
       userAgent,
+      authPortal: "fascia",
       errorMessage:
         "Error al iniciar sesión en Fascia. Verifica tus credenciales.",
     });
@@ -174,6 +180,7 @@ export class LoginOtpService {
       remember: rememberMe === true,
       clientIp,
       userAgent,
+      authPortal: "console",
       errorMessage: "Error al iniciar sesión en la Consola Administrativa.",
     });
   }
@@ -200,6 +207,7 @@ export class LoginOtpService {
       remember: rememberMe === true,
       clientIp,
       userAgent,
+      authPortal: "superadmin",
       errorMessage: "Error al iniciar sesión como Superadministrador.",
     });
   }

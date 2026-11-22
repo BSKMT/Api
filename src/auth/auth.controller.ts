@@ -2,6 +2,7 @@ import { Controller, Get, Req, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import { UsersService } from "../users/users.service";
 import { SessionGuard } from "./session.guard";
+import type { AuthPortal } from "./better-auth.types";
 
 import {
   serializeProfileIdentifier,
@@ -12,6 +13,7 @@ interface AuthenticatedUser {
   userId: string;
   email: string;
   role: string;
+  authPortal?: AuthPortal;
 }
 
 interface AuthenticatedRequest extends Request {
@@ -75,6 +77,7 @@ export class AuthController {
       membershipPaymentPlan: fullUser?.membershipPaymentPlan ?? null,
       role: fullUser?.role ?? "user",
       subrol: fullUser?.subrol ?? null,
+      authPortal: user.authPortal ?? "standard",
       adminPermissions: fullUser?.adminPermissions ?? [],
       contractorInfo: fullUser?.contractorInfo ?? null,
       completedSections: fullUser?.completedSections ?? [],

@@ -17,12 +17,14 @@ import {
 } from "./login-otp-crypto.helper";
 import { dispatchBirdVerification } from "./login-otp-check.helper";
 import { BirdVerifyService } from "../bird-verify/bird-verify.service";
+import type { AuthPortal } from "./better-auth.types";
 
 const OTP_PENDING_SESSION_TTL_MS = 10 * 60 * 1000;
 
 export async function markBetterAuthSessionOtpPending(
   cookies: string[],
   remember: boolean,
+  authPortal: AuthPortal = "standard",
   logger?: Logger,
 ): Promise<void> {
   const token = extractSessionTokenFromCookies(cookies);
@@ -35,6 +37,7 @@ export async function markBetterAuthSessionOtpPending(
         $set: {
           otpPending: true,
           rememberMe: remember,
+          authPortal,
           expiresAt: new Date(Date.now() + OTP_PENDING_SESSION_TTL_MS),
         },
       },
@@ -190,6 +193,7 @@ export interface DispatchOtpParams {
   maxSends: number;
   errorMessage: string;
   remember?: boolean;
+  authPortal?: AuthPortal;
 }
 
 export async function executeDispatchOtpAndSave(
@@ -206,11 +210,13 @@ export async function executeDispatchOtpAndSave(
     maxSends,
     errorMessage,
     remember = false,
+    authPortal = "standard",
   } = params;
 
   await markBetterAuthSessionOtpPending(
     session.sessionCookies,
     remember,
+    authPortal,
     logger,
   );
 
@@ -247,6 +253,7 @@ export async function executeDispatchOtpAndSave(
     betterAuthId: session.betterAuthId,
     sessionCookies: encryptedCookies,
     status: "pending",
+    authPortal,
     attempts: 0,
     expiresAt,
   });

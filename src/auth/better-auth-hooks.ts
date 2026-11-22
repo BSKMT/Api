@@ -235,14 +235,14 @@ export function createBetterAuthHooks(
               );
               return false;
             }
-            return { data: { ...session, otpPending: true } };
+            return { data: { ...session, otpPending: true, authPortal: "standard" } };
           }
           // Fail-closed: toda sesión nacida vía /sign-in/email requiere completar login-otp
           // desde el mismo momento de inserción en MongoDB (elimina ventana de carrera).
           if (path === "/sign-in/email" || path.startsWith("/sign-in/email/")) {
-            return { data: { ...session, otpPending: true } };
+            return { data: { ...session, otpPending: true, authPortal: "standard" } };
           }
-          return { data: session };
+          return { data: { ...session, authPortal: "standard" } };
         },
       },
     },

@@ -8,6 +8,8 @@ import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { ROLES_KEY, Role } from "../decorators/roles.decorator";
 
+const CONSOLE_ALLOWED_PORTALS = new Set<string>(["console", "superadmin"]);
+
 const ADMIN_MODULE_MAP: Record<string, string> = {
   "/api/admin/users": "users",
   "/api/admin/staff": "users",
@@ -127,7 +129,15 @@ export class RolesGuard implements CanActivate {
       userId: string;
       role?: string;
       adminPermissions?: string[];
+      authPortal?: string;
     };
+
+    if (!user.authPortal || !CONSOLE_ALLOWED_PORTALS.has(user.authPortal)) {
+      throw new ForbiddenException(
+        "Acceso denegado: esta operación requiere una sesión autenticada desde la Consola Administrativa (4FA).",
+      );
+    }
+
     const userRole = user.role as Role;
 
     if (userRole === Role.SUPERADMIN) {

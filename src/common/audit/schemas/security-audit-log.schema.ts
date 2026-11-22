@@ -37,7 +37,7 @@ export class SecurityAuditLog {
   })
   severity!: AuditSeverity;
 
-  @Prop({ type: Date, default: () => new Date(), index: true })
+  @Prop({ type: Date, default: () => new Date() })
   timestamp!: Date;
 
   @Prop({ type: String, default: null, index: true })

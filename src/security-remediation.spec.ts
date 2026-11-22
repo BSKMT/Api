@@ -117,6 +117,25 @@ describe("Security Remediation Regression Suite (Ciclo 8)", () => {
         }),
       ).toBe(false);
     });
+
+    it("accepts staff/superadmin accounts that hold an active non-expired club membership", () => {
+      expect(
+        isActiveLegendMember({
+          role: "superadmin",
+          membershipLevel: "Legend",
+          membershipExpired: false,
+          membershipExpiryDate: future,
+        }),
+      ).toBe(true);
+      expect(
+        isActiveMember({
+          role: "superadmin",
+          membershipLevel: null,
+          membershipExpired: false,
+          membershipExpiryDate: future,
+        }),
+      ).toBe(false);
+    });
   });
 
   describe("M-11: Safe Pagination Parsing", () => {
@@ -166,16 +185,36 @@ describe("Security Remediation Regression Suite (Ciclo 8)", () => {
   });
 
   describe("M-12 / M-09: Bird Channel Auth & WhatsApp Recipient Validation", () => {
-    it("requires support/* permission for admin realtime channels", () => {
+    it("requires support/* permission and console/superadmin authPortal for admin realtime channels", () => {
       expect(() =>
-        assertChannelAuthorized("private-admin-tickets", "ba1", "u1", "admin", [
-          "shop",
-        ]),
+        assertChannelAuthorized(
+          "private-admin-tickets",
+          "ba1",
+          "u1",
+          "admin",
+          ["shop"],
+          "console",
+        ),
       ).toThrow();
       expect(() =>
-        assertChannelAuthorized("private-admin-tickets", "ba1", "u1", "admin", [
-          "support",
-        ]),
+        assertChannelAuthorized(
+          "private-admin-tickets",
+          "ba1",
+          "u1",
+          "superadmin",
+          [],
+          "standard",
+        ),
+      ).toThrow();
+      expect(() =>
+        assertChannelAuthorized(
+          "private-admin-tickets",
+          "ba1",
+          "u1",
+          "admin",
+          ["support"],
+          "console",
+        ),
       ).not.toThrow();
       expect(() =>
         assertChannelAuthorized(
@@ -184,6 +223,7 @@ describe("Security Remediation Regression Suite (Ciclo 8)", () => {
           "u1",
           "superadmin",
           [],
+          "superadmin",
         ),
       ).not.toThrow();
     });

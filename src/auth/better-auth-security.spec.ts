@@ -18,10 +18,15 @@ import {
 import { ensureBetterAuthIndexesAndMigrations } from "./better-auth-db.helpers";
 import { createBetterAuthHooks } from "./better-auth-hooks";
 import {
+  findAndValidateStandardUser,
   findAndValidateConsoleUser,
   findAndValidateFasciaUser,
   findAndValidateSuperAdminUser,
 } from "./login-otp-portals.helper";
+import { GestionGuard } from "../common/guards/gestion.guard";
+import { SuperAdminGuard } from "../common/guards/superadmin.guard";
+import { Reflector } from "@nestjs/core";
+import { ForbiddenException, type ExecutionContext } from "@nestjs/common";
 import { applyVerifiedCloudflareIp } from "../bootstrap/security";
 import { SENSITIVE_AUTH_PATHS } from "../bootstrap/auth-handler";
 import { VERIFIED_CLIENT_IP_HEADER } from "./better-auth";
@@ -270,6 +275,136 @@ describe("Better Auth Security & Quality Remediation Suite", () => {
       );
       expect(superCandidate.isEligible).toBe(false);
       expect(superCandidate.authEmail).toContain("@invalid.bskmt.local");
+    });
+
+    it("allows active staff/superadmin club members on standard portal while rejecting inactive or pending-deletion accounts", async () => {
+      const makeModel = (doc: Record<string, unknown> | null) =>
+        ({
+          findOne: jest.fn(() => ({ lean: jest.fn().mockResolvedValue(doc) })),
+        }) as unknown as Model<UserDocument>;
+
+      const activeSuperadmin = await findAndValidateStandardUser(
+        makeModel({
+          email: "owner@hotmail.com",
+          role: "superadmin",
+          subrol: "gestor_campo_arpha",
+          isActive: true,
+          accountDeletionRequested: false,
+        }),
+        "owner@hotmail.com",
+      );
+      expect(activeSuperadmin.isEligible).toBe(true);
+      expect(activeSuperadmin.authEmail).toBe("owner@hotmail.com");
+
+      const inactiveStaff = await findAndValidateStandardUser(
+        makeModel({
+          email: "disabled@hotmail.com",
+          role: "admin",
+          isActive: false,
+          accountDeletionRequested: false,
+        }),
+        "disabled@hotmail.com",
+      );
+      expect(inactiveStaff.isEligible).toBe(false);
+
+      const deletingStaff = await findAndValidateStandardUser(
+        makeModel({
+          email: "deleting@hotmail.com",
+          role: "gestor",
+          isActive: true,
+          accountDeletionRequested: true,
+        }),
+        "deleting@hotmail.com",
+      );
+      expect(deletingStaff.isEligible).toBe(false);
+    });
+  });
+
+  describe("Portal-scoped session isolation (GestionGuard & SuperAdminGuard)", () => {
+    const mkCtx = (user: Record<string, unknown>) =>
+      ({
+        getHandler: jest.fn(),
+        getClass: jest.fn(),
+        switchToHttp: () => ({
+          getRequest: () => ({ method: "GET", user }),
+        }),
+      }) as unknown as ExecutionContext;
+
+    it("rejects standard sessions in GestionGuard even for superadmin and allows fascia/console/superadmin sessions", () => {
+      const reflector = new Reflector();
+      jest.spyOn(reflector, "getAllAndOverride").mockReturnValue(undefined);
+      const guard = new GestionGuard(reflector);
+
+      expect(() =>
+        guard.canActivate(
+          mkCtx({ userId: "sa1", role: "superadmin", authPortal: "standard" }),
+        ),
+      ).toThrow(ForbiddenException);
+      expect(() =>
+        guard.canActivate(mkCtx({ userId: "sa1", role: "superadmin" })),
+      ).toThrow(ForbiddenException);
+
+      expect(
+        guard.canActivate(
+          mkCtx({ userId: "sa1", role: "superadmin", authPortal: "fascia" }),
+        ),
+      ).toBe(true);
+      expect(
+        guard.canActivate(
+          mkCtx({ userId: "sa1", role: "superadmin", authPortal: "console" }),
+        ),
+      ).toBe(true);
+      expect(
+        guard.canActivate(
+          mkCtx({
+            userId: "sa1",
+            role: "superadmin",
+            authPortal: "superadmin",
+          }),
+        ),
+      ).toBe(true);
+    });
+
+    it("restricts SuperAdminGuard strictly to superadmin role + 4FA authPortal (console/superadmin)", () => {
+      const guard = new SuperAdminGuard();
+
+      expect(() =>
+        guard.canActivate(
+          mkCtx({ userId: "sa1", role: "superadmin", authPortal: "standard" }),
+        ),
+      ).toThrow(ForbiddenException);
+      expect(() =>
+        guard.canActivate(
+          mkCtx({ userId: "sa1", role: "superadmin", authPortal: "fascia" }),
+        ),
+      ).toThrow(ForbiddenException);
+      expect(() =>
+        guard.canActivate(mkCtx({ userId: "sa1", role: "superadmin" })),
+      ).toThrow(ForbiddenException);
+      expect(() =>
+        guard.canActivate(
+          mkCtx({ userId: "a1", role: "admin", authPortal: "superadmin" }),
+        ),
+      ).toThrow(ForbiddenException);
+
+      expect(
+        guard.canActivate(
+          mkCtx({
+            userId: "sa1",
+            role: "superadmin",
+            authPortal: "console",
+          }),
+        ),
+      ).toBe(true);
+      expect(
+        guard.canActivate(
+          mkCtx({
+            userId: "sa1",
+            role: "superadmin",
+            authPortal: "superadmin",
+          }),
+        ),
+      ).toBe(true);
     });
   });
 

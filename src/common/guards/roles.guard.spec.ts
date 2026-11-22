@@ -14,10 +14,19 @@ describe("RolesGuard (NIST CSF 2.0 PR.AA-05)", () => {
   });
 
   function createMockContext(
-    user?: { userId?: string; role?: string; adminPermissions?: string[] },
+    user?: {
+      userId?: string;
+      role?: string;
+      adminPermissions?: string[];
+      authPortal?: string;
+    },
     url = "/api/admin/users",
     method = "GET",
   ): ExecutionContext {
+    const hydratedUser =
+      user && !("authPortal" in user)
+        ? { ...user, authPortal: "console" }
+        : user;
     return {
       getHandler: jest.fn(),
       getClass: jest.fn(),
@@ -26,7 +35,7 @@ describe("RolesGuard (NIST CSF 2.0 PR.AA-05)", () => {
           method,
           url,
           originalUrl: url,
-          user,
+          user: hydratedUser,
         }),
       }),
     } as unknown as ExecutionContext;
@@ -136,5 +145,41 @@ describe("RolesGuard (NIST CSF 2.0 PR.AA-05)", () => {
       "/api/admin/users/../config",
     );
     expect(() => guard.canActivate(ctx)).toThrow("Ruta no permitida");
+  });
+
+  it("deniega sesiones estándar o fascia incluso para SUPERADMIN y ADMIN (aislamiento 4FA por portal)", () => {
+    jest.spyOn(reflector, "getAllAndOverride").mockReturnValue([Role.ADMIN]);
+    const standardSuperCtx = createMockContext({
+      userId: "sa1",
+      role: Role.SUPERADMIN,
+      authPortal: "standard",
+    });
+    expect(() => guard.canActivate(standardSuperCtx)).toThrow(
+      ForbiddenException,
+    );
+
+    const fasciaAdminCtx = createMockContext({
+      userId: "a1",
+      role: Role.ADMIN,
+      adminPermissions: ["*"],
+      authPortal: "fascia",
+    });
+    expect(() => guard.canActivate(fasciaAdminCtx)).toThrow(ForbiddenException);
+
+    const missingPortalCtx = createMockContext({
+      userId: "sa1",
+      role: Role.SUPERADMIN,
+      authPortal: undefined,
+    });
+    expect(() => guard.canActivate(missingPortalCtx)).toThrow(
+      ForbiddenException,
+    );
+
+    const superPortalCtx = createMockContext({
+      userId: "sa1",
+      role: Role.SUPERADMIN,
+      authPortal: "superadmin",
+    });
+    expect(guard.canActivate(superPortalCtx)).toBe(true);
   });
 });

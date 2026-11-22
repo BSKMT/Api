@@ -19,12 +19,6 @@ export interface PortalUserCandidate {
   isEligible: boolean;
 }
 
-const STAFF_PORTAL_ROLES = new Set<string>([
-  UserRole.ADMIN,
-  UserRole.SUPERADMIN,
-  UserRole.GESTOR,
-]);
-
 async function findUserByPrimaryOrInstitutionalEmail(
   userModel: Model<UserDocument>,
   normalizedEmail: string,
@@ -54,15 +48,13 @@ export async function findAndValidateStandardUser(
   );
 
   const authEmail = user?.email || normalizedEmail;
-  const isStaff =
-    Boolean(user) &&
-    (STAFF_PORTAL_ROLES.has(user!.role) ||
-      (typeof user!.subrol === "string" && user!.subrol.trim().length > 0));
+  // Las cuentas de staff/admin/superadmin que también son miembros del club pueden
+  // iniciar sesión en el portal estándar (New-panel / New-App), pero su sesión queda
+  // estrictamente acotada a authPortal="standard" y es rechazada por GestionGuard,
+  // RolesGuard y SuperAdminGuard (aislamiento 3FA/4FA por portal).
   const isEligible =
     !user ||
-    (!isStaff &&
-      user.isActive !== false &&
-      user.accountDeletionRequested !== true);
+    (user.isActive !== false && user.accountDeletionRequested !== true);
 
   return { authEmail, targetEmail: normalizedEmail, isEligible };
 }

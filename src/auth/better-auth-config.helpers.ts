@@ -56,6 +56,12 @@ export const SESSION_ADDITIONAL_FIELDS = {
     input: false,
     required: false,
   },
+  authPortal: {
+    type: "string",
+    defaultValue: "standard",
+    input: false,
+    required: false,
+  },
 } as const;
 
 /**

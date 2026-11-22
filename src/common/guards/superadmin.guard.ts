@@ -13,12 +13,17 @@ interface AuthenticatedSuperAdminRequest extends Request {
     email?: string;
     role?: string;
     subrol?: string | null;
+    authPortal?: string;
   };
 }
 
+const SUPERADMIN_ALLOWED_PORTALS = new Set<string>(["console", "superadmin"]);
+
 /**
  * SuperAdminGuard — Strictly restricts execution exclusively to accounts with
- * the role of SUPERADMIN. Must be preceded by SessionGuard.
+ * the role of SUPERADMIN authenticated through a 4FA administrative portal
+ * (`console` or `superadmin`). Rejects `standard` (2FA) and `fascia` (3FA)
+ * sessions fail-closed. Must be preceded by SessionGuard.
  */
 @Injectable()
 export class SuperAdminGuard implements CanActivate {
@@ -33,6 +38,15 @@ export class SuperAdminGuard implements CanActivate {
 
     if (!request.user?.userId) {
       throw new ForbiddenException("Acceso denegado — sesión no autenticada");
+    }
+
+    if (
+      !request.user.authPortal ||
+      !SUPERADMIN_ALLOWED_PORTALS.has(request.user.authPortal)
+    ) {
+      throw new ForbiddenException(
+        "Acceso denegado — Esta operación requiere una sesión administrativa 4FA verificada (Console/Superadmin).",
+      );
     }
 
     if (request.user.role !== UserRole.SUPERADMIN) {

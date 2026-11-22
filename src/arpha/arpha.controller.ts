@@ -27,6 +27,7 @@ interface AuthenticatedRequest extends Request {
     role?: string;
     subrol?: string | null;
     adminPermissions?: string[];
+    authPortal?: string;
   };
 }
 

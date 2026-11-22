@@ -7,6 +7,7 @@ import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { getAuth } from "./better-auth";
 import type { AuthInstance, BetterAuthSessionData } from "./better-auth";
+import { normalizeAuthPortal, type AuthPortal } from "./better-auth.types";
 import { UsersService } from "../users/users.service";
 import { IS_PUBLIC_KEY } from "../common/decorators/public.decorator";
 import { KvCacheService } from "../kv/kv-cache.service";
@@ -158,6 +159,10 @@ export class SessionGuard {
 
     this.assertAccountActiveAndNotDeleted(mongooseUser, request);
 
+    const authPortal: AuthPortal = normalizeAuthPortal(
+      session.session?.authPortal,
+    );
+
     (
       request as Request & {
         user: {
@@ -167,6 +172,7 @@ export class SessionGuard {
           subrol?: string | null;
           adminPermissions?: string[];
           betterAuthId: string;
+          authPortal: AuthPortal;
           sessionToken?: string;
           sessionId?: string;
         };
@@ -178,6 +184,7 @@ export class SessionGuard {
       subrol: mongooseUser.subrol ?? null,
       adminPermissions: mongooseUser.adminPermissions ?? [],
       betterAuthId: session.user.id,
+      authPortal,
       sessionToken: session.session?.token,
       sessionId: session.session?.id,
     };

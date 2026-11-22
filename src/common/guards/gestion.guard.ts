@@ -16,8 +16,15 @@ interface AuthenticatedGestionRequest extends Request {
     role?: string;
     subrol?: string | null;
     adminPermissions?: string[];
+    authPortal?: string;
   };
 }
+
+const FASCIA_ALLOWED_PORTALS = new Set<string>([
+  "fascia",
+  "console",
+  "superadmin",
+]);
 
 const SUBROLE_TO_ADMIN_MODULE: Record<string, string> = {
   [UserSubrole.LIDER_CURSOS]: "courses",
@@ -55,6 +62,15 @@ export class GestionGuard implements CanActivate {
 
     if (!request.user?.userId) {
       throw new ForbiddenException("Acceso denegado — sesión no autenticada");
+    }
+
+    if (
+      !request.user.authPortal ||
+      !FASCIA_ALLOWED_PORTALS.has(request.user.authPortal)
+    ) {
+      throw new ForbiddenException(
+        "Acceso denegado: esta sesión no fue autenticada en un portal operativo o administrativo (3FA/4FA).",
+      );
     }
 
     // Role 'superadmin' has unconditional complete access

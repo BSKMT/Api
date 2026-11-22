@@ -132,8 +132,13 @@ export class ArphaService {
       role?: string;
       subrol?: string | null;
       adminPermissions?: string[];
+      authPortal?: string;
     },
   ): Promise<{ message: string }> {
+    const hasStaffPortal =
+      callerUser?.authPortal === "fascia" ||
+      callerUser?.authPortal === "console" ||
+      callerUser?.authPortal === "superadmin";
     const adminPerms = Array.isArray(callerUser?.adminPermissions)
       ? callerUser.adminPermissions
       : [];
@@ -143,9 +148,10 @@ export class ArphaService {
         adminPerms.includes("arpha") ||
         adminPerms.includes("events"));
     const isLeaderOrAdmin =
-      callerUser?.role === UserRole.SUPERADMIN ||
-      isAuthorizedAdmin ||
-      callerUser?.subrol === UserSubrole.LIDER_ARPHA;
+      hasStaffPortal &&
+      (callerUser?.role === UserRole.SUPERADMIN ||
+        isAuthorizedAdmin ||
+        callerUser?.subrol === UserSubrole.LIDER_ARPHA);
 
     const query = isLeaderOrAdmin
       ? { _id: requestId }

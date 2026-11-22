@@ -18,6 +18,7 @@ import {
 } from "./login-otp-crypto.helper";
 import { rewriteSessionSetCookieMaxAge } from "./better-auth-cookie.helper";
 import { maskEmail } from "../common/utils/log-redact.util";
+import { normalizeAuthPortal, type AuthPortal } from "./better-auth.types";
 
 const STANDARD_SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24h when rememberMe=false
 const REMEMBERED_MEMBER_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7d matching Better Auth config
@@ -47,6 +48,7 @@ export async function revokeEncryptedOtpSession(
 async function promoteBetterAuthSessionOnOtpSuccess(
   rawCookies: string[],
   betterAuthId?: string,
+  otpAuthPortal?: AuthPortal,
 ): Promise<{ maxAgeSeconds?: number }> {
   const token = extractSessionTokenFromCookies(rawCookies);
   if (!token) return {};
@@ -54,8 +56,14 @@ async function promoteBetterAuthSessionOnOtpSuccess(
     const db = getMongoDb();
     const existingSession = await db
       .collection("session")
-      .findOne({ token }, { projection: { rememberMe: 1, userId: 1 } });
+      .findOne(
+        { token },
+        { projection: { rememberMe: 1, userId: 1, authPortal: 1 } },
+      );
     const rememberMe = existingSession?.rememberMe === true;
+    const resolvedPortal = normalizeAuthPortal(
+      otpAuthPortal ?? existingSession?.authPortal,
+    );
 
     let isPrivileged = false;
     const lookupBaId =
@@ -91,6 +99,7 @@ async function promoteBetterAuthSessionOnOtpSuccess(
       {
         $set: {
           expiresAt: new Date(Date.now() + ttlMs),
+          authPortal: resolvedPortal,
         },
         $unset: {
           otpPending: "",
@@ -260,6 +269,7 @@ export async function processBirdCheckResult(
     const { maxAgeSeconds } = await promoteBetterAuthSessionOnOtpSuccess(
       rawCookies,
       otpRecord.betterAuthId,
+      otpRecord.authPortal,
     );
 
     const isProd = process.env.NODE_ENV === "production";

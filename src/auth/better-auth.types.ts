@@ -24,6 +24,25 @@ export interface BetterAuthUser {
   birthDate?: string;
 }
 
+export type AuthPortal = "standard" | "fascia" | "console" | "superadmin";
+
+export const VALID_AUTH_PORTALS: ReadonlySet<AuthPortal> = new Set<AuthPortal>([
+  "standard",
+  "fascia",
+  "console",
+  "superadmin",
+]);
+
+export function normalizeAuthPortal(value: unknown): AuthPortal {
+  if (typeof value === "string") {
+    const normalized = value.toLowerCase().trim() as AuthPortal;
+    if (VALID_AUTH_PORTALS.has(normalized)) {
+      return normalized;
+    }
+  }
+  return "standard";
+}
+
 export interface BetterAuthSession {
   id: string;
   token: string;
@@ -34,6 +53,7 @@ export interface BetterAuthSession {
   ipAddress?: string | null;
   userAgent?: string | null;
   otpPending?: boolean;
+  authPortal?: AuthPortal | string | null;
 }
 
 export interface BetterAuthSessionData {
