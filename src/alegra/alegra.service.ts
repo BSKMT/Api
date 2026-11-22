@@ -9,27 +9,35 @@ import {
 import type {
   AlegraWebhookPayload,
   AlegraBillingContext,
+  AlegraInvoicePdfDetails,
   CreatedInvoiceData,
+  ResolvedAlegraContact,
 } from "./alegra.interfaces";
 import { UsersService } from "../users/users.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { KvCacheService } from "../kv/kv-cache.service";
-import { maskReference, maskAmount } from "../common/utils/log-redact.util";
+import {
+  maskReference,
+  maskAmount,
+  sanitizeForLog,
+} from "../common/utils/log-redact.util";
 import type { EnvironmentConfig } from "../config/config.interface";
 import {
   isAlegraConfigured,
-  getAlegraAuthHeader,
-  getAlegraBaseUrl,
+  makeAlegraDetailedRequest,
   makeAlegraRequest,
+  type AlegraDetailedResponse,
 } from "./alegra-http.client";
 import { resolveOrEnsureContact } from "./alegra-contact.helpers";
 import {
   executeCreateInvoice,
   executeCreatePayment,
   executeEmailInvoice,
+  executeGetInvoicePdfDetails,
   executeGetInvoicePdfUrl,
 } from "./alegra-api.helpers";
 import {
+  claimInvoiceProcessingLock,
   executeApprovedPaymentFlow,
   executeRetryFailedInvoice,
 } from "./alegra-payment.helpers";
@@ -70,17 +78,37 @@ export class AlegraService {
     );
   }
 
-  async ensureContact(userId: string): Promise<string | null> {
+  private async makeDetailedRequest<T>(
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
+    path: string,
+    body?: unknown,
+  ): Promise<AlegraDetailedResponse<T>> {
+    return makeAlegraDetailedRequest<T>(
+      this.configService,
+      this.logger,
+      method,
+      path,
+      body,
+    );
+  }
+
+  private async resolveContact(
+    userId: string,
+  ): Promise<ResolvedAlegraContact | null> {
     if (!this.isConfigured()) return null;
     return resolveOrEnsureContact(
       userId,
       this.usersService,
       this.kvCache,
       (m, p) => this.makeRequest(m, p),
-      getAlegraBaseUrl(this.configService),
-      getAlegraAuthHeader(this.configService),
+      (m, p, b) => this.makeDetailedRequest(m, p, b),
       this.logger,
     );
+  }
+
+  async ensureContact(userId: string): Promise<string | null> {
+    const resolved = await this.resolveContact(userId);
+    return resolved?.contactId ?? null;
   }
 
   async createInvoice(
@@ -115,11 +143,15 @@ export class AlegraService {
     );
   }
 
-  async emailInvoice(invoiceId: string): Promise<boolean> {
+  async emailInvoice(
+    invoiceId: string,
+    recipientEmail?: string | null,
+  ): Promise<boolean> {
     if (!this.isConfigured()) return false;
     return executeEmailInvoice(
       (m, p, b) => this.makeRequest(m, p, b),
       invoiceId,
+      recipientEmail,
       this.logger,
     );
   }
@@ -132,15 +164,19 @@ export class AlegraService {
       return;
     }
 
-    const existing = await this.invoiceModel.findOne({
-      transactionReference: context.transactionReference,
-      purpose: context.purpose,
-    });
-
-    if (existing && existing.status !== "FAILED") {
-      this.logger.log(
-        `Alegra invoice already exists for ref=${maskReference(context.transactionReference)} — skipping`,
+    if (!Number.isFinite(context.amount) || context.amount <= 0) {
+      this.logger.debug(
+        `Zero/non-positive amount for ref=${maskReference(context.transactionReference)} — skipping DIAN electronic invoice`,
       );
+      return;
+    }
+
+    const claimed = await claimInvoiceProcessingLock(
+      this.invoiceModel,
+      context,
+      this.logger,
+    );
+    if (!claimed) {
       return;
     }
 
@@ -151,10 +187,10 @@ export class AlegraService {
     await executeApprovedPaymentFlow(
       context,
       {
-        ensureContactFn: (uid) => this.ensureContact(uid),
+        ensureContactFn: (uid) => this.resolveContact(uid),
         createInvoiceFn: (ctx, cid) => this.createInvoice(ctx, cid),
         createPaymentFn: (iid, amt, pm) => this.createPayment(iid, amt, pm),
-        emailInvoiceFn: (iid) => this.emailInvoice(iid),
+        emailInvoiceFn: (iid, email) => this.emailInvoice(iid, email),
       },
       this.invoiceModel,
       this.notificationsService,
@@ -177,6 +213,17 @@ export class AlegraService {
     );
   }
 
+  private async getInvoicePdfDetails(
+    invoiceId: string,
+  ): Promise<AlegraInvoicePdfDetails | null> {
+    if (!this.isConfigured()) return null;
+    return executeGetInvoicePdfDetails(
+      (m, p) => this.makeRequest(m, p),
+      invoiceId,
+      this.logger,
+    );
+  }
+
   async getInvoicePdfUrlByTransaction(
     userId: string,
     transactionReference: string,
@@ -184,7 +231,7 @@ export class AlegraService {
   ): Promise<string | null> {
     return queryInvoicePdfUrlByTransaction(
       this.invoiceModel,
-      (id) => this.getInvoicePdfUrl(id),
+      (id) => this.getInvoicePdfDetails(id),
       userId,
       transactionReference,
       purpose,
@@ -211,25 +258,24 @@ export class AlegraService {
       return;
     }
 
-    this.logger.log(
-      `Alegra webhook received: subject=${subject.slice(0, 100)}`,
-    );
+    const safeSubject = sanitizeForLog(subject.slice(0, 100));
+    this.logger.log(`Alegra webhook received: subject=${safeSubject}`);
     try {
-      if (subject.includes("invoice")) {
+      if (safeSubject.toLowerCase().includes("invoice")) {
         await processInvoiceWebhookEvent(
           this.invoiceModel,
           payload,
-          subject,
+          safeSubject,
           this.logger,
         );
-      } else if (subject.includes("client")) {
-        this.logger.debug(`Alegra client webhook: ${subject.slice(0, 80)}`);
-      } else if (subject.includes("item")) {
-        this.logger.debug(`Alegra item webhook: ${subject.slice(0, 80)}`);
+      } else if (safeSubject.toLowerCase().includes("client")) {
+        this.logger.debug(`Alegra client webhook: ${safeSubject.slice(0, 80)}`);
+      } else if (safeSubject.toLowerCase().includes("item")) {
+        this.logger.debug(`Alegra item webhook: ${safeSubject.slice(0, 80)}`);
       }
     } catch (err: unknown) {
       this.logger.error(
-        `Alegra webhook processing failed: ${err instanceof Error ? err.message : String(err)}`,
+        `Alegra webhook processing failed: ${sanitizeForLog(err instanceof Error ? err.message : String(err))}`,
       );
     }
   }

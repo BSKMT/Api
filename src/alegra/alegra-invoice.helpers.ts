@@ -3,10 +3,12 @@ import { ConfigService } from "@nestjs/config";
 import type {
   AlegraBillingContext,
   AlegraInvoiceCreate,
+  AlegraNumberTemplate,
   AlegraPaymentCreate,
 } from "./alegra.interfaces";
 import {
   ALEGRA_KV_PREFIX,
+  ALEGRA_TEMPLATE_CACHE_TTL,
   ALEGRA_CO_PAYMENT_FORM_CASH,
   ALEGRA_CO_INVOICE_TYPE_NATIONAL,
   ALEGRA_CO_OPERATION_TYPE_STANDARD,
@@ -17,15 +19,49 @@ import type { EnvironmentConfig } from "../config/config.interface";
 
 export type AlegraHttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
+interface AlegraCatalogItem {
+  id: string | number;
+  name?: string;
+  reference?: string;
+  status?: string;
+}
+
+function getBogotaDateString(): string {
+  return new Date().toLocaleDateString("sv-SE", {
+    timeZone: "America/Bogota",
+  });
+}
+
+function getConfiguredId(
+  configService: ConfigService<EnvironmentConfig>,
+  key: keyof EnvironmentConfig,
+): string | null {
+  const val = configService.get(key, { infer: true });
+  return typeof val === "string" && val.trim().length > 0 ? val.trim() : null;
+}
+
+function pickBestActiveItem(
+  items: AlegraCatalogItem[] | null,
+): AlegraCatalogItem | null {
+  if (!Array.isArray(items) || items.length === 0) return null;
+  const activeItems = items.filter((i) => i?.id && i.status !== "inactive");
+  if (activeItems.length === 0) return null;
+  return (
+    activeItems.find(
+      (i) =>
+        i.reference === "BSKMT-GENERIC" ||
+        i.name?.toLowerCase().includes("ingreso bskmt"),
+    ) ?? activeItems[0]
+  );
+}
+
 export async function discoverDefaultItemId(
   configService: ConfigService<EnvironmentConfig>,
   kvCache: KvCacheService,
   makeRequest: <T>(method: AlegraHttpMethod, path: string) => Promise<T | null>,
   logger: Logger,
 ): Promise<string | null> {
-  const configured =
-    configService.get<string>("ALEGRA_ITEM_ID", { infer: true }) ||
-    process.env.ALEGRA_ITEM_ID;
+  const configured = getConfiguredId(configService, "ALEGRA_ITEM_ID");
   if (configured) return configured;
 
   const cacheKey = `${ALEGRA_KV_PREFIX}default_item_id`;
@@ -33,39 +69,85 @@ export async function discoverDefaultItemId(
   if (cached) return cached;
 
   try {
-    const matched = await makeRequest<
-      Array<{ id: string | number; name?: string; reference?: string }>
-    >("GET", "/items?query=Ingreso%20BSKMT&limit=5");
-    if (matched && Array.isArray(matched) && matched.length > 0) {
-      const found =
-        matched.find(
-          (i) =>
-            i.reference === "BSKMT-GENERIC" ||
-            i.name?.toLowerCase().includes("ingreso bskmt"),
-        ) ?? matched[0];
-      if (found?.id) {
-        const idStr = String(found.id);
-        await kvCache.set(cacheKey, idStr, 86400, true);
-        logger.log(
-          `Alegra default item auto-discovered: id=${idStr} name="${found.name}"`,
-        );
-        return idStr;
-      }
-    }
-
-    const items = await makeRequest<Array<{ id: string | number }>>(
+    const matched = await makeRequest<AlegraCatalogItem[]>(
       "GET",
-      "/items?limit=1",
+      "/items?query=Ingreso%20BSKMT&limit=10",
     );
-    if (items && Array.isArray(items) && items.length > 0 && items[0].id) {
-      const idStr = String(items[0].id);
+    const chosen =
+      pickBestActiveItem(matched) ??
+      pickBestActiveItem(
+        await makeRequest<AlegraCatalogItem[]>("GET", "/items?limit=30"),
+      );
+
+    if (chosen?.id) {
+      const idStr = String(chosen.id);
       await kvCache.set(cacheKey, idStr, 86400, true);
-      logger.log(`Alegra fallback item auto-discovered: id=${idStr}`);
+      logger.log(
+        `Alegra default item auto-discovered: id=${idStr} name="${chosen.name ?? ""}"`,
+      );
       return idStr;
     }
   } catch (err) {
     logger.error(
       `Error discovering default item from Alegra API: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  return null;
+}
+
+function isValidActiveElectronicTemplate(
+  tpl: AlegraNumberTemplate,
+  todayBogota: string,
+): boolean {
+  if (!tpl?.id) return false;
+  if (tpl.documentType !== "invoice") return false;
+  if (tpl.isElectronic !== true) return false;
+  if (tpl.status === "inactive") return false;
+  if (tpl.endDate && tpl.endDate < todayBogota) return false;
+  return true;
+}
+
+export async function discoverElectronicNumberTemplateId(
+  configService: ConfigService<EnvironmentConfig>,
+  kvCache: KvCacheService,
+  makeRequest: <T>(method: AlegraHttpMethod, path: string) => Promise<T | null>,
+  logger: Logger,
+): Promise<string | null> {
+  const configured = getConfiguredId(
+    configService,
+    "ALEGRA_NUMBER_TEMPLATE_ID",
+  );
+  if (configured) return configured;
+
+  const cacheKey = `${ALEGRA_KV_PREFIX}electronic_number_template_id`;
+  const cached = await kvCache.get<string>(cacheKey, true);
+  if (cached) return cached;
+
+  try {
+    const templates = await makeRequest<AlegraNumberTemplate[]>(
+      "GET",
+      "/number-templates",
+    );
+    if (!Array.isArray(templates) || templates.length === 0) return null;
+
+    const todayBogota = getBogotaDateString();
+    const eligible = templates.filter((t) =>
+      isValidActiveElectronicTemplate(t, todayBogota),
+    );
+    const chosen = eligible.find((t) => t.isDefault === true) ?? eligible[0];
+
+    if (chosen?.id) {
+      const idStr = String(chosen.id);
+      await kvCache.set(cacheKey, idStr, ALEGRA_TEMPLATE_CACHE_TTL, true);
+      logger.log(
+        `Alegra electronic number template discovered: id=${idStr} prefix=${chosen.prefix ?? ""}`,
+      );
+      return idStr;
+    }
+  } catch (err) {
+    logger.error(
+      `Error discovering electronic number template from Alegra API: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
 
@@ -78,9 +160,7 @@ export async function discoverDefaultBankAccountId(
   makeRequest: <T>(method: AlegraHttpMethod, path: string) => Promise<T | null>,
   logger: Logger,
 ): Promise<string | null> {
-  const configured =
-    configService.get<string>("ALEGRA_BANK_ACCOUNT_ID", { infer: true }) ||
-    process.env.ALEGRA_BANK_ACCOUNT_ID;
+  const configured = getConfiguredId(configService, "ALEGRA_BANK_ACCOUNT_ID");
   if (configured) return configured;
 
   const cacheKey = `${ALEGRA_KV_PREFIX}default_bank_account_id`;
@@ -90,22 +170,19 @@ export async function discoverDefaultBankAccountId(
   try {
     const accounts = await makeRequest<
       Array<{ id: string | number; name?: string; status?: string }>
-    >("GET", "/bank-accounts?limit=10");
-    if (accounts && Array.isArray(accounts) && accounts.length > 0) {
-      const boldAcc = accounts.find(
-        (a) =>
-          a.name?.toUpperCase().includes("BOLD") && a.status !== "inactive",
+    >("GET", "/bank-accounts?limit=30");
+    const active = Array.isArray(accounts)
+      ? accounts.filter((a) => a?.id && a.status !== "inactive")
+      : [];
+    const chosen =
+      active.find((a) => a.name?.toUpperCase().includes("BOLD")) ?? active[0];
+    if (chosen?.id) {
+      const idStr = String(chosen.id);
+      await kvCache.set(cacheKey, idStr, 86400, true);
+      logger.log(
+        `Alegra default bank account auto-discovered: id=${idStr} name="${chosen.name ?? ""}"`,
       );
-      const chosen =
-        boldAcc ?? accounts.find((a) => a.status !== "inactive") ?? accounts[0];
-      if (chosen?.id) {
-        const idStr = String(chosen.id);
-        await kvCache.set(cacheKey, idStr, 86400, true);
-        logger.log(
-          `Alegra default bank account auto-discovered: id=${idStr} name="${chosen.name}"`,
-        );
-        return idStr;
-      }
+      return idStr;
     }
   } catch (err) {
     logger.error(
@@ -122,9 +199,7 @@ export async function discoverDefaultSellerId(
   makeRequest: <T>(method: AlegraHttpMethod, path: string) => Promise<T | null>,
   logger: Logger,
 ): Promise<string | null> {
-  const configured =
-    configService.get<string>("ALEGRA_SELLER_ID", { infer: true }) ||
-    process.env.ALEGRA_SELLER_ID;
+  const configured = getConfiguredId(configService, "ALEGRA_SELLER_ID");
   if (configured) return configured;
 
   const cacheKey = `${ALEGRA_KV_PREFIX}default_seller_id`;
@@ -134,26 +209,23 @@ export async function discoverDefaultSellerId(
   try {
     const sellers = await makeRequest<
       Array<{ id: string | number; name?: string; status?: string }>
-    >("GET", "/sellers?limit=10");
-    if (sellers && Array.isArray(sellers) && sellers.length > 0) {
-      const bskmtSeller = sellers.find(
+    >("GET", "/sellers?limit=30");
+    const active = Array.isArray(sellers)
+      ? sellers.filter((s) => s?.id && s.status !== "inactive")
+      : [];
+    const chosen =
+      active.find(
         (s) =>
-          (s.name?.toUpperCase().includes("VENTAS") ||
-            s.name?.toUpperCase().includes("BSKMT")) &&
-          s.status !== "inactive",
+          s.name?.toUpperCase().includes("VENTAS") ||
+          s.name?.toUpperCase().includes("BSKMT"),
+      ) ?? active[0];
+    if (chosen?.id) {
+      const idStr = String(chosen.id);
+      await kvCache.set(cacheKey, idStr, 86400, true);
+      logger.log(
+        `Alegra default seller auto-discovered: id=${idStr} name="${chosen.name ?? ""}"`,
       );
-      const chosen =
-        bskmtSeller ??
-        sellers.find((s) => s.status !== "inactive") ??
-        sellers[0];
-      if (chosen?.id) {
-        const idStr = String(chosen.id);
-        await kvCache.set(cacheKey, idStr, 86400, true);
-        logger.log(
-          `Alegra default seller auto-discovered: id=${idStr} name="${chosen.name}"`,
-        );
-        return idStr;
-      }
+      return idStr;
     }
   } catch (err) {
     logger.error(
@@ -164,29 +236,68 @@ export async function discoverDefaultSellerId(
   return null;
 }
 
+function buildFallbackReference(purpose: string): string {
+  const clean = purpose.replace(/[^A-Za-z0-9_-]/g, "").toUpperCase();
+  return `BSKMT-${clean || "GENERIC"}`.slice(0, 45);
+}
+
 export function buildInvoiceItems(
   context: AlegraBillingContext,
   itemId: string,
 ): AlegraInvoiceCreate["items"] {
+  const fallbackRef = buildFallbackReference(context.purpose);
   if (context.items && context.items.length > 0) {
-    return context.items.map((item) => ({
-      id: itemId,
-      name: String(item.name).slice(0, 150),
-      description: item.description
-        ? String(item.description).slice(0, 500)
-        : undefined,
-      reference: item.reference
-        ? String(item.reference).slice(0, 45)
-        : undefined,
-      price: item.price,
-      quantity: item.quantity,
-    }));
+    const validItems = context.items.filter(
+      (i) =>
+        Number.isFinite(i.price) &&
+        i.price > 0 &&
+        Number.isFinite(i.quantity) &&
+        i.quantity > 0,
+    );
+    const itemsSum = Math.round(
+      validItems.reduce((sum, i) => sum + i.price * i.quantity, 0),
+    );
+    // Only emit itemized lines when their sum matches the paid amount so
+    // Alegra POST /payments never fails with balance mismatch.
+    if (
+      validItems.length === context.items.length &&
+      itemsSum === Math.round(context.amount)
+    ) {
+      return validItems.map((item) => ({
+        id: itemId,
+        name: String(item.name).slice(0, 150),
+        description: item.description
+          ? String(item.description).slice(0, 500)
+          : undefined,
+        reference: item.reference
+          ? String(item.reference).slice(0, 45)
+          : fallbackRef,
+        price: item.price,
+        quantity: item.quantity,
+      }));
+    }
+
+    const summary = context.items
+      .map((i) => `${i.quantity}x ${i.name}`)
+      .join(", ")
+      .slice(0, 500);
+    return [
+      {
+        id: itemId,
+        name: String(context.description).slice(0, 150),
+        description: summary || undefined,
+        reference: fallbackRef,
+        price: context.amount,
+        quantity: 1,
+      },
+    ];
   }
 
   return [
     {
       id: itemId,
       name: String(context.description).slice(0, 150),
+      reference: fallbackRef,
       price: context.amount,
       quantity: 1,
     },
@@ -198,11 +309,9 @@ export function buildInvoicePayload(
   contactId: string,
   itemId: string,
   sellerId?: string | null,
+  numberTemplateId?: string | null,
 ): AlegraInvoiceCreate {
-  const dateStr = new Date().toLocaleDateString("sv-SE", {
-    timeZone: "America/Bogota",
-  });
-
+  const dateStr = getBogotaDateString();
   const methodMapping = mapPaymentMethod(context.paymentMethod);
 
   const payload: AlegraInvoiceCreate = {
@@ -222,6 +331,7 @@ export function buildInvoicePayload(
   };
 
   if (sellerId) payload.seller = sellerId;
+  if (numberTemplateId) payload.numberTemplate = { id: numberTemplateId };
   return payload;
 }
 
@@ -231,10 +341,7 @@ export function buildPaymentPayload(
   bankAccountId: string,
   paymentMethod?: string | null,
 ): AlegraPaymentCreate {
-  const dateStr = new Date().toLocaleDateString("sv-SE", {
-    timeZone: "America/Bogota",
-  });
-
+  const dateStr = getBogotaDateString();
   const methodMapping = mapPaymentMethod(paymentMethod);
 
   return {

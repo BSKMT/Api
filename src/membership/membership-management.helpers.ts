@@ -3,6 +3,7 @@ import { Model } from "mongoose";
 import { MembershipTransactionDocument } from "./schemas/membership-transaction.schema";
 import { UsersService } from "../users/users.service";
 import { AlegraService } from "../alegra/alegra.service";
+import { sanitizeAlegraErrorForUser } from "../alegra/alegra.constants";
 import { maskReference } from "../common/utils/log-redact.util";
 import {
   formatStoredMembershipDescription,
@@ -124,7 +125,7 @@ export async function getMembershipStatusHelper(
               stampStatus: inv.stampStatus,
               status: inv.status,
               emailed: inv.emailed,
-              errorMessage: inv.errorMessage,
+              errorMessage: sanitizeAlegraErrorForUser(inv.errorMessage),
             }
           : null,
       };

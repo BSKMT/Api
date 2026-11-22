@@ -135,6 +135,7 @@ export interface EnvironmentConfig {
   ALEGRA_BANK_ACCOUNT_ID: string;
   ALEGRA_SELLER_ID: string;
   ALEGRA_ITEM_ID: string;
+  ALEGRA_NUMBER_TEMPLATE_ID?: string;
   ALEGRA_WEBHOOK_SECRET?: string;
 
   /**

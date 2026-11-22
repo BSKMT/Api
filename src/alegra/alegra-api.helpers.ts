@@ -4,15 +4,23 @@ import type { EnvironmentConfig } from "../config/config.interface";
 import type { KvCacheService } from "../kv/kv-cache.service";
 import type {
   AlegraBillingContext,
+  AlegraInvoicePdfDetails,
   AlegraInvoiceResponse,
   AlegraPaymentResponse,
   CreatedInvoiceData,
 } from "./alegra.interfaces";
-import { maskReference, maskAmount } from "../common/utils/log-redact.util";
+import {
+  maskReference,
+  maskAmount,
+  maskEmail,
+  sanitizeForLog,
+} from "../common/utils/log-redact.util";
+import { isAllowedAlegraPdfUrl, isValidAlegraId } from "./alegra.constants";
 import {
   discoverDefaultItemId,
   discoverDefaultBankAccountId,
   discoverDefaultSellerId,
+  discoverElectronicNumberTemplateId,
   buildInvoicePayload,
   buildPaymentPayload,
 } from "./alegra-invoice.helpers";
@@ -23,6 +31,19 @@ export type AlegraRequestFn = <T>(
   body?: unknown,
 ) => Promise<T | null>;
 
+const BASIC_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function extractInvoiceNumber(
+  numberTemplate?: AlegraInvoiceResponse["numberTemplate"],
+): string | null {
+  if (!numberTemplate) return null;
+  if (numberTemplate.fullNumber) return numberTemplate.fullNumber;
+  if (numberTemplate.prefix) {
+    return `${numberTemplate.prefix}${numberTemplate.number ?? ""}`;
+  }
+  return null;
+}
+
 export async function executeCreateInvoice(
   makeRequest: AlegraRequestFn,
   configService: ConfigService<EnvironmentConfig>,
@@ -31,18 +52,16 @@ export async function executeCreateInvoice(
   contactId: string,
   logger: Logger,
 ): Promise<CreatedInvoiceData | null> {
-  const sellerId = await discoverDefaultSellerId(
-    configService,
-    kvCache,
-    makeRequest,
-    logger,
-  );
-  const itemId = await discoverDefaultItemId(
-    configService,
-    kvCache,
-    makeRequest,
-    logger,
-  );
+  const [sellerId, itemId, numberTemplateId] = await Promise.all([
+    discoverDefaultSellerId(configService, kvCache, makeRequest, logger),
+    discoverDefaultItemId(configService, kvCache, makeRequest, logger),
+    discoverElectronicNumberTemplateId(
+      configService,
+      kvCache,
+      makeRequest,
+      logger,
+    ),
+  ]);
 
   if (!itemId) {
     logger.warn(
@@ -51,7 +70,13 @@ export async function executeCreateInvoice(
     return null;
   }
 
-  const payload = buildInvoicePayload(context, contactId, itemId, sellerId);
+  const payload = buildInvoicePayload(
+    context,
+    contactId,
+    itemId,
+    sellerId,
+    numberTemplateId,
+  );
   const invoice = await makeRequest<AlegraInvoiceResponse>(
     "POST",
     "/invoices",
@@ -65,21 +90,15 @@ export async function executeCreateInvoice(
     return null;
   }
 
-  const invoiceNumber =
-    invoice.numberTemplate?.fullNumber ??
-    (invoice.numberTemplate?.prefix
-      ? `${invoice.numberTemplate.prefix}${invoice.numberTemplate.number ?? ""}`
-      : null);
-
   const result: CreatedInvoiceData = {
     invoiceId: String(invoice.id),
-    invoiceNumber: invoiceNumber ?? null,
+    invoiceNumber: extractInvoiceNumber(invoice.numberTemplate),
     cufe: invoice.stamp?.cufe ?? null,
     stampStatus: invoice.stamp?.legalStatus ?? null,
   };
 
   logger.log(
-    `Alegra invoice created: ref=${maskReference(context.transactionReference)} invoiceId=${invoice.id} cufe=${result.cufe ? "yes" : "no"}`,
+    `Alegra invoice created: ref=${maskReference(context.transactionReference)} invoiceId=${sanitizeForLog(result.invoiceId)} cufe=${result.cufe ? "yes" : "no"}`,
   );
   return result;
 }
@@ -93,7 +112,7 @@ export async function executeCreatePayment(
   logger: Logger,
   paymentMethod?: string | null,
 ): Promise<string | null> {
-  if (amount <= 0) return null;
+  if (amount <= 0 || !isValidAlegraId(invoiceId)) return null;
 
   const bankAccountId = await discoverDefaultBankAccountId(
     configService,
@@ -122,12 +141,14 @@ export async function executeCreatePayment(
   );
 
   if (!payment?.id) {
-    logger.warn(`Failed to create Alegra payment for invoiceId=${invoiceId}`);
+    logger.warn(
+      `Failed to create Alegra payment for invoiceId=${sanitizeForLog(invoiceId)}`,
+    );
     return null;
   }
 
   logger.log(
-    `Alegra payment created: invoiceId=${invoiceId} paymentId=${payment.id} amount=${maskAmount(amount)}`,
+    `Alegra payment created: invoiceId=${sanitizeForLog(invoiceId)} paymentId=${sanitizeForLog(String(payment.id))} amount=${maskAmount(amount)}`,
   );
   return String(payment.id);
 }
@@ -135,19 +156,78 @@ export async function executeCreatePayment(
 export async function executeEmailInvoice(
   makeRequest: AlegraRequestFn,
   invoiceId: string,
+  recipientEmail: string | null | undefined,
   logger: Logger,
 ): Promise<boolean> {
-  const result = await makeRequest<unknown>(
-    "POST",
-    `/invoices/${invoiceId}/email`,
-    {},
-  );
-  if (result === null) {
-    logger.warn(`Failed to email Alegra invoice ${invoiceId}`);
+  if (!isValidAlegraId(invoiceId)) {
+    logger.warn("Invalid Alegra invoiceId — skipping email dispatch");
     return false;
   }
-  logger.log(`Alegra invoice emailed: invoiceId=${invoiceId}`);
+  const cleanEmail = recipientEmail?.trim() ?? "";
+  if (!cleanEmail || !BASIC_EMAIL_REGEX.test(cleanEmail)) {
+    logger.warn(
+      `Missing or invalid recipient email for Alegra invoiceId=${sanitizeForLog(invoiceId)} — skipping email`,
+    );
+    return false;
+  }
+
+  const encodedId = encodeURIComponent(invoiceId);
+  const result = await makeRequest<unknown>(
+    "POST",
+    `/invoices/${encodedId}/email`,
+    {
+      emails: [cleanEmail],
+    },
+  );
+  if (result === null) {
+    logger.warn(
+      `Failed to email Alegra invoiceId=${sanitizeForLog(invoiceId)} to=${maskEmail(cleanEmail)}`,
+    );
+    return false;
+  }
+  logger.log(
+    `Alegra invoice emailed: invoiceId=${sanitizeForLog(invoiceId)} to=${maskEmail(cleanEmail)}`,
+  );
   return true;
+}
+
+export async function executeGetInvoicePdfDetails(
+  makeRequest: AlegraRequestFn,
+  invoiceId: string,
+  logger: Logger,
+): Promise<AlegraInvoicePdfDetails | null> {
+  if (!isValidAlegraId(invoiceId)) {
+    logger.warn("Rejected invalid Alegra invoiceId for PDF retrieval");
+    return null;
+  }
+
+  const encodedId = encodeURIComponent(invoiceId);
+  const invoice = await makeRequest<AlegraInvoiceResponse>(
+    "GET",
+    `/invoices/${encodedId}?fields=pdf`,
+  );
+  if (!invoice?.pdf) {
+    logger.warn(
+      `Failed to get PDF URL for invoiceId=${sanitizeForLog(invoiceId)}`,
+    );
+    return null;
+  }
+
+  if (!isAllowedAlegraPdfUrl(invoice.pdf)) {
+    logger.warn(
+      `Blocked untrusted PDF URL host returned for invoiceId=${sanitizeForLog(invoiceId)}`,
+    );
+    return null;
+  }
+
+  return {
+    pdfUrl: invoice.pdf,
+    invoiceNumber: extractInvoiceNumber(invoice.numberTemplate),
+    cufe: invoice.stamp?.cufe ?? null,
+    stampStatus: invoice.stamp?.legalStatus ?? null,
+    status: invoice.status ?? null,
+    balance: typeof invoice.balance === "number" ? invoice.balance : null,
+  };
 }
 
 export async function executeGetInvoicePdfUrl(
@@ -155,13 +235,10 @@ export async function executeGetInvoicePdfUrl(
   invoiceId: string,
   logger: Logger,
 ): Promise<string | null> {
-  const invoice = await makeRequest<AlegraInvoiceResponse>(
-    "GET",
-    `/invoices/${invoiceId}?fields=pdf`,
+  const details = await executeGetInvoicePdfDetails(
+    makeRequest,
+    invoiceId,
+    logger,
   );
-  if (!invoice?.pdf) {
-    logger.warn(`Failed to get PDF URL for invoice ${invoiceId}`);
-    return null;
-  }
-  return invoice.pdf;
+  return details?.pdfUrl ?? null;
 }

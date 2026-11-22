@@ -3,6 +3,7 @@ import { Model } from "mongoose";
 import { MembershipTransactionDocument } from "./schemas/membership-transaction.schema";
 import { AlegraService } from "../alegra/alegra.service";
 import type { AlegraBillingContext } from "../alegra/alegra.interfaces";
+import { maskReference } from "../common/utils/log-redact.util";
 import { formatStoredMembershipDescription } from "./membership-formatting.helpers";
 
 export async function processAlegraInvoicingHelper(
@@ -29,7 +30,7 @@ export async function processAlegraInvoicingHelper(
     await deps.alegraService.processApprovedPayment(context);
   } catch (err: unknown) {
     deps.logger.warn(
-      `Alegra invoicing skipped for membership ref=${transaction.reference}: ${err instanceof Error ? err.message : String(err)}`,
+      `Alegra invoicing skipped for membership ref=${maskReference(transaction.reference)}: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
 }

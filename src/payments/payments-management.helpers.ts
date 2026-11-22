@@ -8,7 +8,13 @@ import { Model } from "mongoose";
 import { TransactionDocument } from "./schemas/transaction.schema";
 import { SubmitCompanionDto } from "./dto/submit-companion.dto";
 import { AlegraService } from "../alegra/alegra.service";
+import {
+  ALEGRA_ALLOWED_PURPOSES,
+  sanitizeAlegraErrorForUser,
+} from "../alegra/alegra.constants";
 import { maskReference } from "../common/utils/log-redact.util";
+
+const SAFE_TX_REF_REGEX = /^[A-Za-z0-9_-]{3,128}$/;
 
 export async function submitCompanionDataHelper(
   deps: { transactionModel: Model<TransactionDocument>; logger: Logger },
@@ -43,7 +49,9 @@ export async function submitCompanionDataHelper(
   };
 
   await transaction.save();
-  deps.logger.log(`Companion data submitted for reference: ${reference}`);
+  deps.logger.log(
+    `Companion data submitted for reference: ${maskReference(reference)}`,
+  );
 
   return { message: "Datos del acompañante registrados exitosamente" };
 }
@@ -94,7 +102,7 @@ export async function getTransactionsByUserHelper(
             stampStatus: inv.stampStatus,
             status: inv.status,
             emailed: inv.emailed,
-            errorMessage: inv.errorMessage,
+            errorMessage: sanitizeAlegraErrorForUser(inv.errorMessage),
           }
         : null,
     };
@@ -179,6 +187,13 @@ export async function getInvoicePdfUrlHelper(
   reference: string,
   purpose?: string,
 ): Promise<{ pdfUrl: string }> {
+  if (!reference || !SAFE_TX_REF_REGEX.test(reference)) {
+    throw new BadRequestException("Referencia de factura inválida");
+  }
+  if (purpose && !ALEGRA_ALLOWED_PURPOSES.has(purpose)) {
+    throw new BadRequestException("Parámetro purpose inválido");
+  }
+
   const transaction = await deps.transactionModel.findOne({
     userId,
     reference,

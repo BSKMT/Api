@@ -5,6 +5,7 @@ import { ArphaService } from "../arpha/arpha.service";
 import { EventsService } from "../events/events.service";
 import { AlegraService } from "../alegra/alegra.service";
 import type { AlegraBillingContext } from "../alegra/alegra.interfaces";
+import { maskReference } from "../common/utils/log-redact.util";
 
 export interface PaymentsLinkingDeps {
   shopService: ShopService;
@@ -100,7 +101,7 @@ export async function processAlegraInvoicingHelper(
     await deps.alegraService.processApprovedPayment(context);
   } catch (err: unknown) {
     deps.logger.warn(
-      `Alegra invoicing skipped for ref=${transaction.reference}: ${err instanceof Error ? err.message : String(err)}`,
+      `Alegra invoicing skipped for ref=${maskReference(transaction.reference)}: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
 }

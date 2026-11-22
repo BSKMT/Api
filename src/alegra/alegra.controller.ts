@@ -8,6 +8,7 @@ import {
   Logger,
   UnauthorizedException,
 } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import { ConfigService } from "@nestjs/config";
 import { timingSafeEqual } from "node:crypto";
 import { AlegraService } from "./alegra.service";
@@ -19,14 +20,15 @@ import type { EnvironmentConfig } from "../config/config.interface";
  * AlegraController — Expone el endpoint de webhook para recibir
  * notificaciones de eventos de Alegra (facturas, contactos, items).
  *
- * Seguridad (OWASP 2025):
+ * Seguridad (OWASP 2025 / NIST CSF 2.0 PR.DS-02):
  *  - A01: El endpoint es @Public() (sin SessionGuard) porque las
  *    notificaciones provienen de Alegra, no de un usuario autenticado.
  *    El middleware CSRF en main.ts exime esta ruta.
+ *  - A04: Limitación de tasa (@Throttle) protege contra DoS/replay floods.
  *  - A08: El payload se trata como no confiable — todos los campos
  *    se validan en el servicio antes de usar.
- *  - A09: Todos los eventos se registran para auditoría.
- *  - A10: Los errores se manejan graceful — siempre se responde 200
+ *  - A09: Todos los eventos se registran con sanitización de logs.
+ *  - A10: Los errores de negocio se manejan graceful — siempre se responde 200
  *    para que Alegra no reintente innecesariamente.
  *
  * Nota: ALEGRA_WEBHOOK_SECRET es obligatorio en entorno y se autentica
@@ -50,6 +52,7 @@ export class AlegraController {
    * Se debe responder 2XX en menos de 5 segundos.
    */
   @Public()
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
   @Post("webhook")
   @HttpCode(HttpStatus.OK)
   async handleWebhook(
@@ -57,10 +60,9 @@ export class AlegraController {
     @Headers("x-webhook-token") headerToken?: string,
     @Headers("authorization") authHeader?: string,
   ) {
-    const configuredSecret = this.configService.get<string>(
-      "ALEGRA_WEBHOOK_SECRET",
-      { infer: true },
-    );
+    const configuredSecret = this.configService
+      .get<string>("ALEGRA_WEBHOOK_SECRET", { infer: true })
+      ?.trim();
     if (!configuredSecret) {
       this.logger.error(
         "ALEGRA_WEBHOOK_SECRET no está configurado en el entorno — rechazando webhook de facturación.",
@@ -72,12 +74,13 @@ export class AlegraController {
 
     // L-02: Require webhook secret via headers only (never URL query string, which leaks to logs).
     const bearer = authHeader?.startsWith("Bearer ")
-      ? authHeader.slice("Bearer ".length)
+      ? authHeader.slice("Bearer ".length).trim()
       : undefined;
-    const provided = headerToken ?? bearer ?? "";
-    const secretBuf = Buffer.from(configuredSecret);
-    const providedBuf = Buffer.from(provided);
+    const provided = (headerToken?.trim() || bearer || "").trim();
+    const secretBuf = Buffer.from(configuredSecret, "utf8");
+    const providedBuf = Buffer.from(provided, "utf8");
     if (
+      providedBuf.length === 0 ||
       providedBuf.length !== secretBuf.length ||
       !timingSafeEqual(providedBuf, secretBuf)
     ) {
@@ -87,7 +90,12 @@ export class AlegraController {
       throw new UnauthorizedException("Invalid webhook secret token");
     }
 
-    if (!body || typeof body !== "object" || Object.keys(body).length === 0) {
+    if (
+      !body ||
+      typeof body !== "object" ||
+      Array.isArray(body) ||
+      Object.keys(body).length === 0
+    ) {
       this.logger.log("Alegra webhook connectivity check received");
       return { received: true };
     }

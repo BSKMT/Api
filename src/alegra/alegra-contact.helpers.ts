@@ -1,19 +1,49 @@
 import { Logger } from "@nestjs/common";
-import type { AlegraContact, AlegraContactCreate } from "./alegra.interfaces";
-import {
-  ALEGRA_DEFAULT_TIMEOUT_MS,
-  ALEGRA_KV_PREFIX,
-  ALEGRA_CONTACT_CACHE_TTL,
-} from "./alegra.constants";
+import type {
+  AlegraContact,
+  AlegraContactCreate,
+  ResolvedAlegraContact,
+} from "./alegra.interfaces";
+import { ALEGRA_KV_PREFIX, ALEGRA_CONTACT_CACHE_TTL } from "./alegra.constants";
+import type {
+  AlegraDetailedRequestFn,
+  AlegraHttpMethod,
+} from "./alegra-http.client";
 import { maskUserId } from "../common/utils/log-redact.util";
 import type { UsersService } from "../users/users.service";
 import type { KvCacheService } from "../kv/kv-cache.service";
 
-export type AlegraHttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+export type { AlegraHttpMethod };
 export type AlegraRequestFn = <T>(
   method: AlegraHttpMethod,
   path: string,
 ) => Promise<T | null>;
+
+const PERSON_DOC_TYPES = new Set([
+  "CC",
+  "CE",
+  "TI",
+  "PASSPORT",
+  "PEP",
+  "DIE",
+  "FOREIGN_NIT",
+  "PPT",
+]);
+
+function readTrimmedString(
+  record: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  const val = record[key];
+  return typeof val === "string" && val.trim().length > 0
+    ? val.trim()
+    : undefined;
+}
+
+function normalizeIdForComparison(value: string | null | undefined): string {
+  if (!value) return "";
+  return value.replace(/[^0-9A-Za-z]/g, "").toUpperCase();
+}
 
 export function mapDocumentTypeToAlegra(rawType?: string | null): {
   type: string;
@@ -23,14 +53,93 @@ export function mapDocumentTypeToAlegra(rawType?: string | null): {
   if (clean === "NIT") {
     return { type: "NIT", kindOfPerson: "LEGAL_ENTITY" };
   }
-  if (
-    ["CC", "CE", "TI", "PASSPORT", "PEP", "DIE", "FOREIGN_NIT", "PPT"].includes(
-      clean,
-    )
-  ) {
+  if (PERSON_DOC_TYPES.has(clean)) {
     return { type: clean, kindOfPerson: "PERSON_ENTITY" };
   }
   return { type: "CC", kindOfPerson: "PERSON_ENTITY" };
+}
+
+function buildPersonNameObject(
+  dp: Record<string, unknown>,
+  fullName: string,
+): AlegraContactCreate["nameObject"] | undefined {
+  const firstName = readTrimmedString(dp, "primerNombre");
+  const secondName = readTrimmedString(dp, "segundoNombre");
+  const lastName = readTrimmedString(dp, "primerApellido");
+  const secondLastName = readTrimmedString(dp, "segundoApellido");
+
+  if (firstName && lastName) {
+    return {
+      firstName: firstName.slice(0, 50),
+      ...(secondName ? { secondName: secondName.slice(0, 50) } : {}),
+      lastName: lastName.slice(0, 50),
+      ...(secondLastName
+        ? { secondLastName: secondLastName.slice(0, 50) }
+        : {}),
+    };
+  }
+
+  const tokens = fullName.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length < 2) return undefined;
+  const primaryLastName =
+    tokens.length >= 3 ? (tokens.at(-2) ?? "") : tokens[1];
+  const secondaryLastName =
+    tokens.length >= 3 ? (tokens.at(-1) ?? "").slice(0, 50) : undefined;
+  return {
+    firstName: tokens[0].slice(0, 50),
+    ...(tokens.length >= 4 ? { secondName: tokens[1].slice(0, 50) } : {}),
+    lastName: primaryLastName.slice(0, 50),
+    ...(secondaryLastName ? { secondLastName: secondaryLastName } : {}),
+  };
+}
+
+type AlegraIdentificationObject = NonNullable<
+  AlegraContactCreate["identificationObject"]
+>;
+
+function buildIdentificationFields(
+  rawIdentification: string,
+  docType: string,
+): {
+  identification: string;
+  identificationObject: AlegraIdentificationObject;
+} {
+  const trimmed = rawIdentification.trim().slice(0, 20);
+  if (docType === "NIT") {
+    const nitMatch = /^(\d{5,15})-(\d)$/.exec(trimmed);
+    if (nitMatch) {
+      return {
+        identification: nitMatch[1],
+        identificationObject: {
+          type: "NIT",
+          number: nitMatch[1],
+          dv: nitMatch[2],
+        },
+      };
+    }
+  }
+  return {
+    identification: trimmed,
+    identificationObject: {
+      type: docType,
+      number: trimmed,
+    },
+  };
+}
+
+function buildAddressField(
+  ct: Record<string, unknown>,
+): AlegraContactCreate["address"] | undefined {
+  const city = readTrimmedString(ct, "ciudad")?.slice(0, 100);
+  const department = readTrimmedString(ct, "departamento")?.slice(0, 100);
+  const address = readTrimmedString(ct, "direccion")?.slice(0, 100);
+  if (!city && !department && !address) return undefined;
+  return {
+    ...(address ? { address } : {}),
+    ...(department ? { department } : {}),
+    ...(city ? { city } : {}),
+    country: "Colombia",
+  };
 }
 
 export function buildContactData(user: {
@@ -47,62 +156,70 @@ export function buildContactData(user: {
   const dp = user.profile?.["datos-personales"] ?? {};
   const ct = user.profile?.["contacto"] ?? {};
 
-  const nameParts = [dp["primerNombre"], dp["primerApellido"]]
+  const nameParts = [
+    readTrimmedString(dp, "primerNombre"),
+    readTrimmedString(dp, "segundoNombre"),
+    readTrimmedString(dp, "primerApellido"),
+    readTrimmedString(dp, "segundoApellido"),
+  ]
     .filter(Boolean)
     .join(" ")
     .trim();
 
   const rawFullName = iv?.fullName?.trim() || nameParts || user.email;
-  const fullName = rawFullName.trim() ? rawFullName.trim() : user.email;
+  const fullName = rawFullName.trim() || user.email;
 
   const identification =
-    iv?.documentNumber?.trim() ||
-    (typeof dp["numeroDocumento"] === "string"
-      ? dp["numeroDocumento"].trim()
-      : undefined);
-
+    iv?.documentNumber?.trim() || readTrimmedString(dp, "numeroDocumento");
   const rawDocType =
-    iv?.documentType?.trim() ||
-    (typeof dp["tipoDocumento"] === "string"
-      ? dp["tipoDocumento"].trim()
-      : undefined);
-
+    iv?.documentType?.trim() || readTrimmedString(dp, "tipoDocumento");
   const docMapping = mapDocumentTypeToAlegra(rawDocType);
 
-  const phone =
+  const mobile =
+    readTrimmedString(ct, "celular") ||
     user.phone?.trim() ||
-    (typeof ct["telefono"] === "string" ? ct["telefono"].trim() : undefined);
-
-  const city =
-    typeof ct["ciudad"] === "string" ? ct["ciudad"].trim() : undefined;
-  const addr =
-    typeof ct["direccion"] === "string" ? ct["direccion"].trim() : undefined;
+    readTrimmedString(ct, "telefono");
+  const phonePrimary = readTrimmedString(ct, "telefono") || mobile;
 
   const contactData: AlegraContactCreate = {
     name: String(fullName).slice(0, 100),
-    email: user.email,
-    phonePrimary: phone ? String(phone).slice(0, 50) : undefined,
+    email: user.email.trim(),
+    ...(phonePrimary ? { phonePrimary: phonePrimary.slice(0, 50) } : {}),
+    ...(mobile ? { mobile: mobile.slice(0, 50) } : {}),
     type: ["client"],
     status: "active",
     kindOfPerson: docMapping.kindOfPerson,
     regime: "SIMPLIFIED_REGIME",
-    address: {
-      city: city ? String(city).slice(0, 100) : undefined,
-      address: addr ? String(addr).slice(0, 100) : undefined,
-    },
+    settings: { sendElectronicDocuments: true },
   };
 
+  if (docMapping.kindOfPerson === "PERSON_ENTITY") {
+    const nameObject = buildPersonNameObject(dp, fullName);
+    if (nameObject) {
+      contactData.nameObject = nameObject;
+    }
+  }
+
+  const address = buildAddressField(ct);
+  if (address) {
+    contactData.address = address;
+  }
+
   if (identification) {
-    const cleanId = String(identification).slice(0, 20);
-    contactData.identification = cleanId;
-    contactData.identificationObject = {
-      type: docMapping.type,
-      number: cleanId,
-      dv: null,
-    };
+    const idFields = buildIdentificationFields(identification, docMapping.type);
+    contactData.identification = idFields.identification;
+    contactData.identificationObject = idFields.identificationObject;
   }
 
   return contactData;
+}
+
+function isUsableClientContact(contact: AlegraContact): boolean {
+  if (contact.status === "inactive") return false;
+  if (Array.isArray(contact.type) && contact.type.length > 0) {
+    return contact.type.includes("client");
+  }
+  return true;
 }
 
 export async function findContactByEmail(
@@ -111,11 +228,15 @@ export async function findContactByEmail(
 ): Promise<AlegraContact | null> {
   const contacts = await makeRequest<AlegraContact[]>(
     "GET",
-    `/contacts?query=${encodeURIComponent(email)}&limit=5`,
+    `/contacts?query=${encodeURIComponent(email.trim())}&limit=10`,
   );
   if (!contacts || !Array.isArray(contacts)) return null;
+  const target = email.trim().toLowerCase();
   return (
-    contacts.find((c) => c.email?.toLowerCase() === email.toLowerCase()) ?? null
+    contacts.find(
+      (c) =>
+        isUsableClientContact(c) && c.email?.trim().toLowerCase() === target,
+    ) ?? null
   );
 }
 
@@ -125,76 +246,53 @@ export async function findContactByIdentification(
 ): Promise<AlegraContact | null> {
   const contacts = await makeRequest<AlegraContact[]>(
     "GET",
-    `/contacts?query=${encodeURIComponent(identification)}&limit=5`,
+    `/contacts?query=${encodeURIComponent(identification.trim())}&limit=10`,
   );
   if (!contacts || !Array.isArray(contacts)) return null;
-  return contacts.find((c) => c.identification === identification) ?? null;
+  const target = normalizeIdForComparison(identification);
+  return (
+    contacts.find(
+      (c) =>
+        isUsableClientContact(c) &&
+        normalizeIdForComparison(c.identification) === target,
+    ) ?? null
+  );
 }
 
 export async function tryCreateContact(
-  baseUrl: string,
-  authHeader: string,
+  makeDetailedRequest: AlegraDetailedRequestFn,
   contactData: AlegraContactCreate,
   logger: Logger,
 ): Promise<string | null> {
-  const url = `${baseUrl}/contacts`;
-  const timeoutMs =
-    Number(process.env.ALEGRA_TIMEOUT_MS) || ALEGRA_DEFAULT_TIMEOUT_MS;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const res = await makeDetailedRequest<AlegraContact>(
+    "POST",
+    "/contacts",
+    contactData,
+  );
 
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: authHeader,
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(contactData),
-      signal: controller.signal,
-    });
-
-    if (res.ok) {
-      const created = (await res.json()) as AlegraContact;
-      if (created?.id) {
-        logger.log(`Alegra contact created: contactId=${created.id}`);
-        return String(created.id);
-      }
-      return null;
-    }
-
-    const text = await res.text().catch(() => "");
-    logger.warn(
-      `Alegra API POST /contacts returned ${res.status}: ${text.slice(0, 300)}`,
-    );
-
-    if (res.status === 400) {
-      try {
-        const error = JSON.parse(text) as {
-          code?: number;
-          contactId?: string;
-        };
-        if (error.code === 2006 && error.contactId) {
-          logger.log(
-            `Alegra contact already exists — using contactId=${error.contactId} from error response`,
-          );
-          return String(error.contactId);
-        }
-      } catch {
-        // JSON parse failed — ignore
-      }
-    }
-
-    return null;
-  } catch (err: unknown) {
-    logger.warn(
-      `Alegra API POST /contacts failed: ${err instanceof Error ? err.message : String(err)}`,
-    );
-    return null;
-  } finally {
-    clearTimeout(timeout);
+  if (res.ok && res.data?.id) {
+    logger.log(`Alegra contact created: contactId=${res.data.id}`);
+    return String(res.data.id);
   }
+
+  if (res.status === 400 && res.errorText) {
+    try {
+      const error = JSON.parse(res.errorText) as {
+        code?: number;
+        contactId?: string | number;
+      };
+      if (error.code === 2006 && error.contactId) {
+        logger.log(
+          `Alegra contact already exists — reusing contactId=${error.contactId}`,
+        );
+        return String(error.contactId);
+      }
+    } catch {
+      // Non-JSON error response — ignore
+    }
+  }
+
+  return null;
 }
 
 export async function resolveOrEnsureContact(
@@ -202,10 +300,9 @@ export async function resolveOrEnsureContact(
   usersService: UsersService,
   kvCache: KvCacheService,
   makeRequest: AlegraRequestFn,
-  baseUrl: string,
-  authHeader: string,
+  makeDetailedRequest: AlegraDetailedRequestFn,
   logger: Logger,
-): Promise<string | null> {
+): Promise<ResolvedAlegraContact | null> {
   const user = await usersService.findById(userId);
   if (!user) {
     logger.warn(
@@ -214,24 +311,25 @@ export async function resolveOrEnsureContact(
     return null;
   }
 
+  const userEmail = user.email?.trim() || null;
   const cacheKey = `${ALEGRA_KV_PREFIX}contact:${userId}`;
   const cachedId = await kvCache.get<string>(cacheKey, true);
-  if (cachedId) return cachedId;
+  if (cachedId) {
+    return { contactId: cachedId, email: userEmail };
+  }
 
   const contactData = buildContactData(user);
 
-  const existingByEmail = await findContactByEmail(makeRequest, user.email);
-  if (existingByEmail) {
-    await kvCache.set(
-      cacheKey,
-      String(existingByEmail.id),
-      ALEGRA_CONTACT_CACHE_TTL,
-      true,
-    );
+  const existingByEmail = userEmail
+    ? await findContactByEmail(makeRequest, userEmail)
+    : null;
+  if (existingByEmail?.id) {
+    const contactId = String(existingByEmail.id);
+    await kvCache.set(cacheKey, contactId, ALEGRA_CONTACT_CACHE_TTL, true);
     logger.log(
-      `Alegra contact found by email: user=${maskUserId(userId)} contactId=${existingByEmail.id}`,
+      `Alegra contact found by email: user=${maskUserId(userId)} contactId=${contactId}`,
     );
-    return String(existingByEmail.id);
+    return { contactId, email: existingByEmail.email?.trim() || userEmail };
   }
 
   if (contactData.identification) {
@@ -239,23 +337,18 @@ export async function resolveOrEnsureContact(
       makeRequest,
       contactData.identification,
     );
-    if (existingById) {
-      await kvCache.set(
-        cacheKey,
-        String(existingById.id),
-        ALEGRA_CONTACT_CACHE_TTL,
-        true,
-      );
+    if (existingById?.id) {
+      const contactId = String(existingById.id);
+      await kvCache.set(cacheKey, contactId, ALEGRA_CONTACT_CACHE_TTL, true);
       logger.log(
-        `Alegra contact found by identification: user=${maskUserId(userId)} contactId=${existingById.id}`,
+        `Alegra contact found by identification: user=${maskUserId(userId)} contactId=${contactId}`,
       );
-      return String(existingById.id);
+      return { contactId, email: existingById.email?.trim() || userEmail };
     }
   }
 
   const created = await tryCreateContact(
-    baseUrl,
-    authHeader,
+    makeDetailedRequest,
     contactData,
     logger,
   );
@@ -264,7 +357,7 @@ export async function resolveOrEnsureContact(
     logger.log(
       `Alegra contact ready: user=${maskUserId(userId)} contactId=${created}`,
     );
-    return created;
+    return { contactId: created, email: userEmail };
   }
 
   logger.warn(

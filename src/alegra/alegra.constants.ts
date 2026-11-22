@@ -9,15 +9,37 @@
 
 export const ALEGRA_DEFAULT_API_URL = "https://api.alegra.com/api/v1";
 
+export const ALEGRA_ALLOWED_API_HOSTS = new Set(["api.alegra.com"]);
+
+export const ALEGRA_ALLOWED_PDF_HOSTS = ["cdn3.alegra.com", "alegra.com"];
+
+export const ALEGRA_SAFE_ID_REGEX = /^[A-Za-z0-9_-]{1,64}$/;
+
+export const ALEGRA_ALLOWED_PURPOSES = new Set([
+  "membership",
+  "event",
+  "course",
+  "shop",
+  "arpha",
+]);
+
 export const ALEGRA_RATE_LIMIT_PER_MINUTE = 150;
 
 export const ALEGRA_DEFAULT_TIMEOUT_MS = 30_000;
 
+export const ALEGRA_MIN_TIMEOUT_MS = 5_000;
+
+export const ALEGRA_MAX_TIMEOUT_MS = 60_000;
+
 export const ALEGRA_PAGE_SIZE = 30;
 
 /**
- * Colombia-specific payment methods accepted by Alegra
- * (from Docs_Alegra/Catalogo de parámetros por país/Colombia).
+ * Stale-lock threshold (5 minutes) for recovering an abandoned PROCESSING claim.
+ */
+export const ALEGRA_PROCESSING_STALE_MS = 5 * 60 * 1000;
+
+/**
+ * Colombia-specific payment forms and invoice types accepted by Alegra DIAN 2.1.
  */
 export const ALEGRA_CO_PAYMENT_FORM_CASH = "CASH";
 export const ALEGRA_CO_PAYMENT_FORM_CREDIT = "CREDIT";
@@ -43,7 +65,18 @@ export const ALEGRA_KV_PREFIX = "alegra:";
 export const ALEGRA_CONTACT_CACHE_TTL = 3600;
 
 /**
- * Mapping from BSKMT / Bold payment methods to Alegra invoice and payment methods.
+ * KV cache TTL for electronic number template discovery (6 hours).
+ */
+export const ALEGRA_TEMPLATE_CACHE_TTL = 21_600;
+
+/**
+ * Mapping from BSKMT / Bold payment methods to valid Alegra Colombia DIAN 2.1
+ * invoice `paymentMethod` enum values and `POST /payments` payment methods.
+ *
+ * DIAN 2.1 valid invoice paymentMethod values include:
+ * CASH, CREDIT_CARD, DEBIT_CARD, DEBIT_TRANSFER, DEBIT_TRANSFER_BANK,
+ * CREDIT_TRANSFER, BANK_DEPOSIT, CHECK, ACH_DEBIT, ACH_CREDIT,
+ * INSTRUMENT_NOT_DEFINED, PROMISING_NOTE.
  */
 export const ALEGRA_PAYMENT_METHOD_MAP: Record<
   string,
@@ -52,13 +85,14 @@ export const ALEGRA_PAYMENT_METHOD_MAP: Record<
   CARD: { invoice: "CREDIT_CARD", payment: "credit-card" },
   CREDIT_CARD: { invoice: "CREDIT_CARD", payment: "credit-card" },
   DEBIT_CARD: { invoice: "DEBIT_CARD", payment: "debit-card" },
-  PSE: { invoice: "DEBIT_CARD", payment: "debit-card" },
-  NEQUI: { invoice: "TRANSFER", payment: "transfer" },
-  DAVIPLATA: { invoice: "TRANSFER", payment: "transfer" },
-  BOTON_BANCOLOMBIA: { invoice: "TRANSFER", payment: "transfer" },
-  TRANSFER: { invoice: "TRANSFER", payment: "transfer" },
-  DEPOSIT: { invoice: "TRANSFER", payment: "deposit" },
+  PSE: { invoice: "DEBIT_TRANSFER", payment: "transfer" },
+  NEQUI: { invoice: "DEBIT_TRANSFER", payment: "transfer" },
+  DAVIPLATA: { invoice: "DEBIT_TRANSFER", payment: "transfer" },
+  BOTON_BANCOLOMBIA: { invoice: "DEBIT_TRANSFER", payment: "transfer" },
+  TRANSFER: { invoice: "DEBIT_TRANSFER", payment: "transfer" },
+  DEPOSIT: { invoice: "BANK_DEPOSIT", payment: "deposit" },
   CASH: { invoice: "CASH", payment: "cash" },
+  CREDIT: { invoice: "CASH", payment: "cash" },
 };
 
 export function mapPaymentMethod(method?: string | null): {
@@ -76,4 +110,41 @@ export function mapPaymentMethod(method?: string | null): {
       payment: "cash",
     }
   );
+}
+
+export function isValidAlegraId(value: string | null | undefined): boolean {
+  if (!value || typeof value !== "string") return false;
+  return value !== "0" && ALEGRA_SAFE_ID_REGEX.test(value);
+}
+
+export function isAllowedAlegraPdfUrl(url: string | null | undefined): boolean {
+  if (!url || typeof url !== "string") return false;
+  try {
+    const parsed = new URL(url.trim());
+    if (parsed.protocol !== "https:") return false;
+    if (parsed.username || parsed.password) return false;
+    const host = parsed.hostname.toLowerCase();
+    return ALEGRA_ALLOWED_PDF_HOSTS.some(
+      (allowed) => host === allowed || host.endsWith(`.${allowed}`),
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Maps internal technical Alegra errors to safe end-user messages (OWASP A05/A09).
+ */
+export function sanitizeAlegraErrorForUser(
+  errorMessage?: string | null,
+): string | null {
+  if (!errorMessage) return null;
+  const lower = errorMessage.toLowerCase();
+  if (lower.includes("contact")) {
+    return "No fue posible validar los datos fiscales del titular para la factura electrónica. Verifica tu perfil e intenta nuevamente.";
+  }
+  if (lower.includes("invoice") || lower.includes("dian")) {
+    return "No fue posible emitir la factura electrónica ante la DIAN en este momento. Puedes reintentar desde este panel.";
+  }
+  return "Ocurrió un inconveniente temporal generando la factura electrónica. Puedes reintentar o contactar soporte.";
 }

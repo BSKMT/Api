@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import { Document } from "mongoose";
+import type { AlegraBillingItem } from "../alegra.interfaces";
 
 export type AlegraInvoiceDocument = AlegraInvoice & Document;
 
@@ -13,17 +14,18 @@ export type AlegraInvoiceDocument = AlegraInvoice & Document;
  * `maskUserId`.
  *
  * Idempotency (OWASP A08:2025 — Software and Data Integrity Failures):
- * The compound unique index on (transactionReference, purpose) ensures
- * that a given BSKMT transaction is invoiced in Alegra at most once,
- * even if the Bold webhook fires multiple times or the sync job retries.
+ * The compound unique index on (transactionReference, purpose) plus an
+ * atomic PROCESSING claim ensures that a given BSKMT transaction is
+ * invoiced in Alegra at most once, even under concurrent Bold webhooks,
+ * voucher syncs, or user retries.
  */
 @Schema({ timestamps: true })
 export class AlegraInvoice {
-  @Prop({ required: true, index: true })
+  @Prop({ required: true })
   userId!: string;
 
   /** BSKMT transaction reference (e.g. MEM-…, SHOP-…, ARPHA-…). */
-  @Prop({ required: true, index: true })
+  @Prop({ required: true })
   transactionReference!: string;
 
   /** Purpose: membership | event | course | shop | arpha. */
@@ -34,7 +36,7 @@ export class AlegraInvoice {
   @Prop({ required: true })
   alegraInvoiceId!: string;
 
-  /** Alegra invoice number (human-readable, e.g. "SET-01"). */
+  /** Alegra invoice number (human-readable, e.g. "FEV23"). */
   @Prop({ type: String, default: null })
   alegraInvoiceNumber!: string | null;
 
@@ -62,6 +64,14 @@ export class AlegraInvoice {
   @Prop({ type: String, default: null })
   description!: string | null;
 
+  /** Original BSKMT/Bold payment method — preserved for lossless retries. */
+  @Prop({ type: String, default: null })
+  paymentMethod!: string | null;
+
+  /** Original itemized billing snapshot (shop orders) — preserved for retries. */
+  @Prop({ type: [Object], default: null })
+  itemsSnapshot!: AlegraBillingItem[] | null;
+
   /** Whether the invoice was emailed to the customer. */
   @Prop({ default: false })
   emailed!: boolean;
@@ -74,11 +84,19 @@ export class AlegraInvoice {
   @Prop({
     required: true,
     default: "CREATED",
-    enum: ["CREATED", "STAMPED", "PAID", "EMAILED", "FAILED", "CANCELLED"],
+    enum: [
+      "PROCESSING",
+      "CREATED",
+      "STAMPED",
+      "PAID",
+      "EMAILED",
+      "FAILED",
+      "CANCELLED",
+    ],
   })
   status!: string;
 
-  /** Error details if the invoicing flow failed. */
+  /** Error details if the invoicing flow failed (internal — sanitized for clients). */
   @Prop({ type: String, default: null })
   errorMessage!: string | null;
 

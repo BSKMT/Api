@@ -13,6 +13,7 @@ import {
   UnauthorizedException,
   Logger,
 } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import { ConfigService } from "@nestjs/config";
 import { timingSafeEqual } from "node:crypto";
 import type { Request } from "express";
@@ -105,6 +106,7 @@ export class MembershipController {
   }
 
   @UseGuards(SessionGuard)
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @Post("retry-invoice/:reference")
   @HttpCode(HttpStatus.OK)
   async retryInvoice(

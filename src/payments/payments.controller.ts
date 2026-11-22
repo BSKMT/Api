@@ -13,6 +13,7 @@ import {
   UnauthorizedException,
   Query,
 } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import { timingSafeEqual } from "node:crypto";
 import {
   ArrayMaxSize,
@@ -202,6 +203,7 @@ export class PaymentsController {
   }
 
   @UseGuards(SessionGuard)
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @Post("retry-invoice/:reference")
   @HttpCode(HttpStatus.OK)
   async retryInvoice(
@@ -213,6 +215,7 @@ export class PaymentsController {
   }
 
   @UseGuards(SessionGuard)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
   @Get("invoice/:reference/pdf")
   async getInvoicePdf(
     @Req() req: AuthenticatedRequest,

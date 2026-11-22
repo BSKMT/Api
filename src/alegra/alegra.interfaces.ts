@@ -29,6 +29,12 @@ export interface AlegraContact {
 
 export interface AlegraContactCreate {
   name: string;
+  nameObject?: {
+    firstName: string;
+    secondName?: string;
+    lastName: string;
+    secondLastName?: string;
+  };
   identification?: string;
   email?: string;
   phonePrimary?: string;
@@ -44,8 +50,30 @@ export interface AlegraContactCreate {
   };
   address?: {
     city?: string;
+    department?: string;
     address?: string;
+    country?: string;
   };
+  settings?: {
+    sendElectronicDocuments?: boolean;
+  };
+}
+
+export interface ResolvedAlegraContact {
+  contactId: string;
+  email: string | null;
+}
+
+export interface AlegraNumberTemplate {
+  id: string;
+  name?: string;
+  prefix?: string;
+  documentType?: string;
+  status?: string;
+  isDefault?: boolean;
+  isElectronic?: boolean;
+  startDate?: string;
+  endDate?: string;
 }
 
 /* ─── Invoice ───────────────────────────────────────────────────── */
@@ -145,18 +173,30 @@ export interface AlegraPaymentResponse {
 
 /* ─── Internal DTOs ─────────────────────────────────────────────── */
 
+export interface AlegraBillingItem {
+  name: string;
+  description?: string;
+  reference?: string;
+  price: number;
+  quantity: number;
+}
+
 export interface AlegraBillingContext {
   userId: string;
   transactionReference: string;
   purpose: string;
   amount: number;
   description: string;
-  items?: Array<{
-    name: string;
-    description?: string;
-    reference?: string;
-    price: number;
-    quantity: number;
-  }>;
-  paymentMethod?: string;
+  items?: AlegraBillingItem[];
+  paymentMethod?: string | null;
+  customerEmail?: string | null;
+}
+
+export interface AlegraInvoicePdfDetails {
+  pdfUrl: string;
+  invoiceNumber: string | null;
+  cufe: string | null;
+  stampStatus: string | null;
+  status: string | null;
+  balance: number | null;
 }
