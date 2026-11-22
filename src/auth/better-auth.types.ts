@@ -53,7 +53,7 @@ export interface BetterAuthSession {
   ipAddress?: string | null;
   userAgent?: string | null;
   otpPending?: boolean;
-  authPortal?: AuthPortal | string | null;
+  authPortal?: AuthPortal | null;
 }
 
 export interface BetterAuthSessionData {

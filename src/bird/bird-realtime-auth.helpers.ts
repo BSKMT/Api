@@ -47,7 +47,8 @@ export function assertChannelAuthorized(
     const canJoinAdmin =
       hasConsolePortal &&
       (role === "superadmin" ||
-        (role === "admin" && (perms.includes("*") || perms.includes("support"))));
+        (role === "admin" &&
+          (perms.includes("*") || perms.includes("support"))));
     if (!canJoinAdmin) {
       throw new ForbiddenException(
         "Acceso denegado a canales de administración",
