@@ -67,9 +67,7 @@ export class AlegraController {
       this.logger.error(
         "ALEGRA_WEBHOOK_SECRET no está configurado en el entorno — rechazando webhook de facturación.",
       );
-      throw new UnauthorizedException(
-        "Autenticación de webhook de facturación no configurada.",
-      );
+      throw new UnauthorizedException("Invalid webhook secret token");
     }
 
     // L-02: Require webhook secret via headers only (never URL query string, which leaks to logs).
