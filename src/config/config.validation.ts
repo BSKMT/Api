@@ -95,7 +95,17 @@ export const configValidationSchema = Joi.object({
   PANEL_URL: Joi.string().uri().default("http://localhost:3000"),
   CRON_SECRET: Joi.string().min(16).required(),
   TURNSTILE_SECRET_KEY: Joi.string().allow("").default(""),
-  MAPBOX_ACCESS_TOKEN: Joi.string().allow("").default(""),
+  MAPBOX_ACCESS_TOKEN: Joi.string()
+    .allow("")
+    .default("")
+    .custom((value: string) => {
+      if (value && !/^(pk|sk)\.\S+$/.test(value.trim())) {
+        throw new Error(
+          "MAPBOX_ACCESS_TOKEN debe iniciar con pk. o sk. sin espacios ni caracteres de control",
+        );
+      }
+      return value;
+    }),
 
   CF_KV_ENABLED: Joi.boolean().default(false),
   CF_ACCOUNT_ID: Joi.string().allow("").when("CF_KV_ENABLED", {

@@ -143,13 +143,27 @@ export class GestionArphaService {
       );
     }
 
+    const previousUpdatedAt = request.gestorLocation?.updatedAt
+      ? new Date(request.gestorLocation.updatedAt).getTime()
+      : 0;
+    const nowMs = Date.now();
+
     request.gestorLocation = {
       lat: coords.lat,
       lng: coords.lng,
-      updatedAt: new Date(),
+      updatedAt: new Date(nowMs),
     };
 
-    if (request.coordinates?.lat && request.coordinates?.lng) {
+    const hasValidIncidentCoords =
+      typeof request.coordinates?.lat === "number" &&
+      typeof request.coordinates?.lng === "number" &&
+      Number.isFinite(request.coordinates.lat) &&
+      Number.isFinite(request.coordinates.lng);
+
+    const shouldRecomputeEta =
+      !request.eta || !previousUpdatedAt || nowMs - previousUpdatedAt >= 30_000;
+
+    if (hasValidIncidentCoords && shouldRecomputeEta && request.coordinates) {
       const origin: [number, number] = [coords.lng, coords.lat];
       const dest: [number, number] = [
         request.coordinates.lng,

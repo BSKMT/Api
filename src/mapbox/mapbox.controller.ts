@@ -5,8 +5,10 @@ import {
   HttpCode,
   HttpStatus,
   BadRequestException,
+  UseGuards,
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
+import { SessionGuard } from "../auth/session.guard";
 import { Public } from "../common/decorators";
 import { MapboxService } from "./mapbox.service";
 import {
@@ -16,6 +18,7 @@ import {
 } from "./dto/geocode-query.dto";
 
 @Controller("geo")
+@UseGuards(SessionGuard)
 export class MapboxController {
   constructor(private readonly mapboxService: MapboxService) {}
 
@@ -26,7 +29,10 @@ export class MapboxController {
     return { ok: true };
   }
 
-  @Throttle({ medium: { ttl: 60000, limit: 40 } })
+  @Throttle({
+    default: { ttl: 60000, limit: 20 },
+    medium: { ttl: 10000, limit: 8 },
+  })
   @Get("reverse")
   async reverseGeocode(@Query() query: ReverseGeocodeQueryDto) {
     if (query.lat == null || query.lng == null) {
@@ -39,7 +45,10 @@ export class MapboxController {
     return { success: Boolean(result), data: result };
   }
 
-  @Throttle({ medium: { ttl: 60000, limit: 30 } })
+  @Throttle({
+    default: { ttl: 60000, limit: 20 },
+    medium: { ttl: 10000, limit: 8 },
+  })
   @Get("geocode")
   async forwardGeocode(@Query() query: ForwardGeocodeQueryDto) {
     if (!query.q?.trim()) {
@@ -49,7 +58,10 @@ export class MapboxController {
     return { success: Boolean(result), data: result };
   }
 
-  @Throttle({ medium: { ttl: 60000, limit: 30 } })
+  @Throttle({
+    default: { ttl: 60000, limit: 15 },
+    medium: { ttl: 10000, limit: 5 },
+  })
   @Get("directions")
   async getDirections(@Query() query: DirectionsQueryDto) {
     const origin: [number, number] = [query.originLng, query.originLat];
