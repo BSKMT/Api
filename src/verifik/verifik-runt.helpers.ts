@@ -163,30 +163,30 @@ export function extractSoat(raw: unknown): VerifikSoatRecord | null {
     status: normalizeSoatStatus(item),
     policyNumber: strOrNull(
       item.noPoliza ??
-      item.numeroPoliza ??
-      item.soatNumber ??
-      item.policyNumber ??
-      item.numero,
+        item.numeroPoliza ??
+        item.soatNumber ??
+        item.policyNumber ??
+        item.numero,
     ),
     insuranceCompany: strOrNull(
       item.entidadExpideSoat ??
-      item.entidadAseguradora ??
-      item.aseguradora ??
-      item.insuranceCompany,
+        item.entidadAseguradora ??
+        item.aseguradora ??
+        item.insuranceCompany,
     ),
     startDate: normalizeRuntDate(
       item.fechaVigencia ??
-      item.fechaVigenciaInicio ??
-      item.coverageStartDate ??
-      item.fechaInicio ??
-      item.fechaExpedicion ??
-      item.startDate,
+        item.fechaVigenciaInicio ??
+        item.coverageStartDate ??
+        item.fechaInicio ??
+        item.fechaExpedicion ??
+        item.startDate,
     ),
     expiryDate: normalizeRuntDate(
       item.fechaVencimiento ??
-      item.dueDate ??
-      item.fechaVigenciaFin ??
-      item.expiryDate,
+        item.dueDate ??
+        item.fechaVigenciaFin ??
+        item.expiryDate,
     ),
   };
 }
@@ -218,29 +218,29 @@ export function extractRtm(raw: unknown): VerifikRtmRecord | null {
     status: normalizeRtmStatus(item),
     certificateNumber: strOrNull(
       item.numeroCertificado ??
-      item.nroCertificado ??
-      item.reviewNumber ??
-      item.certificateNumber ??
-      item.control,
+        item.nroCertificado ??
+        item.reviewNumber ??
+        item.certificateNumber ??
+        item.control,
     ),
     cdaName: strOrNull(
       item.cdaExpide ??
-      item.cda ??
-      item.centroDiagnostico ??
-      item.cdaName ??
-      item.nombreCda,
+        item.cda ??
+        item.centroDiagnostico ??
+        item.cdaName ??
+        item.nombreCda,
     ),
     expeditionDate: normalizeRuntDate(
       item.fechaExpedicion ??
-      item.fechaExpedicionCertificado ??
-      item.expeditionDate,
+        item.fechaExpedicionCertificado ??
+        item.expeditionDate,
     ),
     expiryDate: normalizeRuntDate(
       item.fechaVigencia ??
-      item.fechaVigenciaFin ??
-      item.fechaVencimiento ??
-      item.dueDate ??
-      item.expiryDate,
+        item.fechaVigenciaFin ??
+        item.fechaVencimiento ??
+        item.dueDate ??
+        item.expiryDate,
     ),
   };
 }

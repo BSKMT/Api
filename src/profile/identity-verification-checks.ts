@@ -150,9 +150,9 @@ export function evaluateChecks(
   const birthDate =
     verifikType === "CC"
       ? evaluateBirthDateCheck(
-        asString(personal.fechaNacimiento),
-        record.dateOfBirth,
-      )
+          asString(personal.fechaNacimiento),
+          record.dateOfBirth,
+        )
       : "not_applicable";
   const gender =
     verifikType === "CC"
