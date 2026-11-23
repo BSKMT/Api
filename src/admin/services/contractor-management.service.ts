@@ -156,12 +156,12 @@ export class ContractorManagementService {
         }
       : null;
 
-    const internalCode =
-      typeof user.internalCode === "string" && user.internalCode.trim()
-        ? user.internalCode
-        : typeof membershipEco?.numeroMiembro === "string"
-          ? membershipEco.numeroMiembro
-          : undefined;
+    let internalCode: string | undefined;
+    if (typeof user.internalCode === "string" && user.internalCode.trim()) {
+      internalCode = user.internalCode;
+    } else if (typeof membershipEco?.numeroMiembro === "string") {
+      internalCode = membershipEco.numeroMiembro;
+    }
 
     return {
       _id: user._id,

@@ -19,7 +19,7 @@ export function normalizeVerifikBearerToken(
   } else if (/^jwt\s+/i.test(token)) {
     token = token.replace(/^jwt\s+/i, "").trim();
   }
-  if (!token || /[\r\n\s]/.test(token)) {
+  if (!token || /\s/.test(token)) {
     return null;
   }
   return token;
@@ -124,19 +124,26 @@ async function readBoundedJsonBody(
   }
 }
 
-export async function executeVerifikFetch(
+type VerifikFetchFailure = {
+  ok: false;
+  reason: VerifikFailureReason;
+  message: string;
+};
+
+type VerifikFetchResult =
+  | { ok: true; response: Response; body: VerifikRawResponse }
+  | VerifikFetchFailure;
+
+const SERVICE_UNAVAILABLE_FAILURE: VerifikFetchFailure = {
+  ok: false,
+  reason: "unavailable",
+  message: "El servicio de verificación no está disponible.",
+};
+
+function resolveVerifikRequestContext(
   configService: ConfigService<EnvironmentConfig>,
   logger: Logger,
-  path: string,
-  params: Record<string, string>,
-): Promise<
-  | { ok: true; response: Response; body: VerifikRawResponse }
-  | {
-      ok: false;
-      reason: VerifikFailureReason;
-      message: string;
-    }
-> {
+): { ok: true; token: string; baseUrl: string } | VerifikFetchFailure {
   const token = normalizeVerifikBearerToken(
     configService.get<string>("VERIFIK_API_TOKEN"),
   );
@@ -153,11 +160,62 @@ export async function executeVerifikFetch(
   const baseUrl = validateVerifikBaseUrl(configuredUrl);
   if (!baseUrl) {
     logger.error("Verifik request blocked: VERIFIK_API_URL failed allowlist");
+    return SERVICE_UNAVAILABLE_FAILURE;
+  }
+
+  return { ok: true, token, baseUrl };
+}
+
+function classifyVerifikHttpFailure(
+  response: Response,
+  logger: Logger,
+  path: string,
+): VerifikFetchFailure | null {
+  if (response.status >= 300 && response.status < 400) {
+    logger.error(
+      `Verifik responded with redirect (${response.status}) for ${path} — blocked to protect Bearer token`,
+    );
+    return SERVICE_UNAVAILABLE_FAILURE;
+  }
+
+  if (response.status === 401 || response.status === 403) {
+    const hint =
+      response.status === 401
+        ? "check VERIFIK_API_TOKEN (Verifik JWT expires every 30 days)"
+        : "check Verifik plan permissions or account credits";
+    logger.error(`Verifik responded ${response.status} for ${path} — ${hint}`);
     return {
       ok: false,
-      reason: "unavailable",
+      reason: "unauthorized",
       message: "El servicio de verificación no está disponible.",
     };
+  }
+
+  return null;
+}
+
+function logVerifikFetchError(
+  err: unknown,
+  logger: Logger,
+  path: string,
+): void {
+  if (err instanceof Error && err.name === "AbortError") {
+    logger.warn(`Verifik request to ${path} timed out`);
+    return;
+  }
+  const detail = err instanceof Error ? err.message : String(err);
+  logger.error(`Verifik request to ${path} failed: ${sanitizeForLog(detail)}`);
+}
+
+export async function executeVerifikFetch(
+  configService: ConfigService<EnvironmentConfig>,
+  logger: Logger,
+  path: string,
+  params: Record<string, string>,
+): Promise<VerifikFetchResult> {
+  const ctx = resolveVerifikRequestContext(configService, logger);
+  if (!ctx.ok) {
+    return ctx;
   }
 
   const timeoutMs = configService.get<number>("VERIFIK_TIMEOUT_MS") ?? 15000;
@@ -167,69 +225,32 @@ export async function executeVerifikFetch(
   try {
     const query = new URLSearchParams(params).toString();
     const targetUrl = query
-      ? `${baseUrl}${path}?${query}`
-      : `${baseUrl}${path}`;
+      ? `${ctx.baseUrl}${path}?${query}`
+      : `${ctx.baseUrl}${path}`;
     const response = await fetch(targetUrl, {
       method: "GET",
       redirect: "manual",
       headers: {
         Accept: "application/json",
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${ctx.token}`,
       },
       signal: controller.signal,
     });
 
-    if (response.status >= 300 && response.status < 400) {
-      logger.error(
-        `Verifik responded with redirect (${response.status}) for ${path} — blocked to protect Bearer token`,
-      );
-      return {
-        ok: false,
-        reason: "unavailable",
-        message: "El servicio de verificación no está disponible.",
-      };
-    }
-
-    if (response.status === 401 || response.status === 403) {
-      const hint =
-        response.status === 401
-          ? "check VERIFIK_API_TOKEN (Verifik JWT expires every 30 days)"
-          : "check Verifik plan permissions or account credits";
-      logger.error(
-        `Verifik responded ${response.status} for ${path} — ${hint}`,
-      );
-      return {
-        ok: false,
-        reason: "unauthorized",
-        message: "El servicio de verificación no está disponible.",
-      };
+    const httpFailure = classifyVerifikHttpFailure(response, logger, path);
+    if (httpFailure) {
+      return httpFailure;
     }
 
     const body = await readBoundedJsonBody(response, logger, path);
     if (!body) {
-      return {
-        ok: false,
-        reason: "unavailable",
-        message: "El servicio de verificación no está disponible.",
-      };
+      return SERVICE_UNAVAILABLE_FAILURE;
     }
 
     return { ok: true, response, body };
   } catch (err: unknown) {
-    if (err instanceof Error && err.name === "AbortError") {
-      logger.warn(`Verifik request to ${path} timed out`);
-    } else {
-      logger.error(
-        `Verifik request to ${path} failed: ${sanitizeForLog(
-          err instanceof Error ? err.message : String(err),
-        )}`,
-      );
-    }
-    return {
-      ok: false,
-      reason: "unavailable",
-      message: "El servicio de verificación no está disponible.",
-    };
+    logVerifikFetchError(err, logger, path);
+    return SERVICE_UNAVAILABLE_FAILURE;
   } finally {
     clearTimeout(timeout);
   }

@@ -106,12 +106,10 @@ export async function fetchEnrichedEventRegistrations(
       typeof u?.membershipLevel === "string" &&
       u.membershipLevel.toLowerCase() === "legend" &&
       !u.membershipExpired;
-    let membershipTier = "Estándar";
-    if (hasActiveLegend) {
-      membershipTier = "Legend";
-    } else if (r.membershipStatus === "member") {
-      membershipTier = "Legend";
-    }
+    const membershipTier =
+      hasActiveLegend || r.membershipStatus === "member"
+        ? "Legend"
+        : "Estándar";
 
     return {
       ...r,
