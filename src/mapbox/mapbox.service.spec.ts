@@ -78,6 +78,9 @@ describe("MapboxService", () => {
     expect(calledUrl).toContain("longitude=-74.0636");
     expect(calledUrl).toContain("latitude=4.6752");
     expect(init.redirect).toBe("manual");
+    expect((init.headers as Record<string, string>)?.Referer).toBe(
+      "https://api.bskmt.com/",
+    );
   });
 
   it("should handle forward geocoding v6 gracefully when response is empty", async () => {

@@ -2,6 +2,7 @@ import { Logger } from "@nestjs/common";
 
 export const MAPBOX_API_ORIGIN = "https://api.mapbox.com";
 const MAPBOX_ALLOWED_HOST = "api.mapbox.com";
+export const MAPBOX_SERVER_REFERER = "https://api.bskmt.com/";
 const MAX_MAPBOX_RESPONSE_BYTES = 1_048_576; // 1 MiB
 const MAPBOX_TOKEN_PATTERN = /^(pk|sk)\.\S+$/;
 
@@ -165,7 +166,10 @@ export async function safeMapboxFetchJson<T>(
   try {
     const res = await fetch(url.toString(), {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        Referer: MAPBOX_SERVER_REFERER,
+      },
       redirect: "manual",
       signal: AbortSignal.timeout(timeoutMs),
     });
