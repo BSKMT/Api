@@ -127,6 +127,57 @@ export class ContractorManagementService {
     };
   }
 
+  private formatStaffRecord(user: Record<string, unknown>) {
+    const info =
+      (user.contractorInfo as Record<string, unknown> | null | undefined) ??
+      undefined;
+    const profile = user.profile as
+      Record<string, Record<string, unknown>> | undefined;
+    const personal = profile?.["datos-personales"];
+    const membershipEco = profile?.["membresia-ecosistema"];
+
+    const contractorName = [info?.nombres, info?.apellidos]
+      .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+      .join(" ")
+      .trim();
+    const profileName = [personal?.primerNombre, personal?.primerApellido]
+      .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+      .join(" ")
+      .trim();
+    const email = typeof user.email === "string" ? user.email : "";
+    const resolvedName =
+      contractorName || profileName || email.split("@")[0] || "Staff BSKMT";
+
+    const normalizedInfo = info
+      ? {
+          ...info,
+          position: info.position ?? info.cargo ?? undefined,
+          department: info.department ?? info.area ?? undefined,
+        }
+      : null;
+
+    const internalCode =
+      typeof user.internalCode === "string" && user.internalCode.trim()
+        ? user.internalCode
+        : typeof membershipEco?.numeroMiembro === "string"
+          ? membershipEco.numeroMiembro
+          : undefined;
+
+    return {
+      _id: user._id,
+      name: resolvedName,
+      email: user.email,
+      username: user.username,
+      role: user.role,
+      subrol: user.subrol ?? null,
+      internalCode,
+      adminPermissions: user.adminPermissions,
+      contractorInfo: normalizedInfo,
+      isActive: user.isActive,
+      createdAt: user.createdAt,
+    };
+  }
+
   /**
    * Lista todos los colaboradores/contratistas de gestión (Fascia).
    * H-07: Nunca expone cuentas SUPERADMIN a llamadores no-superadmin.
@@ -137,19 +188,23 @@ export class ContractorManagementService {
     const filter: Record<string, unknown> = {
       $or: [
         { role: UserRole.GESTOR },
-        { contractorInfo: { $ne: null } },
-        { subrol: { $ne: null } },
+        { subrol: { $regex: /^(gestor_|lider_)/i } },
       ],
     };
     if (!isSuperAdmin) {
       filter.role = { $ne: UserRole.SUPERADMIN };
     }
-    return this.userModel
+    const users = await this.userModel
       .find(filter)
-      .select("email username role subrol contractorInfo isActive createdAt")
+      .select(
+        "email username role subrol contractorInfo profile.datos-personales profile.membresia-ecosistema isActive createdAt",
+      )
       .sort({ createdAt: -1 })
       .limit(500)
       .lean();
+    return users.map((u) =>
+      this.formatStaffRecord(u as unknown as Record<string, unknown>),
+    );
   }
 
   /**
@@ -158,33 +213,39 @@ export class ContractorManagementService {
   async listAdministrators(callerRole?: string) {
     const isSuperAdmin =
       (callerRole || "").toLowerCase() === String(UserRole.SUPERADMIN);
-    return this.userModel
+    const users = await this.userModel
       .find({
         role: isSuperAdmin
           ? { $in: [UserRole.ADMIN, UserRole.SUPERADMIN] }
           : UserRole.ADMIN,
       })
       .select(
-        "email username role subrol adminPermissions contractorInfo isActive createdAt",
+        "email username role subrol adminPermissions contractorInfo profile.datos-personales profile.membresia-ecosistema isActive createdAt",
       )
       .sort({ createdAt: -1 })
       .limit(500)
       .lean();
+    return users.map((u) =>
+      this.formatStaffRecord(u as unknown as Record<string, unknown>),
+    );
   }
 
   /**
    * Lista todos los superadministradores.
    */
   async listSuperAdmins() {
-    return this.userModel
+    const users = await this.userModel
       .find({
         role: UserRole.SUPERADMIN,
       })
       .select(
-        "email username role subrol adminPermissions contractorInfo isActive createdAt",
+        "email username role subrol adminPermissions contractorInfo profile.datos-personales profile.membresia-ecosistema isActive createdAt",
       )
       .sort({ createdAt: -1 })
       .limit(500)
       .lean();
+    return users.map((u) =>
+      this.formatStaffRecord(u as unknown as Record<string, unknown>),
+    );
   }
 }

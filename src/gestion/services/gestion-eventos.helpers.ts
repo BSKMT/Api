@@ -65,7 +65,9 @@ export async function fetchEnrichedEventRegistrations(
   );
   const users = await userModel
     .find({ _id: { $in: userIds } })
-    .select("email profile contractorInfo")
+    .select(
+      "email profile contractorInfo membershipLevel membershipExpired membershipExpiryDate",
+    )
     .lean();
   const userMap = new Map(users.map((u) => [String(u._id), u]));
 
@@ -100,6 +102,17 @@ export async function fetchEnrichedEventRegistrations(
         ? `${contactoNombre} (${contactoTelefono})`.trim()
         : "No registrado";
 
+    const hasActiveLegend =
+      typeof u?.membershipLevel === "string" &&
+      u.membershipLevel.toLowerCase() === "legend" &&
+      !u.membershipExpired;
+    let membershipTier = "Estándar";
+    if (hasActiveLegend) {
+      membershipTier = "Legend";
+    } else if (r.membershipStatus === "member") {
+      membershipTier = "Legend";
+    }
+
     return {
       ...r,
       userName: pilotName,
@@ -109,6 +122,8 @@ export async function fetchEnrichedEventRegistrations(
       vehicleBrand: typeof vehicle?.marca === "string" ? vehicle.marca : "",
       vehicleModel: typeof vehicle?.modelo === "string" ? vehicle.modelo : "",
       emergencyContact,
+      membershipTier,
+      companion: r.companionData ?? null,
     };
   });
 

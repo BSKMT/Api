@@ -18,6 +18,7 @@ import {
   OrderDocument,
   OrderStatus,
 } from "../../shop/schemas/order.schema";
+import { User, UserDocument } from "../../users/schemas/user.schema";
 import { CreateProductDto } from "../dto/create-product.dto";
 import { UpdateProductDto } from "../dto/update-product.dto";
 import { UpdateOrderStatusDto } from "../dto/update-order-status.dto";
@@ -38,6 +39,8 @@ export class AdminShopService {
     private readonly productModel: Model<ProductDocument>,
     @InjectModel(Order.name)
     private readonly orderModel: Model<OrderDocument>,
+    @InjectModel(User.name)
+    private readonly userModel: Model<UserDocument>,
     private readonly kvCache: KvCacheService,
   ) {}
 
@@ -184,7 +187,7 @@ export class AdminShopService {
 
     const { limit, page, skip } = clampPagination(filters.limit, filters.page);
 
-    const [items, total] = await Promise.all([
+    const [rawItems, total] = await Promise.all([
       this.orderModel
         .find(filter)
         .sort({ createdAt: -1 })
@@ -193,6 +196,42 @@ export class AdminShopService {
         .lean(),
       this.orderModel.countDocuments(filter),
     ]);
+
+    const userIds = Array.from(
+      new Set(
+        rawItems
+          .map((o) => o.userId)
+          .filter(
+            (id): id is string => typeof id === "string" && id.length > 0,
+          ),
+      ),
+    );
+    const users =
+      userIds.length > 0
+        ? await this.userModel
+            .find({ _id: { $in: userIds } })
+            .select("email profile.datos-personales")
+            .lean()
+        : [];
+    const userMap = new Map(users.map((u) => [String(u._id), u]));
+
+    const items = rawItems.map((order) => {
+      const user = userMap.get(String(order.userId));
+      const personal = user?.profile?.["datos-personales"];
+      const fullName = [personal?.primerNombre, personal?.primerApellido]
+        .filter(
+          (v): v is string => typeof v === "string" && v.trim().length > 0,
+        )
+        .join(" ")
+        .trim();
+
+      return {
+        ...order,
+        totalAmount: order.total,
+        userEmail: user?.email ?? undefined,
+        userName: fullName || undefined,
+      };
+    });
 
     return {
       items,

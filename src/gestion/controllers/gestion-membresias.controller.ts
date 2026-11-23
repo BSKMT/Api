@@ -66,7 +66,15 @@ export class GestionMembresiasController {
     @Query("page") page?: unknown,
   ) {
     const filter: Record<string, unknown> = {
-      role: { $in: ["member", "admin"] },
+      role: {
+        $in: [
+          UserRole.USER,
+          UserRole.MEMBER,
+          UserRole.GESTOR,
+          UserRole.ADMIN,
+          UserRole.SUPERADMIN,
+        ],
+      },
     };
 
     const safeSearch = ensureString(search);
