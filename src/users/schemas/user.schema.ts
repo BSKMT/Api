@@ -194,6 +194,18 @@ export class User {
 }
 export const UserSchema = SchemaFactory.createForClass(User);
 
+// NIST CSF 2.0 ID.AM-07: Atomic uniqueness of officially verified KYC document numbers
+UserSchema.index(
+  { "identityVerification.documentNumber": 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      identityVerified: true,
+      "identityVerification.documentNumber": { $type: "string", $gt: "" },
+    },
+  },
+);
+
 // NIST CSF 2.0 PR.DS-01: Transparent Field-Level Encryption at Rest
 export function decryptSensitiveProfileFields(doc: unknown): void {
   if (!doc || typeof doc !== "object") return;

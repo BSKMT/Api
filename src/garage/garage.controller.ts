@@ -96,6 +96,7 @@ export class GarageController {
   }
 
   @Post("motorcycles/:id/verify-runt")
+  @UseGuards(IdentityVerifiedGuard)
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 60000, limit: 3 } })
   async verifyRunt(
@@ -142,6 +143,7 @@ export class GarageController {
   }
 
   @Get(["motorcycles/:id/diagnostic", "motorcycles/:id/verifik-diagnostic"])
+  @UseGuards(IdentityVerifiedGuard)
   @Throttle({ default: { ttl: 60000, limit: 3 } })
   async getMotorcycleDiagnostic(
     @Req() req: AuthenticatedRequest,
@@ -154,6 +156,7 @@ export class GarageController {
   }
 
   @Post(["motorcycles/:id/sync", "motorcycles/:id/verifik-sync"])
+  @UseGuards(IdentityVerifiedGuard)
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 60000, limit: 5 } })
   async syncMotorcycleWithVerifik(

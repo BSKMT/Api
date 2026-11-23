@@ -9,14 +9,34 @@ import type {
 import {
   normalizeRuntDocumentType,
   normalizeRuntDocumentNumber,
+  RUNT_VEHICLE_ALLOWED_DOC_TYPES,
 } from "../verifik/verifik-runt.helpers";
+import { sanitizeForLog } from "../common/utils/log-redact.util";
 
 export interface UserDocumentSource {
   identityVerification?: {
     documentType?: string;
     documentNumber?: string;
+    lastName?: string | null;
   } | null;
   profile?: Record<string, unknown>;
+}
+
+export function extractUserPrimerApellido(
+  user: UserDocumentSource,
+): string | undefined {
+  const personal = user.profile?.["datos-personales"] as
+    Record<string, unknown> | undefined;
+  const fromProfile =
+    typeof personal?.primerApellido === "string"
+      ? personal.primerApellido.trim()
+      : "";
+  if (fromProfile.length >= 2) return fromProfile;
+
+  const fromKyc = (user.identityVerification?.lastName ?? "")
+    .trim()
+    .split(/\s+/)[0];
+  return fromKyc && fromKyc.length >= 2 ? fromKyc : undefined;
 }
 
 export function resolveUserDocumentForRunt(
@@ -111,7 +131,11 @@ export function syncRuntSoat(
     moto.policyNumber = soat.policyNumber;
     updatedFields.push("policyNumber");
   }
-  moto.runtSoatStatus = soat?.status ?? "VIGENTE";
+  if (soat?.status) {
+    moto.runtSoatStatus = soat.status;
+  } else if (soat === null) {
+    moto.runtSoatStatus = null;
+  }
 }
 
 export function syncRuntRtm(
@@ -140,7 +164,11 @@ export function syncRuntRtm(
     moto.runtCdaName = rtm.cdaName;
     updatedFields.push("runtCdaName");
   }
-  moto.runtRtmStatus = rtm?.status ?? "VIGENTE";
+  if (rtm?.status) {
+    moto.runtRtmStatus = rtm.status;
+  } else if (rtm === null) {
+    moto.runtRtmStatus = null;
+  }
 }
 
 export function applyRuntSync(
@@ -200,7 +228,9 @@ export async function executeVerifyMotorcycleWithRunt(
   }
 
   let runtResult: VerifikRuntLookupResult;
-  if (documentNumber) {
+  const canQueryOwnerBound =
+    Boolean(documentNumber) && RUNT_VEHICLE_ALLOWED_DOC_TYPES.has(documentType);
+  if (canQueryOwnerBound) {
     runtResult = await verifikService.verifyRuntVehicle(
       documentType,
       documentNumber,
@@ -214,7 +244,7 @@ export async function executeVerifyMotorcycleWithRunt(
   if (
     !runtResult.ok &&
     runtResult.reason !== "unauthorized" &&
-    documentNumber
+    canQueryOwnerBound
   ) {
     const plateResult = await verifikService.verifyRuntVehicleByPlate(
       moto.plate,
@@ -226,7 +256,7 @@ export async function executeVerifyMotorcycleWithRunt(
 
   if (!runtResult.ok) {
     logger.warn(
-      `Verifik RUNT lookup failed for moto ${moto.plate} (user ${userId}): ${runtResult.message}`,
+      `Verifik RUNT lookup failed for moto ${sanitizeForLog(moto.plate)} (user ${userId}): ${sanitizeForLog(runtResult.message)}`,
     );
     throw new BadRequestException(
       `Error al consultar el RUNT oficial: ${runtResult.message}`,
@@ -244,7 +274,7 @@ export async function executeVerifyMotorcycleWithRunt(
   await moto.save();
 
   logger.log(
-    `Motorcycle ${moto.plate} RUNT sync complete (ownershipVerified=${ownershipVerified})`,
+    `Motorcycle ${sanitizeForLog(moto.plate)} RUNT sync complete (ownershipVerified=${ownershipVerified})`,
   );
 
   return {
@@ -289,7 +319,7 @@ export async function executeSyncMotorcycleWithVerifik(
     classType: moto.motorcycleType,
     soat: moto.soatExpiryDate
       ? {
-          status: moto.runtSoatStatus || "VIGENTE",
+          status: moto.runtSoatStatus ?? null,
           policyNumber: moto.policyNumber || null,
           insuranceCompany: moto.insuranceCompany || null,
           startDate: null,
@@ -298,7 +328,7 @@ export async function executeSyncMotorcycleWithVerifik(
       : null,
     rtm: moto.rtmExpiryDate
       ? {
-          status: moto.runtRtmStatus || "VIGENTE",
+          status: moto.runtRtmStatus ?? null,
           certificateNumber: null,
           cdaName: moto.runtCdaName || null,
           expeditionDate: null,
@@ -315,6 +345,7 @@ export async function executeSyncMotorcycleWithVerifik(
     docNum || undefined,
     docType,
     existingFallback,
+    extractUserPrimerApellido(user),
   );
 
   let updatedFields: string[] = [];
@@ -331,7 +362,7 @@ export async function executeSyncMotorcycleWithVerifik(
     discrepancies = syncRes.discrepancies;
   } else {
     logger.warn(
-      `Motorcycle ${moto.plate} synced with partial data (RUNT offline: ${diagnostic.runtMessage})`,
+      `Motorcycle ${sanitizeForLog(moto.plate)} synced with partial data (RUNT offline: ${sanitizeForLog(diagnostic.runtMessage ?? "")})`,
     );
   }
 
@@ -342,6 +373,7 @@ export async function executeSyncMotorcycleWithVerifik(
     diagnostic.valuation.sibgaValuation ?? moto.sibgaValuation;
   moto.finesCount = diagnostic.fines.totalFines;
   moto.finesTotalAmount = diagnostic.fines.totalAmount;
+  moto.finesStatus = diagnostic.fines.status ?? null;
   moto.finesLastCheckedAt = new Date(diagnostic.fines.lastCheckedAt);
   moto.finesDetails = diagnostic.fines.fines as unknown as Record<
     string,
@@ -350,6 +382,7 @@ export async function executeSyncMotorcycleWithVerifik(
   moto.taxesStatus = diagnostic.taxes.status;
   moto.taxesPendingYears = diagnostic.taxes.pendingYears;
   moto.sinisterCount = diagnostic.sinister.sinisterCount;
+  moto.sinisterStatus = diagnostic.sinister.status;
   moto.sinisterDetails = diagnostic.sinister.records;
   moto.picoYPlacaRestrictedToday = diagnostic.picoYPlaca.hasRestrictionToday;
   moto.fullDiagnosticLastSyncedAt = new Date();
@@ -357,7 +390,7 @@ export async function executeSyncMotorcycleWithVerifik(
   await moto.save();
 
   logger.log(
-    `Full Verifik diagnostic synced for moto ${moto.plate} (user ${userId}) [RUNT: ${
+    `Full Verifik diagnostic synced for moto ${sanitizeForLog(moto.plate)} (user ${userId}) [RUNT: ${
       diagnostic.runtUnavailable ? "OFFLINE" : "OK"
     }]`,
   );

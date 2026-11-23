@@ -109,6 +109,9 @@ export class GarageMotorcycle {
   @Prop({ type: Number, default: 0 })
   finesTotalAmount!: number;
 
+  @Prop({ type: String, default: null })
+  finesStatus!: string | null;
+
   @Prop({ type: Date, default: null })
   finesLastCheckedAt!: Date | null;
 
@@ -123,6 +126,9 @@ export class GarageMotorcycle {
 
   @Prop({ type: Number, default: 0 })
   sinisterCount!: number;
+
+  @Prop({ type: String, default: null })
+  sinisterStatus!: string | null;
 
   @Prop({ type: [Object], default: [] })
   sinisterDetails!: Record<string, unknown>[];

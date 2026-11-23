@@ -53,12 +53,14 @@ import {
 import {
   executeVerifyMotorcycleWithRunt,
   executeSyncMotorcycleWithVerifik,
+  extractUserPrimerApellido,
 } from "./garage-runt.helpers";
 import {
   normalizeRuntDocumentType,
   normalizeRuntDocumentNumber,
 } from "../verifik/verifik-runt.helpers";
 import { isActiveLegendMember } from "../common/utils/membership-access.util";
+import { sanitizeForLog } from "../common/utils/log-redact.util";
 import type {
   VerifikRuntLookupResult,
   VerifikRuntVehicleRecord,
@@ -163,6 +165,7 @@ export class GarageService {
   private readonly runtWindowMs = 10 * 60 * 1000;
   private readonly runtMaxAttempts = 3;
   private readonly runtLocalAttempts = new Map<string, number[]>();
+  private readonly runtInFlight = new Set<string>();
 
   constructor(
     @InjectModel(GarageMotorcycle.name)
@@ -372,6 +375,37 @@ export class GarageService {
     return list.length > 0 ? list : ALLIED_WORKSHOPS;
   }
 
+  private async acquireRuntInFlightLock(userId: string): Promise<void> {
+    if (this.runtInFlight.has(userId)) {
+      throw new HttpException(
+        "Ya hay una consulta RUNT en curso para tu cuenta. Espera unos segundos.",
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    if (this.kvCache?.isAvailable()) {
+      const existing = await this.kvCache
+        .get<boolean>(`lock:runt:${userId}`, true)
+        .catch(() => null);
+      if (existing) {
+        throw new HttpException(
+          "Ya hay una consulta RUNT en curso para tu cuenta. Espera unos segundos.",
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+      await this.kvCache
+        .set(`lock:runt:${userId}`, true, 30, true)
+        .catch(() => {});
+    }
+    this.runtInFlight.add(userId);
+  }
+
+  private async releaseRuntInFlightLock(userId: string): Promise<void> {
+    this.runtInFlight.delete(userId);
+    if (this.kvCache?.isAvailable()) {
+      await this.kvCache.delete(`lock:runt:${userId}`, true).catch(() => {});
+    }
+  }
+
   async verifyMotorcycleWithRunt(
     userId: string,
     motorcycleId: string,
@@ -391,6 +425,7 @@ export class GarageService {
     }
 
     await this.enforceRuntUserThrottle(userId);
+    await this.acquireRuntInFlightLock(userId);
     try {
       return await executeVerifyMotorcycleWithRunt(
         this.verifikService,
@@ -402,6 +437,7 @@ export class GarageService {
       );
     } finally {
       await this.recordRuntUserAttempt(userId);
+      await this.releaseRuntInFlightLock(userId);
     }
   }
 
@@ -423,6 +459,7 @@ export class GarageService {
     }
 
     await this.enforceRuntUserThrottle(userId);
+    await this.acquireRuntInFlightLock(userId);
 
     // H-02: Restrict document lookup strictly to the authenticated user's own verified KYC document.
     const cleanType = normalizeRuntDocumentType(
@@ -447,7 +484,7 @@ export class GarageService {
           return record;
         }
         this.logger.warn(
-          `RUNT query with plate ${cleanPlate} and document ${maskDocumentNumber(cleanDoc)} (${cleanType}) did not return record: ${docResult.message}. Falling back to plate-only query.`,
+          `RUNT query with plate ${sanitizeForLog(cleanPlate)} and document ${maskDocumentNumber(cleanDoc)} (${cleanType}) did not return record: ${sanitizeForLog(docResult.message)}. Falling back to plate-only query.`,
         );
       }
 
@@ -461,6 +498,7 @@ export class GarageService {
       return record;
     } finally {
       await this.recordRuntUserAttempt(userId);
+      await this.releaseRuntInFlightLock(userId);
     }
   }
 
@@ -485,6 +523,7 @@ export class GarageService {
     }
 
     await this.enforceRuntUserThrottle(userId);
+    await this.acquireRuntInFlightLock(userId);
 
     const personal = user.profile?.["datos-personales"] as
       Record<string, unknown> | undefined;
@@ -517,11 +556,14 @@ export class GarageService {
         },
         docHolder,
         docType,
+        undefined,
+        extractUserPrimerApellido(user),
       );
       await this.kvCache?.set(cacheKey, diagnostic, 900, true).catch(() => {});
       return diagnostic;
     } finally {
       await this.recordRuntUserAttempt(userId);
+      await this.releaseRuntInFlightLock(userId);
     }
   }
 
@@ -540,8 +582,9 @@ export class GarageService {
     if (!moto) throw new NotFoundException("Motocicleta no encontrada");
 
     await this.enforceRuntUserThrottle(userId);
+    await this.acquireRuntInFlightLock(userId);
     try {
-      return await executeSyncMotorcycleWithVerifik(
+      const result = await executeSyncMotorcycleWithVerifik(
         this.verifikService,
         user,
         moto,
@@ -549,8 +592,15 @@ export class GarageService {
         userId,
         this.logger,
       );
+      if (this.kvCache?.isAvailable()) {
+        await this.kvCache
+          .delete(`diag:verifik:${userId}:${moto.plate}`, true)
+          .catch(() => {});
+      }
+      return result;
     } finally {
       await this.recordRuntUserAttempt(userId);
+      await this.releaseRuntInFlightLock(userId);
     }
   }
 
@@ -625,6 +675,7 @@ export class GarageService {
     cleanDocType: string,
   ): Promise<VerifikRuntLookupResult> {
     await this.enforceRuntUserThrottle(userId);
+    await this.acquireRuntInFlightLock(userId);
     try {
       if (cleanDocNumber) {
         const docResult = await this.verifikService.verifyRuntVehicle(
@@ -636,12 +687,13 @@ export class GarageService {
           return docResult;
         }
         this.logger.warn(
-          `RUNT query with plate ${cleanPlate} and document ${maskDocumentNumber(cleanDocNumber)} (${cleanDocType}) did not return vehicle: ${docResult.message}. Falling back to plate-only query.`,
+          `RUNT query with plate ${sanitizeForLog(cleanPlate)} and document ${maskDocumentNumber(cleanDocNumber)} (${cleanDocType}) did not return vehicle: ${sanitizeForLog(docResult.message)}. Falling back to plate-only query.`,
         );
       }
       return await this.verifikService.verifyRuntVehicleByPlate(cleanPlate);
     } finally {
       await this.recordRuntUserAttempt(userId);
+      await this.releaseRuntInFlightLock(userId);
     }
   }
 

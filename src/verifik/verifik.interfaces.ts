@@ -88,6 +88,8 @@ export interface VerifikFinesRecord {
   totalAmount: number;
   fines: VerifikFinesItem[];
   lastCheckedAt: string;
+  status?: "VERIFICADO" | "PARCIAL" | "DESCONOCIDO";
+  message?: string;
 }
 
 export interface VerifikTaxesRecord {
@@ -108,6 +110,7 @@ export interface VerifikValuationRecord {
   marketMax?: number | null;
   currency: string;
   lastUpdatedYear?: number | null;
+  status?: "VERIFICADO" | "PARCIAL" | "DESCONOCIDO";
 }
 
 export interface VerifikSinisterRecord {
@@ -137,7 +140,13 @@ export interface VerifikPicoYPlacaRecord {
 export interface VerifikDriverLicenseRecord {
   documentNumber: string;
   documentType: string;
-  status: "ACTIVA" | "VENCIDA" | "SUSPENDIDA" | "CANCELADA" | "NO_REGISTRA";
+  status:
+    | "ACTIVA"
+    | "VENCIDA"
+    | "SUSPENDIDA"
+    | "CANCELADA"
+    | "NO_REGISTRA"
+    | "DESCONOCIDO";
   categories: Array<{
     category: string;
     validUntil?: string | null;
@@ -191,6 +200,7 @@ export interface VerifikRawData {
 
 export interface VerifikRawResponse {
   data?: unknown;
+  value?: unknown;
   signature?: { message?: unknown; dateTime?: unknown };
   id?: unknown;
   message?: unknown;

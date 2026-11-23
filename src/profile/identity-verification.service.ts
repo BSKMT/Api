@@ -18,7 +18,11 @@ import {
   VerifikIdentityRecord,
   VerifikDocumentType,
 } from "../verifik/verifik.service";
-import { maskDocument } from "../common/utils/log-redact.util";
+import { maskDocument, sanitizeForLog } from "../common/utils/log-redact.util";
+import {
+  SecurityAuditService,
+  AuditSeverity,
+} from "../common/audit/security-audit.service";
 import {
   REQUIRES_EXPEDITION_DATE,
   mapDocumentType,
@@ -129,6 +133,7 @@ async function queryAndApplyDriverLicense(
   verifikService: VerifikService,
   verifikType: string,
   documentNumber: string,
+  primerApellido: string | undefined,
   profile: Record<string, Record<string, unknown>>,
   logger: Logger,
 ): Promise<{
@@ -141,8 +146,9 @@ async function queryAndApplyDriverLicense(
     const lic = await verifikService.getDriverLicense(
       verifikType,
       documentNumber,
+      primerApellido,
     );
-    if (!lic || lic.status === "NO_REGISTRA") {
+    if (!lic || lic.status === "NO_REGISTRA" || lic.status === "DESCONOCIDO") {
       return null;
     }
 
@@ -174,7 +180,7 @@ async function queryAndApplyDriverLicense(
     };
   } catch (err) {
     logger.warn(
-      `Could not retrieve driver license for doc ${maskDocument(documentNumber)}: ${(err as Error).message}`,
+      `Could not retrieve driver license for doc ${maskDocument(documentNumber)}: ${sanitizeForLog((err as Error).message)}`,
     );
     return null;
   }
@@ -218,8 +224,34 @@ export class IdentityVerificationService {
     private readonly verifikService: VerifikService,
     private readonly kvCache: KvCacheService,
     @Optional() private readonly birdContactService?: BirdContactService,
+    @Optional() private readonly securityAudit?: SecurityAuditService,
   ) {
     this.throttle = new IdentityAttemptThrottle(this.kvCache);
+  }
+
+  private recordKycAudit(
+    eventType: string,
+    severity: AuditSeverity,
+    userId: string,
+    documentNumber: string,
+    details?: Record<string, unknown>,
+  ): void {
+    this.securityAudit
+      ?.recordEvent({
+        requestId: `kyc-${Date.now()}`,
+        eventType,
+        severity,
+        clientIp: "server",
+        method: "POST",
+        path: "/api/profile/identity/verify",
+        statusCode: severity === AuditSeverity.INFO ? 200 : 400,
+        userId,
+        details: {
+          maskedDocument: maskDocument(documentNumber),
+          ...details,
+        },
+      })
+      .catch(() => {});
   }
 
   /** Returns the current verification state for the UI. */
@@ -322,12 +354,20 @@ export class IdentityVerificationService {
       this.logger.warn(
         `Duplicate document verification attempted for doc ${maskDocument(documentNumber)} by user ${userId}`,
       );
+      this.recordKycAudit(
+        "IDENTITY_VERIFICATION_DUPLICATE_BLOCKED",
+        AuditSeverity.WARN,
+        userId,
+        documentNumber,
+        { verifikType },
+      );
       throw new BadRequestException(
         "Este número de documento ya se encuentra registrado y verificado por otro usuario.",
       );
     }
 
     await this.throttle.enforce(userId);
+    await this.throttle.acquireInFlight(userId);
 
     let lookup: Awaited<ReturnType<typeof callVerifikService>>;
     try {
@@ -339,6 +379,7 @@ export class IdentityVerificationService {
       );
     } finally {
       await this.throttle.record(userId);
+      await this.throttle.releaseInFlight(userId);
     }
 
     if (!lookup.ok) {
@@ -352,6 +393,13 @@ export class IdentityVerificationService {
     if (failed.length > 0) {
       this.logger.warn(
         `Identity mismatch for user ${userId} doc ${maskDocument(documentNumber)}: ${failed.join(", ")}`,
+      );
+      this.recordKycAudit(
+        "IDENTITY_VERIFICATION_MISMATCH",
+        AuditSeverity.WARN,
+        userId,
+        documentNumber,
+        { verifikType, failed },
       );
       return {
         verified: false,
@@ -379,6 +427,7 @@ export class IdentityVerificationService {
       this.verifikService,
       verifikType,
       documentNumber,
+      parsedNames.primerApellido || undefined,
       profile,
       this.logger,
     );
@@ -416,8 +465,38 @@ export class IdentityVerificationService {
     updateProfileCompletion(user);
 
     user.markModified("profile");
-    await user.save();
+    try {
+      await user.save();
+    } catch (err: unknown) {
+      const mongoCode = (err as { code?: number })?.code;
+      if (mongoCode === 11000) {
+        this.recordKycAudit(
+          "IDENTITY_VERIFICATION_DUPLICATE_BLOCKED",
+          AuditSeverity.WARN,
+          userId,
+          documentNumber,
+          { verifikType, raceConditionCaught: true },
+        );
+        throw new BadRequestException(
+          "Este número de documento ya se encuentra registrado y verificado por otro usuario.",
+        );
+      }
+      throw err;
+    }
+
+    if (user.betterAuthId) {
+      await this.kvCache
+        .delete(`user:ba:${user.betterAuthId}`, true)
+        .catch(() => {});
+    }
     this.birdContactService?.syncUser(user).catch(() => {});
+    this.recordKycAudit(
+      "IDENTITY_VERIFICATION_SUCCESS",
+      AuditSeverity.INFO,
+      userId,
+      documentNumber,
+      { verifikType },
+    );
 
     this.logger.log(
       `Identity verified for user ${userId} doc ${maskDocument(documentNumber)} (${verifikType})`,

@@ -32,6 +32,20 @@ export function applyBasicSpecsUpdates(
       moto.runtCdaName = null;
       moto.runtSoatStatus = null;
       moto.runtRtmStatus = null;
+      moto.fasecoldaCode = null;
+      moto.fasecoldaValue = null;
+      moto.sibgaValuation = null;
+      moto.finesCount = 0;
+      moto.finesTotalAmount = 0;
+      moto.finesStatus = null;
+      moto.finesLastCheckedAt = null;
+      moto.finesDetails = [];
+      moto.taxesStatus = null;
+      moto.taxesPendingYears = [];
+      moto.sinisterCount = 0;
+      moto.sinisterStatus = null;
+      moto.sinisterDetails = [];
+      moto.fullDiagnosticLastSyncedAt = null;
     }
   }
   if (dto.color !== undefined) moto.color = dto.color.trim();

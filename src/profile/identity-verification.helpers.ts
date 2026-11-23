@@ -24,8 +24,40 @@ export class IdentityAttemptThrottle {
   private readonly windowMs = 10 * 60 * 1000;
   private readonly maxAttempts = 3;
   private readonly attempts = new Map<string, number[]>();
+  private readonly inFlight = new Set<string>();
 
   constructor(private readonly kvCache?: KvCacheService) {}
+
+  async acquireInFlight(userId: string): Promise<void> {
+    if (this.inFlight.has(userId)) {
+      throw new HttpException(
+        "Ya hay una verificación de identidad en curso. Espera unos segundos.",
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    if (this.kvCache?.isAvailable()) {
+      const existing = await this.kvCache
+        .get<boolean>(`lock:id:${userId}`, true)
+        .catch(() => null);
+      if (existing) {
+        throw new HttpException(
+          "Ya hay una verificación de identidad en curso. Espera unos segundos.",
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+      await this.kvCache
+        .set(`lock:id:${userId}`, true, 30, true)
+        .catch(() => {});
+    }
+    this.inFlight.add(userId);
+  }
+
+  async releaseInFlight(userId: string): Promise<void> {
+    this.inFlight.delete(userId);
+    if (this.kvCache?.isAvailable()) {
+      await this.kvCache.delete(`lock:id:${userId}`, true).catch(() => {});
+    }
+  }
 
   async enforce(userId: string): Promise<void> {
     const now = Date.now();
@@ -143,9 +175,11 @@ export function extractAndValidateDocument(
 
   const documentNumber =
     verifikType === "CC" ||
+    verifikType === "CE" ||
+    verifikType === "PPT" ||
+    verifikType === "PEP" ||
     verifikType === "NIT" ||
     verifikType === "TI" ||
-    verifikType === "PEP" ||
     verifikType === "RC"
       ? rawNumber.replace(/\D/g, "")
       : rawNumber.toUpperCase().replace(/[^A-Z0-9-]/g, "");

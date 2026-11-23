@@ -15,21 +15,44 @@ import {
   namesMatch,
 } from "./identity-verification-matcher";
 
-/** Converts a client ISO date (YYYY-MM-DD) into Verifik DD/MM/YYYY. */
-export function toVerifikDate(iso: string | undefined): string | null {
-  if (!iso) return null;
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  if (!match) return null;
-  const [, y, m, d] = match;
-  const date = new Date(`${iso}T00:00:00Z`);
+/**
+ * Converts a client date (`YYYY-MM-DD`, `DD/MM/YYYY`, or `D/M/YYYY`)
+ * into Verifik's required `DD/MM/YYYY` format.
+ */
+export function toVerifikDate(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  let y: string;
+  let m: string;
+  let d: string;
+
+  const isoMatch = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(trimmed);
+  const latinMatch = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(trimmed);
+  if (isoMatch) {
+    [, y, m, d] = isoMatch;
+  } else if (latinMatch) {
+    [, d, m, y] = latinMatch;
+  } else {
+    return null;
+  }
+
+  const year = Number(y);
+  const month = Number(m);
+  const day = Number(d);
+  const padM = m.padStart(2, "0");
+  const padD = d.padStart(2, "0");
+  const date = new Date(`${y}-${padM}-${padD}T00:00:00Z`);
   if (
     Number.isNaN(date.getTime()) ||
-    Number(y) < 1900 ||
+    year < 1900 ||
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() + 1 !== month ||
+    date.getUTCDate() !== day ||
     date.getTime() > Date.now() + 24 * 60 * 60 * 1000
   ) {
     return null;
   }
-  return `${d}/${m}/${y}`;
+  return `${padD}/${padM}/${y}`;
 }
 
 /**
@@ -40,8 +63,10 @@ export function toIsoDate(value: string): string | null {
   const trimmed = value.trim();
   const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(trimmed);
   if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-  const latin = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(trimmed);
-  if (latin) return `${latin[3]}-${latin[2]}-${latin[1]}`;
+  const latin = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(trimmed);
+  if (latin) {
+    return `${latin[3]}-${latin[2].padStart(2, "0")}-${latin[1].padStart(2, "0")}`;
+  }
   return null;
 }
 
@@ -92,7 +117,10 @@ export function evaluateDocumentStatusCheck(
   status: string | null,
 ): CheckOutcome {
   if (!status) return "not_provided";
-  return status.trim().toUpperCase() === "VIGENTE" ? "match" : "mismatch";
+  const upper = status.trim().toUpperCase();
+  return upper === "VIGENTE" || upper === "ACTIVO" || upper === "ACTIVA"
+    ? "match"
+    : "mismatch";
 }
 
 /**
@@ -122,9 +150,9 @@ export function evaluateChecks(
   const birthDate =
     verifikType === "CC"
       ? evaluateBirthDateCheck(
-          asString(personal.fechaNacimiento),
-          record.dateOfBirth,
-        )
+        asString(personal.fechaNacimiento),
+        record.dateOfBirth,
+      )
       : "not_applicable";
   const gender =
     verifikType === "CC"

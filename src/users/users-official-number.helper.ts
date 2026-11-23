@@ -92,7 +92,12 @@ export function resetIdentityIfDocumentChanged(
   const normalizeText = (v: unknown): string =>
     typeof v === "string" ? v.trim().replace(/\s+/g, " ").toLowerCase() : "";
   const normalizeNumber = (v: unknown): string =>
-    typeof v === "string" ? v.replace(/\D/g, "") : "";
+    typeof v === "string"
+      ? v
+          .trim()
+          .toUpperCase()
+          .replace(/[^A-Z0-9]/g, "")
+      : "";
 
   const kycTextFields = [
     "tipoDocumento",
@@ -104,7 +109,7 @@ export function resetIdentityIfDocumentChanged(
   ] as const;
 
   const docNumberChanged =
-    Boolean(normalizeNumber(sanitizedData.numeroDocumento)) &&
+    "numeroDocumento" in sanitizedData &&
     normalizeNumber(sanitizedData.numeroDocumento) !==
       normalizeNumber(personal.numeroDocumento);
 

@@ -179,10 +179,30 @@ export class GestionMembresiasController {
       existingKyc?.fullName ||
       `${primerNombre} ${primerApellido}`.trim() ||
       "Verificado Manual";
-    const docNumber =
+    const docNumber = (
       existingKyc?.documentNumber ||
       (personal?.numeroDocumento as string) ||
-      "MANUAL";
+      ""
+    ).trim();
+    if (!docNumber) {
+      throw new BadRequestException(
+        "El usuario debe registrar primero su número de documento en Datos Personales antes de la verificación manual.",
+      );
+    }
+
+    const duplicateVerified = await this.userModel
+      .findOne({
+        _id: { $ne: user._id },
+        identityVerified: true,
+        "identityVerification.documentNumber": docNumber,
+      })
+      .lean();
+    if (duplicateVerified) {
+      throw new BadRequestException(
+        "Este número de documento ya se encuentra verificado en otra cuenta.",
+      );
+    }
+
     const docType =
       existingKyc?.documentType || (personal?.tipoDocumento as string) || "CC";
 
@@ -203,7 +223,16 @@ export class GestionMembresiasController {
       verifiedBy: req.user.userId,
       verificationMethod: "manual_gestion",
     };
-    await user.save();
+    try {
+      await user.save();
+    } catch (err: unknown) {
+      if ((err as { code?: number })?.code === 11000) {
+        throw new BadRequestException(
+          "Este número de documento ya se encuentra verificado en otra cuenta.",
+        );
+      }
+      throw err;
+    }
 
     if (user.betterAuthId && this.kvCache) {
       await this.kvCache.delete(`user:ba:${user.betterAuthId}`, true);

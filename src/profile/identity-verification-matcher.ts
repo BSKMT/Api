@@ -25,8 +25,8 @@ export const DOCUMENT_TYPE_MAP: Array<{
 
 export const DOCUMENT_NUMBER_PATTERN: Record<VerifikDocumentType, RegExp> = {
   CC: /^\d{5,10}$/,
-  CE: /^[A-Z0-9]{4,12}$/i,
-  PPT: /^[A-Z0-9]{3,12}$/i,
+  CE: /^\d{4,12}$/,
+  PPT: /^\d{3,15}$/,
   PEP: /^\d{15}$/,
   PA: /^[A-Z0-9]{5,20}$/i,
   CD: /^[A-Z0-9]{3,20}$/i,

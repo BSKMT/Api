@@ -4,6 +4,71 @@ import type {
   VerifikRuntVehicleRecord,
 } from "./verifik.interfaces";
 
+/** Official allowed documentType sets documented in https://docs.verifik.co/ */
+export const RUNT_VEHICLE_ALLOWED_DOC_TYPES = new Set([
+  "CC",
+  "CE",
+  "PA",
+  "NIT",
+]);
+
+export const RUNT_DRIVER_ALLOWED_DOC_TYPES = new Set([
+  "CC",
+  "TI",
+  "CE",
+  "PA",
+  "PPT",
+]);
+
+export const BOGOTA_TAX_ALLOWED_DOC_TYPES = new Set(["CC", "NIT"]);
+
+export const SIMIT_ALLOWED_DOC_TYPES = new Set(["CC", "PA", "CE", "TI", "RC"]);
+
+function strOrNull(v: unknown): string | null {
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+
+function numOrNull(v: unknown): number | null {
+  if (typeof v === "number" && !Number.isNaN(v) && v > 0) return v;
+  if (typeof v === "string") {
+    const parsed = Number(v.replace(/\D/g, ""));
+    return !Number.isNaN(parsed) && parsed > 0 ? parsed : null;
+  }
+  return null;
+}
+
+function asRecord(v: unknown): Record<string, unknown> {
+  return v && typeof v === "object" && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : {};
+}
+
+function pickString(
+  sources: Record<string, unknown>[],
+  keys: string[],
+): string | null {
+  for (const src of sources) {
+    for (const key of keys) {
+      const value = strOrNull(src[key]);
+      if (value) return value;
+    }
+  }
+  return null;
+}
+
+function pickNumber(
+  sources: Record<string, unknown>[],
+  keys: string[],
+): number | null {
+  for (const src of sources) {
+    for (const key of keys) {
+      const value = numOrNull(src[key]);
+      if (value !== null) return value;
+    }
+  }
+  return null;
+}
+
 export function normalizeRuntDate(val: unknown): string | null {
   if (typeof val !== "string" || !val.trim()) {
     return null;
@@ -13,6 +78,10 @@ export function normalizeRuntDate(val: unknown): string | null {
   if (ddmmyyyyMatch) {
     const [, d, m, y] = ddmmyyyyMatch;
     return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
   }
   return s;
 }
@@ -30,12 +99,42 @@ export function extractFirstObject(
   return typeof raw === "object" ? (raw as Record<string, unknown>) : null;
 }
 
+function normalizeSoatStatus(item: Record<string, unknown>): string | null {
+  const raw = strOrNull(item.estado ?? item.status ?? item.estadoPoliza);
+  if (raw) return raw.toUpperCase();
+  if (typeof item.valid === "boolean") {
+    return item.valid ? "VIGENTE" : "VENCIDO";
+  }
+  return null;
+}
+
+function normalizeRtmStatus(item: Record<string, unknown>): string | null {
+  const raw = strOrNull(item.estado ?? item.status ?? item.estadoCertificado);
+  if (raw) return raw.toUpperCase();
+  const vigente = strOrNull(item.vigente)?.toUpperCase();
+  if (vigente === "SI" || vigente === "SÍ" || vigente === "VIGENTE") {
+    return "VIGENTE";
+  }
+  if (vigente === "NO") return "VENCIDA";
+  if (vigente === "NO APLICA") return "NO_APLICA";
+  if (typeof item.valid === "boolean") {
+    return item.valid ? "VIGENTE" : "VENCIDA";
+  }
+  return null;
+}
+
 function extractStatusString(obj: unknown): string {
   if (typeof obj !== "object" || obj === null) return "";
   const rec = obj as Record<string, unknown>;
   const val =
-    rec.estado ?? rec.status ?? rec.estadoPoliza ?? rec.estadoCertificado;
-  return typeof val === "string" ? val.toUpperCase() : "";
+    rec.estado ??
+    rec.status ??
+    rec.estadoPoliza ??
+    rec.estadoCertificado ??
+    rec.vigente;
+  if (typeof val === "string") return val.trim().toUpperCase();
+  if (typeof rec.valid === "boolean") return rec.valid ? "VIGENTE" : "VENCIDO";
+  return "";
 }
 
 export function extractSoat(raw: unknown): VerifikSoatRecord | null {
@@ -44,7 +143,12 @@ export function extractSoat(raw: unknown): VerifikSoatRecord | null {
     const list: unknown[] = raw;
     const active = list.find((x) => {
       const status = extractStatusString(x);
-      return status === "VIGENTE" || status === "ACTIVO" || status === "ACTIVE";
+      return (
+        status === "VIGENTE" ||
+        status === "ACTIVO" ||
+        status === "ACTIVE" ||
+        status === "SI"
+      );
     });
     item =
       typeof active === "object" && active !== null
@@ -56,21 +160,33 @@ export function extractSoat(raw: unknown): VerifikSoatRecord | null {
   if (!item) return null;
 
   return {
-    status: (item.estado ?? item.status ?? item.estadoPoliza ?? null) as
-      string | null,
-    policyNumber: (item.numeroPoliza ??
+    status: normalizeSoatStatus(item),
+    policyNumber: strOrNull(
+      item.noPoliza ??
+      item.numeroPoliza ??
+      item.soatNumber ??
       item.policyNumber ??
-      item.numero ??
-      null) as string | null,
-    insuranceCompany: (item.entidadAseguradora ??
+      item.numero,
+    ),
+    insuranceCompany: strOrNull(
+      item.entidadExpideSoat ??
+      item.entidadAseguradora ??
       item.aseguradora ??
-      item.insuranceCompany ??
-      null) as string | null,
+      item.insuranceCompany,
+    ),
     startDate: normalizeRuntDate(
-      item.fechaVigenciaInicio ?? item.fechaInicio ?? item.startDate,
+      item.fechaVigencia ??
+      item.fechaVigenciaInicio ??
+      item.coverageStartDate ??
+      item.fechaInicio ??
+      item.fechaExpedicion ??
+      item.startDate,
     ),
     expiryDate: normalizeRuntDate(
-      item.fechaVigenciaFin ?? item.fechaVencimiento ?? item.expiryDate,
+      item.fechaVencimiento ??
+      item.dueDate ??
+      item.fechaVigenciaFin ??
+      item.expiryDate,
     ),
   };
 }
@@ -85,7 +201,8 @@ export function extractRtm(raw: unknown): VerifikRtmRecord | null {
         status === "VIGENTE" ||
         status === "ACTIVO" ||
         status === "APROBADA" ||
-        status === "ACTIVE"
+        status === "ACTIVE" ||
+        status === "SI"
       );
     });
     item =
@@ -98,24 +215,32 @@ export function extractRtm(raw: unknown): VerifikRtmRecord | null {
   if (!item) return null;
 
   return {
-    status: (item.estado ?? item.status ?? item.estadoCertificado ?? null) as
-      string | null,
-    certificateNumber: (item.numeroCertificado ??
+    status: normalizeRtmStatus(item),
+    certificateNumber: strOrNull(
+      item.numeroCertificado ??
+      item.nroCertificado ??
+      item.reviewNumber ??
       item.certificateNumber ??
-      item.control ??
-      null) as string | null,
-    cdaName: (item.cda ??
+      item.control,
+    ),
+    cdaName: strOrNull(
+      item.cdaExpide ??
+      item.cda ??
       item.centroDiagnostico ??
       item.cdaName ??
-      item.nombreCda ??
-      null) as string | null,
+      item.nombreCda,
+    ),
     expeditionDate: normalizeRuntDate(
       item.fechaExpedicion ??
-        item.fechaExpedicionCertificado ??
-        item.expeditionDate,
+      item.fechaExpedicionCertificado ??
+      item.expeditionDate,
     ),
     expiryDate: normalizeRuntDate(
-      item.fechaVigenciaFin ?? item.fechaVencimiento ?? item.expiryDate,
+      item.fechaVigencia ??
+      item.fechaVigenciaFin ??
+      item.fechaVencimiento ??
+      item.dueDate ??
+      item.expiryDate,
     ),
   };
 }
@@ -125,114 +250,84 @@ export function normalizeRuntVehicle(
   id: unknown,
   fallbackPlate: string,
 ): VerifikRuntVehicleRecord {
-  const str = (v: unknown): string | null =>
-    typeof v === "string" && v.trim() ? v.trim() : null;
-
-  const num = (v: unknown): number | null => {
-    if (typeof v === "number" && !Number.isNaN(v)) return v;
-    if (typeof v === "string") {
-      const parsed = Number(v.replace(/\D/g, ""));
-      return !Number.isNaN(parsed) && parsed > 0 ? parsed : null;
-    }
-    return null;
-  };
-
-  const d = (extractFirstObject(data) ??
-    (typeof data === "object" && data !== null ? data : {})) as Record<
-    string,
-    unknown
-  >;
+  const d = extractFirstObject(data) ?? asRecord(data);
   const unwrapped =
     d.data && typeof d.data === "object" && !Array.isArray(d.data)
       ? (d.data as Record<string, unknown>)
       : d;
 
-  const infoGen =
-    unwrapped.informacionGeneral &&
-    typeof unwrapped.informacionGeneral === "object"
-      ? (unwrapped.informacionGeneral as Record<string, unknown>)
-      : {};
-  const datosTec =
-    unwrapped.datosTecnicos && typeof unwrapped.datosTecnicos === "object"
-      ? (unwrapped.datosTecnicos as Record<string, unknown>)
-      : {};
+  // Support ALL official Verifik RUNT response shapes:
+  // - /v2/co/runt/vehicle-by-plate & /vehicle-by-plate-only -> informacionGeneral + datosTecnicos
+  // - /v2/co/runt/vehiculo (basic) -> vehicle
+  // - /v2/co/runt/vehiculo (SOAT/RTM variant) -> vehicleInformation + soat + techReview
+  // - /v2/co/runt/propietarios -> top-level plate/brand/line/model
+  const infoGen = asRecord(unwrapped.informacionGeneral);
+  const vehicleBlock = asRecord(unwrapped.vehicle);
+  const vehicleInfo = asRecord(unwrapped.vehicleInformation);
+  const datosTec = asRecord(unwrapped.datosTecnicos);
+
+  const generalSources = [
+    infoGen,
+    vehicleBlock,
+    vehicleInfo,
+    unwrapped,
+    datosTec,
+  ];
+  const techSources = [datosTec, infoGen, vehicleBlock, unwrapped, vehicleInfo];
 
   const plate =
-    str(unwrapped.plate) ??
-    str(unwrapped.placa) ??
-    str(infoGen.placa) ??
-    str(infoGen.plate) ??
-    fallbackPlate;
-
-  const brand =
-    str(unwrapped.marca) ??
-    str(unwrapped.brand) ??
-    str(infoGen.marca) ??
-    str(infoGen.brand);
-
-  const modelLine =
-    str(unwrapped.linea) ??
-    str(unwrapped.modelLine) ??
-    str(unwrapped.line) ??
-    str(infoGen.linea) ??
-    str(infoGen.modelLine);
-
-  const year =
-    num(unwrapped.modelo) ??
-    num(unwrapped.year) ??
-    num(infoGen.modelo) ??
-    num(infoGen.year);
-
-  const displacementCc =
-    num(unwrapped.cilindraje) ??
-    num(unwrapped.displacementCc) ??
-    num(datosTec.cilindrada) ??
-    num(datosTec.cilindraje) ??
-    num(datosTec.displacementCc);
-
-  const color =
-    str(unwrapped.color) ?? str(infoGen.color) ?? str(datosTec.color);
-
-  const serviceType =
-    str(unwrapped.servicio) ??
-    str(unwrapped.serviceType) ??
-    str(infoGen.servicio) ??
-    str(infoGen.tipoServicio);
-
-  const classType =
-    str(unwrapped.clase) ??
-    str(unwrapped.classType) ??
-    str(infoGen.clase) ??
-    str(infoGen.claseVehiculo);
-
-  const engineNumber =
-    str(unwrapped.numeroMotor) ??
-    str(unwrapped.engineNumber) ??
-    str(datosTec.numeroMotor) ??
-    str(infoGen.numeroMotor);
-
-  const vinOrChassis =
-    str(unwrapped.numeroChasis) ??
-    str(unwrapped.vin) ??
-    str(unwrapped.chasis) ??
-    str(datosTec.numeroChasis) ??
-    str(datosTec.vin) ??
-    str(infoGen.numeroChasis) ??
-    str(infoGen.vin);
+    pickString(generalSources, ["noPlaca", "placa", "plate"]) ?? fallbackPlate;
+  const brand = pickString(generalSources, ["marca", "brand"]);
+  const modelLine = pickString(generalSources, ["linea", "line", "modelLine"]);
+  const year = pickNumber(generalSources, ["modelo", "model", "year"]);
+  // Verifik/RUNT uses the official spelling "cilidraje" (missing 'n') in informacionGeneral
+  const displacementCc = pickNumber(techSources, [
+    "cilidraje",
+    "cilindraje",
+    "cilindrada",
+    "displacementCc",
+  ]);
+  const color = pickString(generalSources, ["color"]);
+  const serviceType = pickString(generalSources, [
+    "tipoServicio",
+    "servicio",
+    "serviceType",
+  ]);
+  const classType = pickString(generalSources, [
+    "claseVehiculo",
+    "clasificacion",
+    "clase",
+    "classType",
+  ]);
+  const engineNumber = pickString(techSources, [
+    "noMotor",
+    "numeroMotor",
+    "engineNumber",
+  ]);
+  const vinOrChassis = pickString(techSources, [
+    "noVin",
+    "noChasis",
+    "numeroChasis",
+    "vin",
+    "chasis",
+  ]);
 
   const rawSoat =
     unwrapped.soat ??
     unwrapped.polizaSoat ??
     infoGen.soat ??
+    vehicleBlock.soat ??
     unwrapped.soats ??
     infoGen.soats;
 
   const rawRtm =
+    unwrapped.tecnoMecanica ??
+    unwrapped.techReview ??
     unwrapped.tecnomecanica ??
     unwrapped.rtm ??
     unwrapped.revisionTecnicomecanica ??
-    unwrapped.tecnoMecanica ??
     infoGen.tecnoMecanica ??
+    vehicleBlock.tecnoMecanica ??
     infoGen.rtm;
 
   return {
@@ -248,7 +343,7 @@ export function normalizeRuntVehicle(
     vinOrChassis,
     soat: extractSoat(rawSoat),
     rtm: extractRtm(rawRtm),
-    verifikId: str(id),
+    verifikId: strOrNull(id),
   };
 }
 
@@ -266,7 +361,11 @@ export function normalizeRuntVehicle(
  */
 export function normalizeRuntDocumentType(rawType?: string | null): string {
   if (!rawType) return "CC";
-  const clean = rawType.trim().toUpperCase();
+  const clean = rawType
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase();
 
   if (
     clean === "CC" ||
@@ -315,8 +414,8 @@ export function normalizeRuntDocumentType(rawType?: string | null): string {
 
 /**
  * Normalizes document numbers according to document type.
- * - CC, TI, RC, NIT: strictly numeric.
- * - PA (Pasaporte), CD (Carné Diplomático), CE, PPT, PEP: preserves alphanumeric characters.
+ * - CC, CE, PPT, PEP, TI, RC, NIT: strictly numeric per Verifik Colombia guide.
+ * - PA (Pasaporte), CD (Carné Diplomático): preserves alphanumeric characters.
  */
 export function normalizeRuntDocumentNumber(
   docType?: string | null,
@@ -328,6 +427,9 @@ export function normalizeRuntDocumentNumber(
 
   if (
     normalizedType === "CC" ||
+    normalizedType === "CE" ||
+    normalizedType === "PPT" ||
+    normalizedType === "PEP" ||
     normalizedType === "TI" ||
     normalizedType === "RC" ||
     normalizedType === "NIT"
@@ -335,6 +437,6 @@ export function normalizeRuntDocumentNumber(
     return trimmed.replace(/\D/g, "");
   }
 
-  // Alphanumeric documents (Passports, Carné Diplomático, CE, PPT)
+  // Alphanumeric documents (Passports, Carné Diplomático)
   return trimmed.replace(/[^A-Z0-9]/g, "");
 }

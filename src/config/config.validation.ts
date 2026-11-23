@@ -115,12 +115,44 @@ export const configValidationSchema = Joi.object({
     then: Joi.required(),
   }),
 
-  // Verifik — KYC / identity verification (Colombia: CC, CE, PPT, PEP).
+  // Verifik — KYC / identity verification (Colombia: CC, CE, PPT, PEP) y RUNT/SIMIT/Fasecolda.
   // Optional on purpose: if the token is missing the identity-verification
   // endpoints degrade to a 503 "no disponible" instead of crashing boot,
   // mirroring the Bird degrade-to-no-op pattern (OWASP A10:2025).
-  VERIFIK_API_TOKEN: Joi.string().allow("").default(""),
-  VERIFIK_API_URL: Joi.string().uri().default("https://api.verifik.co"),
+  VERIFIK_API_TOKEN: Joi.string()
+    .allow("")
+    .default("")
+    .custom((value: string) => {
+      if (value && /[\r\n]/.test(value)) {
+        throw new Error(
+          "VERIFIK_API_TOKEN no puede contener saltos de línea ni caracteres de control",
+        );
+      }
+      return value;
+    }),
+  VERIFIK_API_URL: Joi.string()
+    .uri({ scheme: ["https", "http"] })
+    .default("https://api.verifik.co")
+    .custom((value: string) => {
+      const parsed = new URL(value);
+      const host = parsed.hostname.toLowerCase();
+      const isAllowedHost =
+        host === "api.verifik.co" ||
+        host === "verifik.app" ||
+        host.endsWith(".verifik.co");
+      const isTestLoopback =
+        process.env.NODE_ENV === "test" &&
+        (host === "localhost" || host === "127.0.0.1");
+      if (!isAllowedHost && !isTestLoopback) {
+        throw new Error(
+          "VERIFIK_API_URL debe apuntar únicamente a un dominio oficial de Verifik (api.verifik.co / *.verifik.co / verifik.app)",
+        );
+      }
+      if (!isTestLoopback && parsed.protocol !== "https:") {
+        throw new Error("VERIFIK_API_URL requiere HTTPS obligatorio");
+      }
+      return value;
+    }),
   VERIFIK_TIMEOUT_MS: Joi.number()
     .integer()
     .min(2000)
