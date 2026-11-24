@@ -105,7 +105,12 @@ export class PaymentsController {
   }
 
   @Public()
-  @Throttle({ default: { ttl: 60000, limit: 120 } })
+  @Throttle({
+    default: { ttl: 60000, limit: 120 },
+    short: { ttl: 1000, limit: 20 },
+    medium: { ttl: 10000, limit: 60 },
+    long: { ttl: 60000, limit: 120 },
+  })
   @Post("webhook")
   @HttpCode(HttpStatus.OK)
   async handleWebhook(
@@ -131,6 +136,12 @@ export class PaymentsController {
    * Cloudflare Queues (bskmt-webhooks-queue).
    */
   @Public()
+  @Throttle({
+    default: { ttl: 60000, limit: 240 },
+    short: { ttl: 1000, limit: 30 },
+    medium: { ttl: 10000, limit: 120 },
+    long: { ttl: 60000, limit: 240 },
+  })
   @Post("webhook/batch")
   @UseGuards(InternalEdgeSecretGuard)
   @HttpCode(HttpStatus.OK)

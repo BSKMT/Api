@@ -112,6 +112,7 @@ export async function bootstrap(): Promise<express.Express> {
   app.use(
     express.json({
       limit: "1mb",
+      type: ["application/json", "application/*+json"],
       verify: (req: Request, _res: Response, buf: Buffer) => {
         (req as Request & { rawBody?: Buffer }).rawBody = buf;
       },
