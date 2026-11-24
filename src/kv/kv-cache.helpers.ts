@@ -80,7 +80,11 @@ export async function fetchWithTimeout(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    return await fetch(url, {
+      ...init,
+      redirect: "manual",
+      signal: controller.signal,
+    });
   } finally {
     clearTimeout(timer);
   }

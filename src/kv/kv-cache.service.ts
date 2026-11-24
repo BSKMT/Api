@@ -25,17 +25,17 @@ export class KvCacheService {
   constructor(
     private readonly configService: ConfigService<EnvironmentConfig>,
   ) {
-    this.accountId = process.env.CF_ACCOUNT_ID ?? "";
-    this.publicNsId = process.env.CF_KV_NAMESPACE_ID_PUBLIC ?? "";
-    this.privateNsId = process.env.CF_KV_NAMESPACE_ID_PRIVATE ?? "";
-    this.apiToken = process.env.CF_KV_API_TOKEN ?? "";
+    this.accountId = (process.env.CF_ACCOUNT_ID ?? "").trim();
+    this.publicNsId = (process.env.CF_KV_NAMESPACE_ID_PUBLIC ?? "").trim();
+    this.privateNsId = (process.env.CF_KV_NAMESPACE_ID_PRIVATE ?? "").trim();
+    this.apiToken = (process.env.CF_KV_API_TOKEN ?? "").trim();
     this.enabled =
-      process.env.CF_KV_ENABLED === "true" &&
+      (process.env.CF_KV_ENABLED ?? "").trim().toLowerCase() === "true" &&
       Boolean(this.accountId && this.publicNsId && this.apiToken);
     this.baseUrl = `https://api.cloudflare.com/client/v4/accounts/${this.accountId}/storage/kv/namespaces`;
 
     this.breaker = new KvCircuitBreaker(5, 30000, this.logger);
-    this.hmac = new KvHmacHelper(process.env.BETTER_AUTH_SECRET ?? "");
+    this.hmac = new KvHmacHelper((process.env.BETTER_AUTH_SECRET ?? "").trim());
   }
 
   isAvailable(): boolean {
