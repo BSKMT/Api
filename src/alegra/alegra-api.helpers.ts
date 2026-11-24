@@ -16,6 +16,10 @@ import {
   sanitizeForLog,
 } from "../common/utils/log-redact.util";
 import { isAllowedAlegraPdfUrl, isValidAlegraId } from "./alegra.constants";
+import type {
+  AlegraDetailedRequestFn,
+  AlegraHttpMethod,
+} from "./alegra-http.client";
 import {
   discoverDefaultItemId,
   discoverDefaultBankAccountId,
@@ -31,7 +35,46 @@ export type AlegraRequestFn = <T>(
   body?: unknown,
 ) => Promise<T | null>;
 
+export interface CreateInvoiceDetailedResult {
+  data: CreatedInvoiceData | null;
+  errorCode: string | null;
+}
+
 const BASIC_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function parseAlegraErrorCode(errorText: string | null): number | null {
+  if (!errorText) return null;
+  try {
+    const parsed = JSON.parse(errorText) as { code?: unknown };
+    return typeof parsed.code === "number" && Number.isFinite(parsed.code)
+      ? parsed.code
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function classifyAlegraCreateInvoiceError(
+  status: number,
+  errorText: string | null,
+): string {
+  const providerCode = parseAlegraErrorCode(errorText);
+  if (status === 402 || providerCode === 900) {
+    return "ALEGRA_HTTP_402_PLAN_LIMIT";
+  }
+  if (status === 401 || status === 403) {
+    return "ALEGRA_HTTP_AUTH_ERROR";
+  }
+  if (status === 429) {
+    return "ALEGRA_HTTP_429_RATE_LIMIT";
+  }
+  if (status >= 400) {
+    return providerCode !== null
+      ? `ALEGRA_HTTP_${status}_CODE_${providerCode}`
+      : `ALEGRA_HTTP_${status}`;
+  }
+  return "Failed to create invoice";
+}
 
 function extractInvoiceNumber(
   numberTemplate?: AlegraInvoiceResponse["numberTemplate"],
@@ -44,14 +87,15 @@ function extractInvoiceNumber(
   return null;
 }
 
-export async function executeCreateInvoice(
+export async function executeCreateInvoiceDetailed(
   makeRequest: AlegraRequestFn,
+  makeDetailedRequest: AlegraDetailedRequestFn,
   configService: ConfigService<EnvironmentConfig>,
   kvCache: KvCacheService,
   context: AlegraBillingContext,
   contactId: string,
   logger: Logger,
-): Promise<CreatedInvoiceData | null> {
+): Promise<CreateInvoiceDetailedResult> {
   const [sellerId, itemId, numberTemplateId] = await Promise.all([
     discoverDefaultSellerId(configService, kvCache, makeRequest, logger),
     discoverDefaultItemId(configService, kvCache, makeRequest, logger),
@@ -67,7 +111,7 @@ export async function executeCreateInvoice(
     logger.warn(
       "ALEGRA_ITEM_ID not configured and could not be auto-discovered — cannot create invoice",
     );
-    return null;
+    return { data: null, errorCode: "Failed to create invoice: missing item" };
   }
 
   const payload = buildInvoicePayload(
@@ -77,19 +121,24 @@ export async function executeCreateInvoice(
     sellerId,
     numberTemplateId,
   );
-  const invoice = await makeRequest<AlegraInvoiceResponse>(
+  const res = await makeDetailedRequest<AlegraInvoiceResponse>(
     "POST",
     "/invoices",
     payload,
   );
 
-  if (!invoice?.id) {
-    logger.warn(
-      `Failed to create Alegra invoice for ref=${maskReference(context.transactionReference)}`,
+  if (!res.ok || !res.data?.id) {
+    const errorCode = classifyAlegraCreateInvoiceError(
+      res.status,
+      res.errorText,
     );
-    return null;
+    logger.warn(
+      `Failed to create Alegra invoice for ref=${maskReference(context.transactionReference)} (${errorCode})`,
+    );
+    return { data: null, errorCode };
   }
 
+  const invoice = res.data;
   const result: CreatedInvoiceData = {
     invoiceId: String(invoice.id),
     invoiceNumber: extractInvoiceNumber(invoice.numberTemplate),
@@ -100,7 +149,35 @@ export async function executeCreateInvoice(
   logger.log(
     `Alegra invoice created: ref=${maskReference(context.transactionReference)} invoiceId=${sanitizeForLog(result.invoiceId)} cufe=${result.cufe ? "yes" : "no"}`,
   );
-  return result;
+  return { data: result, errorCode: null };
+}
+
+export async function executeCreateInvoice(
+  makeRequest: AlegraRequestFn,
+  configService: ConfigService<EnvironmentConfig>,
+  kvCache: KvCacheService,
+  context: AlegraBillingContext,
+  contactId: string,
+  logger: Logger,
+): Promise<CreatedInvoiceData | null> {
+  const detailed = await executeCreateInvoiceDetailed(
+    makeRequest,
+    async <T>(method: AlegraHttpMethod, path: string, body?: unknown) => {
+      const data = await makeRequest<T>(method, path, body);
+      return {
+        ok: data !== null,
+        status: data !== null ? 200 : 0,
+        data,
+        errorText: null,
+      };
+    },
+    configService,
+    kvCache,
+    context,
+    contactId,
+    logger,
+  );
+  return detailed.data;
 }
 
 export async function executeCreatePayment(

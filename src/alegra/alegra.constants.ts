@@ -140,10 +140,17 @@ export function sanitizeAlegraErrorForUser(
 ): string | null {
   if (!errorMessage) return null;
   const lower = errorMessage.toLowerCase();
+  if (lower.includes("402") || lower.includes("plan_limit")) {
+    return "La emisión automática de factura electrónica está temporalmente pausada. Tu pago está confirmado y nuestro equipo emitirá tu factura a la brevedad.";
+  }
   if (lower.includes("contact")) {
     return "No fue posible validar los datos fiscales del titular para la factura electrónica. Verifica tu perfil e intenta nuevamente.";
   }
-  if (lower.includes("invoice") || lower.includes("dian")) {
+  if (
+    lower.includes("invoice") ||
+    lower.includes("dian") ||
+    lower.includes("alegra_http_")
+  ) {
     return "No fue posible emitir la factura electrónica ante la DIAN en este momento. Puedes reintentar desde este panel.";
   }
   return "Ocurrió un inconveniente temporal generando la factura electrónica. Puedes reintentar o contactar soporte.";

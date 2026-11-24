@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   BadRequestException,
   NotFoundException,
   ConflictException,
@@ -175,18 +176,25 @@ export async function retryInvoiceHelper(
     );
   }
 
-  const retried = await deps.alegraService.retryFailedInvoice(
+  const outcome = await deps.alegraService.retryFailedInvoiceDetailed(
     reference,
     transaction.purpose,
   );
 
-  if (!retried) {
+  if (outcome.status === "not_eligible") {
     throw new BadRequestException(
       "No hay una factura fallida para reintentar, o ya fue procesada exitosamente",
     );
   }
 
-  return { message: "Reintento de factura electrónica en proceso" };
+  if (outcome.status === "failed") {
+    throw new BadGatewayException(
+      sanitizeAlegraErrorForUser(outcome.errorMessage) ??
+        "No fue posible emitir la factura electrónica ante la DIAN en este momento.",
+    );
+  }
+
+  return { message: "Factura electrónica generada exitosamente" };
 }
 
 export async function getInvoicePdfUrlHelper(

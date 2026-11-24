@@ -29,12 +29,14 @@ import {
   discoverElectronicNumberTemplateId,
 } from "./alegra-invoice.helpers";
 import {
+  classifyAlegraCreateInvoiceError,
   executeEmailInvoice,
   executeGetInvoicePdfDetails,
 } from "./alegra-api.helpers";
 import {
   claimInvoiceProcessingLock,
   executeRetryFailedInvoice,
+  executeRetryFailedInvoiceDetailed,
   saveApprovedInvoice,
 } from "./alegra-payment.helpers";
 import { queryInvoicePdfUrlByTransaction } from "./alegra-query.helpers";
@@ -124,6 +126,21 @@ describe("Alegra integration security, DIAN 2.1 compliance and resilience", () =
       expect(
         sanitizeAlegraErrorForUser("Failed to create/find contact"),
       ).toContain("datos fiscales");
+      expect(
+        classifyAlegraCreateInvoiceError(
+          402,
+          JSON.stringify({
+            code: 900,
+            message: "Has llegado al límite de facturas en tu plan actual.",
+          }),
+        ),
+      ).toBe("ALEGRA_HTTP_402_PLAN_LIMIT");
+      const safeQuotaMsg = sanitizeAlegraErrorForUser(
+        "ALEGRA_HTTP_402_PLAN_LIMIT",
+      );
+      expect(safeQuotaMsg).toContain("temporalmente pausada");
+      expect(safeQuotaMsg).not.toContain("402");
+      expect(safeQuotaMsg).not.toContain("plan");
       expect(sanitizeAlegraErrorForUser(null)).toBeNull();
     });
   });
@@ -560,6 +577,37 @@ describe("Alegra integration security, DIAN 2.1 compliance and resilience", () =
         description: "Rodada Gratuita",
       });
       expect(findOneMock).not.toHaveBeenCalled();
+
+      const detailedFindOne = jest
+        .fn()
+        .mockResolvedValueOnce({
+          userId: "u1",
+          transactionReference: "SHOP-QUOTA-402",
+          purpose: "shop",
+          status: "FAILED",
+          alegraInvoiceId: "0",
+          amount: 1200,
+          description: "Pedido Cuota",
+        })
+        .mockResolvedValueOnce({
+          userId: "u1",
+          transactionReference: "SHOP-QUOTA-402",
+          purpose: "shop",
+          status: "FAILED",
+          alegraInvoiceId: "0",
+          errorMessage: "ALEGRA_HTTP_402_PLAN_LIMIT",
+        });
+      const detailedOutcome = await executeRetryFailedInvoiceDetailed(
+        { findOne: detailedFindOne } as unknown as Model<AlegraInvoiceDocument>,
+        jest.fn(() => Promise.resolve()),
+        "SHOP-QUOTA-402",
+        "shop",
+        logger,
+      );
+      expect(detailedOutcome).toEqual({
+        status: "failed",
+        errorMessage: "ALEGRA_HTTP_402_PLAN_LIMIT",
+      });
     });
   });
 

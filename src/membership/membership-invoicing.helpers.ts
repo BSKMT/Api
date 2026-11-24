@@ -1,7 +1,13 @@
-import { BadRequestException, NotFoundException, Logger } from "@nestjs/common";
+import {
+  BadGatewayException,
+  BadRequestException,
+  NotFoundException,
+  Logger,
+} from "@nestjs/common";
 import { Model } from "mongoose";
 import { MembershipTransactionDocument } from "./schemas/membership-transaction.schema";
 import { AlegraService } from "../alegra/alegra.service";
+import { sanitizeAlegraErrorForUser } from "../alegra/alegra.constants";
 import type { AlegraBillingContext } from "../alegra/alegra.interfaces";
 import { maskReference } from "../common/utils/log-redact.util";
 import { formatStoredMembershipDescription } from "./membership-formatting.helpers";
@@ -58,16 +64,23 @@ export async function retryMembershipInvoiceHelper(
     );
   }
 
-  const retried = await deps.alegraService.retryFailedInvoice(
+  const outcome = await deps.alegraService.retryFailedInvoiceDetailed(
     reference,
     "membership",
   );
 
-  if (!retried) {
+  if (outcome.status === "not_eligible") {
     throw new BadRequestException(
       "No hay una factura fallida para reintentar, o ya fue procesada exitosamente",
     );
   }
 
-  return { message: "Reintento de factura electrónica en proceso" };
+  if (outcome.status === "failed") {
+    throw new BadGatewayException(
+      sanitizeAlegraErrorForUser(outcome.errorMessage) ??
+        "No fue posible emitir la factura electrónica ante la DIAN en este momento.",
+    );
+  }
+
+  return { message: "Factura electrónica generada exitosamente" };
 }

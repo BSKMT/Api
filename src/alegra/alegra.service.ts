@@ -31,15 +31,19 @@ import {
 import { resolveOrEnsureContact } from "./alegra-contact.helpers";
 import {
   executeCreateInvoice,
+  executeCreateInvoiceDetailed,
   executeCreatePayment,
   executeEmailInvoice,
   executeGetInvoicePdfDetails,
   executeGetInvoicePdfUrl,
+  type CreateInvoiceDetailedResult,
 } from "./alegra-api.helpers";
 import {
   claimInvoiceProcessingLock,
   executeApprovedPaymentFlow,
   executeRetryFailedInvoice,
+  executeRetryFailedInvoiceDetailed,
+  type RetryFailedInvoiceOutcome,
 } from "./alegra-payment.helpers";
 import {
   queryInvoicesForUser,
@@ -126,6 +130,24 @@ export class AlegraService {
     );
   }
 
+  async createInvoiceDetailed(
+    context: AlegraBillingContext,
+    contactId: string,
+  ): Promise<CreateInvoiceDetailedResult> {
+    if (!this.isConfigured()) {
+      return { data: null, errorCode: "Alegra not configured" };
+    }
+    return executeCreateInvoiceDetailed(
+      (m, p, b) => this.makeRequest(m, p, b),
+      (m, p, b) => this.makeDetailedRequest(m, p, b),
+      this.configService,
+      this.kvCache,
+      context,
+      contactId,
+      this.logger,
+    );
+  }
+
   async createPayment(
     invoiceId: string,
     amount: number,
@@ -189,6 +211,8 @@ export class AlegraService {
       {
         ensureContactFn: (uid) => this.resolveContact(uid),
         createInvoiceFn: (ctx, cid) => this.createInvoice(ctx, cid),
+        createInvoiceDetailedFn: (ctx, cid) =>
+          this.createInvoiceDetailed(ctx, cid),
         createPaymentFn: (iid, amt, pm) => this.createPayment(iid, amt, pm),
         emailInvoiceFn: (iid, email) => this.emailInvoice(iid, email),
       },
@@ -243,6 +267,19 @@ export class AlegraService {
     purpose: string,
   ): Promise<boolean> {
     return executeRetryFailedInvoice(
+      this.invoiceModel,
+      (ctx) => this.processApprovedPayment(ctx),
+      transactionReference,
+      purpose,
+      this.logger,
+    );
+  }
+
+  async retryFailedInvoiceDetailed(
+    transactionReference: string,
+    purpose: string,
+  ): Promise<RetryFailedInvoiceOutcome> {
+    return executeRetryFailedInvoiceDetailed(
       this.invoiceModel,
       (ctx) => this.processApprovedPayment(ctx),
       transactionReference,

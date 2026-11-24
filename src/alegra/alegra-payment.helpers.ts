@@ -238,6 +238,10 @@ export interface ApprovedPaymentFlowOperations {
     context: AlegraBillingContext,
     contactId: string,
   ) => Promise<CreatedInvoiceData | null>;
+  createInvoiceDetailedFn?: (
+    context: AlegraBillingContext,
+    contactId: string,
+  ) => Promise<{ data: CreatedInvoiceData | null; errorCode: string | null }>;
   createPaymentFn: (
     invoiceId: string,
     amount: number,
@@ -249,6 +253,11 @@ export interface ApprovedPaymentFlowOperations {
   ) => Promise<boolean>;
 }
 
+export interface RetryFailedInvoiceOutcome {
+  status: "not_eligible" | "succeeded" | "failed";
+  errorMessage: string | null;
+}
+
 export async function executeApprovedPaymentFlow(
   context: AlegraBillingContext,
   ops: ApprovedPaymentFlowOperations,
@@ -256,8 +265,13 @@ export async function executeApprovedPaymentFlow(
   notificationsService: NotificationsService,
   logger: Logger,
 ): Promise<void> {
-  const { ensureContactFn, createInvoiceFn, createPaymentFn, emailInvoiceFn } =
-    ops;
+  const {
+    ensureContactFn,
+    createInvoiceFn,
+    createInvoiceDetailedFn,
+    createPaymentFn,
+    emailInvoiceFn,
+  } = ops;
   try {
     const contact = await ensureContactFn(context.userId);
     if (!contact?.contactId) {
@@ -271,13 +285,25 @@ export async function executeApprovedPaymentFlow(
       return;
     }
 
-    const invoiceData = await createInvoiceFn(context, contact.contactId);
+    let invoiceData: CreatedInvoiceData | null = null;
+    let createErrorCode: string | null = null;
+    if (createInvoiceDetailedFn) {
+      const detailed = await createInvoiceDetailedFn(
+        context,
+        contact.contactId,
+      );
+      invoiceData = detailed.data;
+      createErrorCode = detailed.errorCode;
+    } else {
+      invoiceData = await createInvoiceFn(context, contact.contactId);
+    }
+
     if (!invoiceData) {
       await recordFailedInvoice(
         invoiceModel,
         notificationsService,
         context,
-        "Failed to create invoice",
+        createErrorCode ?? "Failed to create invoice",
         logger,
       );
       return;
@@ -315,6 +341,55 @@ export async function executeApprovedPaymentFlow(
       logger,
     );
   }
+}
+
+export async function executeRetryFailedInvoiceDetailed(
+  invoiceModel: Model<AlegraInvoiceDocument>,
+  processPaymentFn: (context: AlegraBillingContext) => Promise<void>,
+  transactionReference: string,
+  purpose: string,
+  logger: Logger,
+): Promise<RetryFailedInvoiceOutcome> {
+  const existing = await invoiceModel.findOne({
+    transactionReference,
+    purpose,
+  });
+  if (existing?.status !== "FAILED" || existing.alegraInvoiceId !== "0") {
+    return { status: "not_eligible", errorMessage: null };
+  }
+
+  logger.log(
+    `Retrying failed Alegra invoice: ref=${maskReference(transactionReference)} purpose=${purpose}`,
+  );
+
+  const context: AlegraBillingContext = {
+    userId: existing.userId,
+    transactionReference,
+    purpose,
+    amount: existing.amount,
+    description: existing.description ?? `BSKMT — Ref: ${transactionReference}`,
+    paymentMethod: existing.paymentMethod ?? undefined,
+    items: existing.itemsSnapshot ?? undefined,
+  };
+
+  await processPaymentFn(context);
+
+  const refreshed = await invoiceModel.findOne({
+    transactionReference,
+    purpose,
+  });
+  if (
+    !refreshed ||
+    refreshed.status === "FAILED" ||
+    refreshed.alegraInvoiceId === "0"
+  ) {
+    return {
+      status: "failed",
+      errorMessage: refreshed?.errorMessage ?? "Failed to create invoice",
+    };
+  }
+
+  return { status: "succeeded", errorMessage: null };
 }
 
 export async function executeRetryFailedInvoice(
