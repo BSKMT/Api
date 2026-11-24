@@ -31,11 +31,11 @@ export interface BirdRealtimePublishResult {
   channels?: Record<string, unknown>;
 }
 
-/** Parametros para publicar un batch de hasta 10 eventos. */
+/** Parametros para publicar un batch de hasta 10 eventos (Bird SDK 0.147+). */
 export interface BirdRealtimeBatchParams {
   events: {
     event: string;
-    channels: string[];
+    channel: string;
     data: unknown;
     exclude_connection_id?: string;
   }[];
@@ -115,11 +115,15 @@ export interface BirdClientInstance {
     };
   };
   readonly webhooks: {
-    unwrap: (
-      body: Buffer | string,
-      headers: Record<string, string | string[] | undefined>,
-    ) => BirdWebhookEvent;
+    unwrap: (body: string, headers: Record<string, string>) => BirdWebhookEvent;
   };
+  readonly request?: <T = unknown>(req: {
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+    path: string;
+    query?: Record<string, string | number | boolean | undefined>;
+    body?: unknown;
+    headers?: Record<string, string>;
+  }) => Promise<T>;
   readonly contacts: {
     batch: (params: {
       contacts: Array<{
@@ -175,6 +179,10 @@ export interface BirdClientInstance {
       }>;
     }>;
     addContacts: (
+      audienceId: string,
+      params: { contact_ids: string[] },
+    ) => Promise<unknown>;
+    removeContacts?: (
       audienceId: string,
       params: { contact_ids: string[] },
     ) => Promise<unknown>;

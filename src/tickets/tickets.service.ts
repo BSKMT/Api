@@ -62,6 +62,7 @@ export class TicketsService {
         birdSmsService: this.birdSmsService,
         birdWhatsappService: this.birdWhatsappService,
         birdRealtimeService: this.birdRealtimeService,
+        usersService: this.usersService,
         logger: this.logger,
       },
       actor,
@@ -87,6 +88,7 @@ export class TicketsService {
           birdSmsService: this.birdSmsService,
           birdWhatsappService: this.birdWhatsappService,
           birdRealtimeService: this.birdRealtimeService,
+          usersService: this.usersService,
           logger: this.logger,
         },
         ticket,
@@ -94,6 +96,7 @@ export class TicketsService {
         actor.name,
         {
           isInternal,
+          sendEmail: dto.sendEmail,
           sendSms: dto.sendSms,
           sendWhatsapp: dto.sendWhatsapp,
         },

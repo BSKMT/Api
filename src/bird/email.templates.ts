@@ -28,6 +28,22 @@ function escapeHtml(str: string): string {
   );
 }
 
+function sanitizeHrefUrl(rawUrl: string): string {
+  const trimmed = rawUrl.trim();
+  if (/^https?:\/\//i.test(trimmed)) {
+    return escapeHtml(trimmed);
+  }
+  return "https://dash.bskmt.com";
+}
+
+function sanitizeQrDataUrl(rawUrl: string): string {
+  const trimmed = rawUrl.trim();
+  if (/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/i.test(trimmed)) {
+    return trimmed;
+  }
+  return "";
+}
+
 const SHELL = (title: string, body: string): string => `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -112,7 +128,7 @@ export function emailVerificationTemplate(data: {
   verificationUrl: string;
 }): string {
   const heading = HEADING(`Hola ${data.name}, verifica tu correo`);
-  const safeUrl = escapeHtml(data.verificationUrl);
+  const safeUrl = sanitizeHrefUrl(data.verificationUrl);
   return SHELL(
     "Verifica tu correo electronico",
     `${heading}
@@ -133,19 +149,19 @@ export function passwordResetTemplate(data: {
   resetUrl: string;
 }): string {
   const heading = HEADING(`Hola ${data.name}`);
-  const safeUrl = escapeHtml(data.resetUrl);
+  const safeUrl = sanitizeHrefUrl(data.resetUrl);
   return SHELL(
-    "Restablece tu contrasena",
+    "Restablece tu contraseña",
     `${heading}
-    ${PARAGRAPH("Has solicitado restablecer tu contrasena de acceso a BSK Motorcycle Team. Haz clic en el siguiente boton para establecer una nueva contrasena:")}
+    ${PARAGRAPH("Has solicitado restablecer tu contraseña de acceso a BSK Motorcycle Team. Haz clic en el siguiente botón para establecer una nueva contraseña:")}
     <p style="margin:24px 0;">
       <a href="${safeUrl}" style="display:inline-block;background-color:#dc2626;color:#ffffff;font-size:14px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;padding:12px 32px;border-radius:9999px;text-decoration:none;">
-        Restablecer contrasena
+        Restablecer contraseña
       </a>
     </p>
-    ${PARAGRAPH("Si no puedes ver el boton, copia y pega el siguiente enlace en tu navegador:")}
+    ${PARAGRAPH("Si no puedes ver el botón, copia y pega el siguiente enlace en tu navegador:")}
     <p style="margin:8px 0 0;font-size:13px;line-height:1.5;color:#64748b;word-break:break-all;">${safeUrl}</p>
-    ${PARAGRAPH("Este enlace expirara en 1 hora por razones de seguridad. Si no solicitaste este cambio, puedes ignorar este correo de forma segura.")}`,
+    ${PARAGRAPH("Este enlace expirará en 1 hora por razones de seguridad. Si no solicitaste este cambio, puedes ignorar este correo de forma segura.")}`,
   );
 }
 
@@ -169,20 +185,22 @@ export function ticketNotificationTemplate(data: {
   const safeLoc = escapeHtml(
     data.meetingPointText || data.locationText || "Punto oficial BSK",
   );
-  const safeUrl = escapeHtml(data.panelUrl);
+  const safeUrl = sanitizeHrefUrl(data.panelUrl);
+  const safeQr = sanitizeQrDataUrl(data.qrDataUrl);
   const typeLabel = data.type === "EVENT" ? "Evento" : "Curso";
 
-  const headingText = `¡Tu registro en ${safeTitle} está confirmado!`;
-  const headingHtml = HEADING(headingText);
-  const paragraphText = `Hola ${safeName}, tu cupo para el ${typeLabel.toLowerCase()} <strong>${safeTitle}</strong> ha sido confirmado exitosamente.`;
-  const paragraphHtml = PARAGRAPH(paragraphText);
+  const headingHtml = HEADING(`¡Tu registro en ${data.title} está confirmado!`);
+  const paragraphHtml = `<p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#334155;">Hola ${safeName}, tu cupo para el ${typeLabel.toLowerCase()} <strong>${safeTitle}</strong> ha sido confirmado exitosamente.</p>`;
   const timeSnippet = data.timeText ? ` · ${escapeHtml(data.timeText)}` : "";
   const coordinatorHtml = data.coordinatorName
     ? `<p style="margin:0;font-size:13px;color:#1e293b;"><strong>Coordinador:</strong> ${escapeHtml(data.coordinatorName)}</p>`
     : "";
+  const qrImgHtml = safeQr
+    ? `<img src="${safeQr}" width="180" height="180" alt="QR Asistencia" style="display:block;margin:0 auto 12px;" />`
+    : "";
 
   return SHELL(
-    `Confirmación de Registro y Ticket - ${safeTitle}`,
+    `Confirmación de Registro y Ticket - ${data.title}`,
     `${headingHtml}
     ${paragraphHtml}
     <div style="background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin:16px 0;">
@@ -192,7 +210,7 @@ export function ticketNotificationTemplate(data: {
     </div>
     <div style="background-color:#ffffff;border:2px dashed #cbd5e1;border-radius:16px;padding:20px;text-align:center;margin:20px 0;">
       <p style="margin:0 0 12px;color:#dc2626;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">PASE DIGITAL DE ASISTENCIA</p>
-      <img src="${data.qrDataUrl}" width="180" height="180" alt="QR Asistencia" style="display:block;margin:0 auto 12px;" />
+      ${qrImgHtml}
       <p style="margin:0;font-family:Courier,monospace;font-size:22px;font-weight:800;color:#0f172a;">${safeCode}</p>
       <p style="margin:4px 0 0;font-size:11px;color:#64748b;">Presenta este código al coordinador en campo</p>
     </div>

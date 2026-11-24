@@ -26,8 +26,9 @@ import {
 } from "./bird-contact-extraction.helpers";
 import {
   executeSyncContactHelper,
-  executeSyncAllUsersHelper,
+  executeSyncAllUsersBatchHelper,
 } from "./bird-contact-sync.helpers";
+import { formatBirdError } from "./bird-email.helpers";
 
 export { DEFAULT_BIRD_AUDIENCES };
 
@@ -91,7 +92,7 @@ export class BirdContactService {
         this.logger,
       );
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
+      const errMsg = formatBirdError(err);
       this.logger.warn(
         `[BirdContactService] Excepción al sincronizar contacto ${maskEmail(params.email)}: ${errMsg}`,
       );
@@ -161,10 +162,19 @@ export class BirdContactService {
   }
 
   async syncAllUsers(): Promise<SyncBatchResult> {
+    if (!this.birdService.isConfigured()) {
+      this.logger.debug(
+        "[BirdContactService] Bird no está configurado. Omitiendo sync masivo.",
+      );
+      return { total: 0, synced: 0, failed: 0, errors: [] };
+    }
     const users = await this.userModel.find({}).lean();
-    return executeSyncAllUsersHelper(
-      users,
-      (u) => this.syncUser(u as unknown as Record<string, unknown>),
+    const client = await this.birdService.getClient();
+    return executeSyncAllUsersBatchHelper(
+      client,
+      this.audiences,
+      users as unknown as Record<string, unknown>[],
+      (extId, cId) => this.persistBirdContactId(extId, cId),
       this.logger,
     );
   }
@@ -180,7 +190,7 @@ export class BirdContactService {
       return true;
     } catch (err) {
       this.logger.warn(
-        `[BirdContactService] No se pudo eliminar contacto ${contactId} en Bird: ${err instanceof Error ? err.message : String(err)}`,
+        `[BirdContactService] No se pudo eliminar contacto ${contactId} en Bird: ${formatBirdError(err)}`,
       );
       return false;
     }

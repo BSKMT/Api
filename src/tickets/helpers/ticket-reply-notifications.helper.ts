@@ -5,7 +5,22 @@ import { BirdWhatsappService } from "../../bird/bird-whatsapp.service";
 import { TicketDocument, TicketChannel } from "../schemas/ticket.schema";
 import { maskEmail, maskPhone } from "../../common/utils/log-redact.util";
 import { normalizePhoneNumberHelper } from "../../bird/bird-contact-extraction.helpers";
+import { isSyntheticInboundEmail } from "../../bird/bird-email.helpers";
 import { TicketNotificationContext } from "./ticket-creation-notifications.helper";
+
+const MAX_REALTIME_REPLY_LEN = 2000;
+
+async function resolveRealtimeMemberId(
+  userId: string,
+  usersService?: TicketNotificationContext["usersService"],
+): Promise<string | null> {
+  if (!usersService || typeof usersService.findById !== "function") {
+    return null;
+  }
+  const user = await usersService.findById(userId).catch(() => null);
+  const baId = (user as { betterAuthId?: unknown } | null)?.betterAuthId;
+  return typeof baId === "string" && baId.trim() ? baId.trim() : null;
+}
 
 async function dispatchReplyEmail(
   birdEmailService: BirdEmailService,
@@ -14,8 +29,15 @@ async function dispatchReplyEmail(
   agentName: string,
   logger: Logger,
 ): Promise<void> {
+  if (isSyntheticInboundEmail(ticket.customer.email)) {
+    logger.debug(
+      `Correo de respuesta omitido para ticket #${ticket.ticketNumber}: dirección sintética de canal entrante.`,
+    );
+    return;
+  }
+
   try {
-    const textBody = `Estimado(a) ${ticket.customer.name},\n\n${agentName} del equipo de servicio al cliente ha respondido a tu ticket #${ticket.ticketNumber}:\n\n"${replyContent}"\n\nPuedes dar seguimiento y responder desde tu panel de usuario en https://panel.bskmt.com/soporte o respondiendo a este mensaje.`;
+    const textBody = `Estimado(a) ${ticket.customer.name},\n\n${agentName} del equipo de servicio al cliente ha respondido a tu ticket #${ticket.ticketNumber}:\n\n"${replyContent}"\n\nPuedes dar seguimiento y responder desde tu panel de usuario en https://dash.bskmt.com/soporte o respondiendo a este mensaje.`;
 
     await birdEmailService.sendNotificationEmail({
       to: ticket.customer.email,
@@ -88,15 +110,23 @@ export async function sendTicketReplyNotifications(
   ticket: TicketDocument,
   replyContent: string,
   agentName: string,
-  opts?: { isInternal?: boolean; sendSms?: boolean; sendWhatsapp?: boolean },
+  opts?: {
+    isInternal?: boolean;
+    sendEmail?: boolean;
+    sendSms?: boolean;
+    sendWhatsapp?: boolean;
+  },
 ): Promise<void> {
   const {
     birdEmailService,
     birdSmsService,
     birdWhatsappService,
     birdRealtimeService,
+    usersService,
     logger,
   } = ctx;
+
+  const realtimeReplyPreview = replyContent.slice(0, MAX_REALTIME_REPLY_LEN);
 
   if (birdRealtimeService?.isRealtimeConfigured()) {
     void birdRealtimeService.publishToChannel(
@@ -108,7 +138,7 @@ export async function sendTicketReplyNotifications(
         isInternalNote: opts?.isInternal ?? false,
         reply: {
           senderName: agentName,
-          content: replyContent,
+          content: realtimeReplyPreview,
           createdAt: new Date(),
         },
       },
@@ -119,13 +149,16 @@ export async function sendTicketReplyNotifications(
     return;
   }
 
-  await dispatchReplyEmail(
-    birdEmailService,
-    ticket,
-    replyContent,
-    agentName,
-    logger,
-  );
+  const shouldSendEmail = opts?.sendEmail ?? true;
+  if (shouldSendEmail) {
+    await dispatchReplyEmail(
+      birdEmailService,
+      ticket,
+      replyContent,
+      agentName,
+      logger,
+    );
+  }
 
   const normalizedPhone = normalizePhoneNumberHelper(ticket.customer.phone);
   const shouldSendWhatsapp =
@@ -150,18 +183,24 @@ export async function sendTicketReplyNotifications(
   }
 
   if (ticket.customer.userId && birdRealtimeService?.isRealtimeConfigured()) {
-    void birdRealtimeService.publishToMember(
+    const memberId = await resolveRealtimeMemberId(
       ticket.customer.userId,
-      "support.ticket_replied",
-      {
-        ticketId: String(ticket._id),
-        ticketNumber: ticket.ticketNumber,
-        reply: {
-          senderName: agentName,
-          content: replyContent,
-          createdAt: new Date(),
-        },
-      },
+      usersService,
     );
+    if (memberId) {
+      void birdRealtimeService.publishToMember(
+        memberId,
+        "support.ticket_replied",
+        {
+          ticketId: String(ticket._id),
+          ticketNumber: ticket.ticketNumber,
+          reply: {
+            senderName: agentName,
+            content: realtimeReplyPreview,
+            createdAt: new Date(),
+          },
+        },
+      );
+    }
   }
 }

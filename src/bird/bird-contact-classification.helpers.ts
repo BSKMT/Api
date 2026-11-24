@@ -52,13 +52,17 @@ export function resolveTargetAudienceHelper(
   hasContractorInfo: boolean,
   isMember: boolean,
 ): { targetAudienceId: string; removeAudienceIds: string[] } {
+  const allManaged = [
+    audiences.usersId,
+    audiences.membersId,
+    audiences.employeesId,
+    audiences.adminsId,
+  ];
+
+  let targetAudienceId: string;
   if (role === UserRole.SUPERADMIN || role === UserRole.ADMIN) {
-    return {
-      targetAudienceId: audiences.adminsId,
-      removeAudienceIds: [audiences.usersId],
-    };
-  }
-  if (
+    targetAudienceId = audiences.adminsId;
+  } else if (
     hasContractorInfo ||
     Boolean(subrol) ||
     role === UserRole.GESTOR ||
@@ -66,20 +70,16 @@ export function resolveTargetAudienceHelper(
     role === UserRole.EVENT_MANAGER ||
     role === UserRole.MODERATOR
   ) {
-    return {
-      targetAudienceId: audiences.employeesId,
-      removeAudienceIds: [audiences.usersId],
-    };
+    targetAudienceId = audiences.employeesId;
+  } else if (isMember) {
+    targetAudienceId = audiences.membersId;
+  } else {
+    targetAudienceId = audiences.usersId;
   }
-  if (isMember) {
-    return {
-      targetAudienceId: audiences.membersId,
-      removeAudienceIds: [audiences.usersId],
-    };
-  }
+
   return {
-    targetAudienceId: audiences.usersId,
-    removeAudienceIds: [audiences.membersId],
+    targetAudienceId,
+    removeAudienceIds: allManaged.filter((id) => id !== targetAudienceId),
   };
 }
 

@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { BirdService } from "./bird.service";
 import { notificationWhatsappTemplate } from "./whatsapp.templates";
 import { maskPhone, sanitizeForLog } from "../common/utils/log-redact.util";
+import { formatBirdError } from "./bird-email.helpers";
 
 /**
  * BirdWhatsappService — Envio de mensajes WhatsApp vía Bird API.
@@ -28,9 +29,9 @@ export class BirdWhatsappService {
     this.defaultTemplateSlug = process.env.BIRD_WHATSAPP_TEMPLATE_SLUG ?? "";
   }
 
-  /** Patron BSUID (Business-Scoped User ID de Meta / WhatsApp) o ID de grupo/contacto Bird (M-09: excluye dígitos puros para evitar bypass de +57) */
+  /** Patron estricto BSUID (Meta/WhatsApp `CO.2041...`) o grupo Bird (`wag_...`) segun Bird SDK 0.147. */
   private static readonly BSUID_PATTERN =
-    /^[A-Z]{2}\.\d+$|^wag_[a-zA-Z0-9]+$|^(?=.*[a-zA-Z])[a-zA-Z0-9_.-]{4,80}$/;
+    /^[A-Z]{2}\.\d{6,30}$|^wag_[a-zA-Z0-9]{6,40}$/;
 
   /** Valida que un destinatario sea un teléfono E.164 (+57) o BSUID de Meta/WhatsApp. */
   isValidRecipient(recipient: string): boolean {
@@ -102,7 +103,7 @@ export class BirdWhatsappService {
       if (templateSlug) {
         // Envio con plantilla aprobada (entrega garantizada fuera de ventana de 24h)
         const sendParams: Record<string, unknown> = {
-          to: data.to,
+          to: normalizedTo,
           template: {
             slug: templateSlug,
             language: data.language ?? "es",
@@ -118,21 +119,24 @@ export class BirdWhatsappService {
           },
           tags: [{ name: "channel", value: "notification" }],
         };
-        // Para plantillas administradas por Bird (bird_*), no enviar 'from'.
-        // Para plantillas propias del workspace, enviar 'from' si esta configurado.
-        if (this.isSenderConfigured() && !templateSlug.startsWith("bird_")) {
+        // Bird SDK 0.147: omitir 'from' para plantillas bird_* y grupos wag_*
+        if (
+          this.isSenderConfigured() &&
+          !templateSlug.startsWith("bird_") &&
+          !normalizedTo.startsWith("wag_")
+        ) {
           sendParams["from"] = this.sender;
         }
 
         await client.whatsapp.send(sendParams as never);
         this.logger.log(
-          `WhatsApp (plantilla "${templateSlug}") enviado a ${maskPhone(data.to)}`,
+          `WhatsApp (plantilla "${templateSlug}") enviado a ${maskPhone(normalizedTo)}`,
         );
         return true;
       }
 
       // Envio como texto libre (requiere remitente y ventana de 24h abierta)
-      if (!this.isSenderConfigured()) {
+      if (!normalizedTo.startsWith("wag_") && !this.isSenderConfigured()) {
         this.logger.warn(
           "BIRD_WHATSAPP_SENDER no configurado o formato E.164 invalido " +
             "(debe ser +<country><number>, ej: +13124495648). " +
@@ -147,8 +151,8 @@ export class BirdWhatsappService {
       });
 
       await client.whatsapp.send({
-        to: data.to,
-        from: this.sender,
+        to: normalizedTo,
+        ...(normalizedTo.startsWith("wag_") ? {} : { from: this.sender }),
         text: {
           body,
           preview_url: false,
@@ -156,22 +160,22 @@ export class BirdWhatsappService {
         tags: [{ name: "channel", value: "notification" }],
       });
       this.logger.log(
-        `WhatsApp enviado a ${maskPhone(data.to)}: ${sanitizeForLog(body.slice(0, 40))}...`,
+        `WhatsApp enviado a ${maskPhone(normalizedTo)}: ${sanitizeForLog(body.slice(0, 40))}...`,
       );
       return true;
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
+      const errMsg = formatBirdError(err);
       if (
         errMsg.includes("WhatsAppServiceWindowClosed") ||
         errMsg.includes("422")
       ) {
         this.logger.warn(
-          `WhatsApp a ${maskPhone(data.to)} no entregado: ventana de 24 horas del usuario cerrada. ` +
+          `WhatsApp a ${maskPhone(normalizedTo)} no entregado: ventana de 24 horas del usuario cerrada. ` +
             "Para notificaciones proactivas fuera de la ventana de 24h, configure una plantilla aprobada (BIRD_WHATSAPP_TEMPLATE_SLUG).",
         );
       } else {
         this.logger.error(
-          `Error enviando WhatsApp a ${maskPhone(data.to)}: ${errMsg}`,
+          `Error enviando WhatsApp a ${maskPhone(normalizedTo)}: ${errMsg}`,
         );
       }
       return false;
@@ -199,7 +203,7 @@ export class BirdWhatsappService {
       return false;
     }
 
-    if (!this.isSenderConfigured()) {
+    if (!normalizedTo.startsWith("wag_") && !this.isSenderConfigured()) {
       this.logger.warn(
         "BIRD_WHATSAPP_SENDER no configurado o formato invalido para chat en vivo.",
       );
@@ -218,8 +222,8 @@ export class BirdWhatsappService {
         sanitized.length > 4096 ? sanitized.slice(0, 4093) + "..." : sanitized;
 
       await client.whatsapp.send({
-        to: data.to,
-        from: this.sender,
+        to: normalizedTo,
+        ...(normalizedTo.startsWith("wag_") ? {} : { from: this.sender }),
         text: {
           body,
           preview_url: false,
@@ -228,13 +232,13 @@ export class BirdWhatsappService {
       });
 
       this.logger.log(
-        `WhatsApp directo enviado a ${maskPhone(data.to)} (${body.length} caracteres)`,
+        `WhatsApp directo enviado a ${maskPhone(normalizedTo)} (${body.length} caracteres)`,
       );
       return true;
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
+      const errMsg = formatBirdError(err);
       this.logger.error(
-        `Error enviando WhatsApp directo a ${maskPhone(data.to)}: ${errMsg}`,
+        `Error enviando WhatsApp directo a ${maskPhone(normalizedTo)}: ${errMsg}`,
       );
       return false;
     }

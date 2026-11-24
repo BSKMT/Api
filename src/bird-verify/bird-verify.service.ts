@@ -9,6 +9,44 @@ import type {
 } from "../bird/bird.service";
 
 const E164_PATTERN = /^\+[1-9]\d{5,14}$/;
+const EMAIL_PATTERN = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
+const OTP_CODE_PATTERN = /^\d{4,10}$/;
+const ALLOWED_VERIFY_CHANNELS = new Set(["whatsapp", "sms", "email", "voice"]);
+
+function normalizeVerifyEmail(email: string): string {
+  const normalized = (email ?? "").trim().toLowerCase();
+  if (
+    !normalized ||
+    normalized.length > 254 ||
+    /[\r\n\0]/.test(normalized) ||
+    !EMAIL_PATTERN.test(normalized)
+  ) {
+    throw new BadRequestException(
+      "Correo electrónico inválido para verificación.",
+    );
+  }
+  return normalized;
+}
+
+function normalizeOtpCode(code: string): string {
+  const normalized = (code ?? "").trim();
+  if (!OTP_CODE_PATTERN.test(normalized)) {
+    throw new BadRequestException(
+      "El código de verificación debe ser numérico.",
+    );
+  }
+  return normalized;
+}
+
+function sanitizeVerifyChannels(channels?: string[]): string[] {
+  if (!Array.isArray(channels) || channels.length === 0) {
+    return ["whatsapp"];
+  }
+  const filtered = channels
+    .map((c) => c.trim().toLowerCase())
+    .filter((c) => ALLOWED_VERIFY_CHANNELS.has(c));
+  return filtered.length > 0 ? filtered : ["whatsapp"];
+}
 
 function isAllowedVerifyPhonePrefix(phone: string): boolean {
   const raw = process.env.ALLOWED_SMS_PREFIXES ?? "+57";
@@ -80,9 +118,10 @@ export class BirdVerifyService {
     email: string,
     metadata?: Record<string, unknown>,
   ): Promise<BirdCreateResult> {
+    const normalizedEmail = normalizeVerifyEmail(email);
     const client = await this.birdService.getClient();
     const params: BirdVerifyCreateParams = {
-      to: { email },
+      to: { email: normalizedEmail },
       ...(metadata ? { metadata } : {}),
     };
     const response: BirdVerificationResponse =
@@ -99,10 +138,12 @@ export class BirdVerifyService {
     email: string,
     code: string,
   ): Promise<BirdCheckResult> {
+    const normalizedEmail = normalizeVerifyEmail(email);
+    const normalizedCode = normalizeOtpCode(code);
     const client = await this.birdService.getClient();
     const params: BirdVerifyCheckParams = {
-      to: { email },
-      code,
+      to: { email: normalizedEmail },
+      code: normalizedCode,
     };
     const result: BirdVerificationCheckResult =
       await client.verify.verifications.check(params);
@@ -129,18 +170,26 @@ export class BirdVerifyService {
     metadata?: Record<string, unknown>,
     options?: { channels?: string[]; language?: string; code_length?: number },
   ): Promise<BirdCreateResult> {
-    if (!isAllowedVerifyPhonePrefix(phone)) {
+    const normalizedPhone = (phone ?? "").trim();
+    if (!isAllowedVerifyPhonePrefix(normalizedPhone)) {
       throw new BadRequestException(
         "Solo se permiten numeros telefonicos en formato E.164 de paises autorizados (+57).",
       );
     }
+    const safeCodeLength =
+      typeof options?.code_length === "number" &&
+      Number.isInteger(options.code_length) &&
+      options.code_length >= 4 &&
+      options.code_length <= 8
+        ? options.code_length
+        : undefined;
     const client = await this.birdService.getClient();
     const params: BirdVerifyCreateParams = {
-      to: { phone_number: phone },
+      to: { phone_number: normalizedPhone },
       options: {
-        channels: options?.channels ?? ["whatsapp"],
+        channels: sanitizeVerifyChannels(options?.channels),
         language: options?.language ?? "es",
-        ...(options?.code_length ? { code_length: options.code_length } : {}),
+        ...(safeCodeLength ? { code_length: safeCodeLength } : {}),
       },
       ...(metadata ? { metadata } : {}),
     };
@@ -157,10 +206,17 @@ export class BirdVerifyService {
     phone: string,
     code: string,
   ): Promise<BirdCheckResult> {
+    const normalizedPhone = (phone ?? "").trim();
+    if (!E164_PATTERN.test(normalizedPhone)) {
+      throw new BadRequestException(
+        "Número telefónico en formato E.164 inválido.",
+      );
+    }
+    const normalizedCode = normalizeOtpCode(code);
     const client = await this.birdService.getClient();
     const params: BirdVerifyCheckParams = {
-      to: { phone_number: phone },
-      code,
+      to: { phone_number: normalizedPhone },
+      code: normalizedCode,
     };
     const result: BirdVerificationCheckResult =
       await client.verify.verifications.check(params);

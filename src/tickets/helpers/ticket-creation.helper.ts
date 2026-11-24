@@ -19,6 +19,7 @@ import { BirdContactService } from "../../bird/bird-contact.service";
 import { BirdSmsService } from "../../bird/bird-sms.service";
 import { BirdWhatsappService } from "../../bird/bird-whatsapp.service";
 import { BirdRealtimeService } from "../../bird/bird-realtime.service";
+import { UsersService } from "../../users/users.service";
 
 export interface TicketCreationContext {
   ticketModel: Model<TicketDocument>;
@@ -27,6 +28,7 @@ export interface TicketCreationContext {
   birdSmsService: BirdSmsService;
   birdWhatsappService: BirdWhatsappService;
   birdRealtimeService: BirdRealtimeService;
+  usersService?: UsersService;
   logger: Logger;
 }
 
@@ -60,6 +62,7 @@ export async function executeCreateTicket(
       userId: customerUserId,
     },
     ctx.logger,
+    ctx.usersService,
   );
 
   const initialMessage = {

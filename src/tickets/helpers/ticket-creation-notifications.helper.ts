@@ -10,12 +10,15 @@ import {
 } from "../schemas/ticket.schema";
 import { maskEmail, maskPhone } from "../../common/utils/log-redact.util";
 import { normalizePhoneNumberHelper } from "../../bird/bird-contact-extraction.helpers";
+import { isSyntheticInboundEmail } from "../../bird/bird-email.helpers";
+import type { UsersService } from "../../users/users.service";
 
 export interface TicketNotificationContext {
   birdEmailService: BirdEmailService;
   birdSmsService?: BirdSmsService;
   birdWhatsappService?: BirdWhatsappService;
   birdRealtimeService?: BirdRealtimeService;
+  usersService?: UsersService;
   logger: Logger;
 }
 
@@ -24,10 +27,17 @@ async function dispatchCreationEmail(
   ticket: TicketDocument,
   logger: Logger,
 ): Promise<void> {
+  if (isSyntheticInboundEmail(ticket.customer.email)) {
+    logger.debug(
+      `Correo de confirmación omitido para ticket #${ticket.ticketNumber}: dirección sintética de canal entrante.`,
+    );
+    return;
+  }
+
   const isUrgent = ticket.priority === TicketPriority.URGENTE;
   const slaHours = isUrgent ? "2 horas" : "24 a 48 horas";
   try {
-    const emailBody = `Hola ${ticket.customer.name},\n\nHemos recibido tu solicitud de soporte #${ticket.ticketNumber} con asunto: "${ticket.subject}".\n\nNuestro equipo de Concierge y Atención al Cliente se encuentra procesándola. Tiempo estimado de primera respuesta: <${slaHours}.\n\nPuedes responder a este correo, escribirnos por WhatsApp (+57 316 958 8444) o ingresar a tu panel en https://panel.bskmt.com/soporte para ver el estado de tu trámite.`;
+    const emailBody = `Hola ${ticket.customer.name},\n\nHemos recibido tu solicitud de soporte #${ticket.ticketNumber} con asunto: "${ticket.subject}".\n\nNuestro equipo de Concierge y Atención al Cliente se encuentra procesándola. Tiempo estimado de primera respuesta: <${slaHours}.\n\nPuedes responder a este correo, escribirnos por WhatsApp (+57 316 958 8444) o ingresar a tu panel en https://dash.bskmt.com/soporte para ver el estado de tu trámite.`;
 
     await birdEmailService.sendNotificationEmail({
       to: ticket.customer.email,

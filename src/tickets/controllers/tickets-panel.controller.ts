@@ -122,6 +122,7 @@ export class TicketsPanelController {
       isAgent: false,
     };
     dto.isInternalNote = false;
+    dto.sendEmail = false;
     dto.sendSms = false;
     dto.sendWhatsapp = false;
     await this.ticketsService.replyTicket(id, dto, actor);

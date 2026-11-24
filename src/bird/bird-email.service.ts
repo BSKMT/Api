@@ -9,6 +9,9 @@ import {
   buildTicketAttachments,
   buildTicketSubject,
   getDefaultEmailSender,
+  isValidEmailRecipient,
+  isSyntheticInboundEmail,
+  sanitizeEmailSubject,
 } from "./bird-email.helpers";
 
 @Injectable()
@@ -20,6 +23,23 @@ export class BirdEmailService {
 
   private getFrom(): { email: string; name?: string } {
     return { email: this.sender.fromEmail, name: this.sender.fromName };
+  }
+
+  private normalizeDeliverableRecipient(
+    to: string,
+    context: string,
+  ): string | null {
+    if (!isValidEmailRecipient(to)) {
+      this.logger.warn(`Correo invalido omitido (${context})`);
+      return null;
+    }
+    if (isSyntheticInboundEmail(to)) {
+      this.logger.debug(
+        `Correo sintetico @inbound.bskmt.com omitido (${context}) para proteger reputacion de dominio`,
+      );
+      return null;
+    }
+    return to.trim().toLowerCase();
   }
 
   async sendContactMessages(data: {
@@ -47,10 +67,17 @@ export class BirdEmailService {
         "contacto",
       );
 
+      const safeReplyTo =
+        isValidEmailRecipient(data.email) &&
+        !isSyntheticInboundEmail(data.email)
+          ? [data.email.trim().toLowerCase()]
+          : undefined;
+
       await client.email.send({
         from: this.getFrom(),
         to: [this.sender.teamEmail],
-        subject: `[Contacto web] ${data.subject}`,
+        ...(safeReplyTo ? { reply_to: safeReplyTo } : {}),
+        subject: sanitizeEmailSubject(`[Contacto web] ${data.subject}`),
         html: rendered.html,
         ...(rendered.text ? { text: rendered.text } : {}),
         category: "transactional",
@@ -74,6 +101,12 @@ export class BirdEmailService {
       return false;
     }
 
+    const recipient = this.normalizeDeliverableRecipient(
+      data.to,
+      "notificacion",
+    );
+    if (!recipient) return false;
+
     try {
       const client = await this.birdService.getClient();
       const rendered = await renderWithFallback(
@@ -85,8 +118,8 @@ export class BirdEmailService {
 
       await client.email.send({
         from: this.getFrom(),
-        to: [data.to],
-        subject: data.title,
+        to: [recipient],
+        subject: sanitizeEmailSubject(data.title),
         html: rendered.html,
         ...(rendered.text ? { text: rendered.text } : {}),
         category: "transactional",
@@ -110,6 +143,12 @@ export class BirdEmailService {
       return false;
     }
 
+    const recipient = this.normalizeDeliverableRecipient(
+      data.to,
+      "verificacion",
+    );
+    if (!recipient) return false;
+
     try {
       const client = await this.birdService.getClient();
       const rendered = await renderWithFallback(
@@ -121,14 +160,14 @@ export class BirdEmailService {
 
       await client.email.send({
         from: this.getFrom(),
-        to: [data.to],
+        to: [recipient],
         subject: "Verifica tu correo — BSK Motorcycle Team",
         html: rendered.html,
         ...(rendered.text ? { text: rendered.text } : {}),
         category: "transactional",
       });
       this.logger.log(
-        `Correo de verificacion enviado a ${maskEmail(data.to)} via Bird`,
+        `Correo de verificacion enviado a ${maskEmail(recipient)} via Bird`,
       );
       return true;
     } catch (err: unknown) {
@@ -149,6 +188,9 @@ export class BirdEmailService {
       return false;
     }
 
+    const recipient = this.normalizeDeliverableRecipient(data.to, "reset pass");
+    if (!recipient) return false;
+
     try {
       const client = await this.birdService.getClient();
       const rendered = await renderWithFallback(
@@ -160,14 +202,14 @@ export class BirdEmailService {
 
       await client.email.send({
         from: this.getFrom(),
-        to: [data.to],
-        subject: "Restablece tu contrasena — BSK Motorcycle Team",
+        to: [recipient],
+        subject: "Restablece tu contraseña — BSK Motorcycle Team",
         html: rendered.html,
         ...(rendered.text ? { text: rendered.text } : {}),
         category: "transactional",
       });
       this.logger.log(
-        `Correo de reset enviado a ${maskEmail(data.to)} via Bird`,
+        `Correo de reset enviado a ${maskEmail(recipient)} via Bird`,
       );
       return true;
     } catch (err: unknown) {
@@ -201,6 +243,9 @@ export class BirdEmailService {
       return false;
     }
 
+    const recipient = this.normalizeDeliverableRecipient(data.to, "ticket");
+    if (!recipient) return false;
+
     try {
       const client = await this.birdService.getClient();
       const rendered = await renderWithFallback(
@@ -214,11 +259,13 @@ export class BirdEmailService {
         data.checkInCode,
         data.pdfBuffer,
       );
-      const subject = buildTicketSubject(data.type, data.title);
+      const subject = sanitizeEmailSubject(
+        buildTicketSubject(data.type, data.title),
+      );
 
       await client.email.send({
         from: this.getFrom(),
-        to: [data.to],
+        to: [recipient],
         subject,
         html: rendered.html,
         ...(rendered.text ? { text: rendered.text } : {}),
@@ -227,12 +274,12 @@ export class BirdEmailService {
       });
 
       this.logger.log(
-        `Ticket de ${data.type} (${data.checkInCode}) enviado exitosamente a ${maskEmail(data.to)} via Bird`,
+        `Ticket de ${data.type} (${data.checkInCode}) enviado exitosamente a ${maskEmail(recipient)} via Bird`,
       );
       return true;
     } catch (err: unknown) {
       this.logger.error(
-        `Error enviando correo de ticket via Bird a ${maskEmail(data.to)}: ${formatBirdError(err)}`,
+        `Error enviando correo de ticket via Bird a ${maskEmail(recipient)}: ${formatBirdError(err)}`,
       );
       return false;
     }

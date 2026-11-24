@@ -4,6 +4,34 @@ import type { TicketsService } from "../tickets/tickets.service";
 import { TicketChannel } from "../tickets/schemas/ticket.schema";
 import { maskEmail, maskPhone } from "../common/utils/log-redact.util";
 
+const NON_INBOUND_EVENT_SEGMENTS = [
+  "sent",
+  "delivered",
+  "read",
+  "failed",
+  "bounced",
+  "complained",
+  "opened",
+  "clicked",
+  "rejected",
+  "accepted",
+  "deferred",
+  "unsubscribed",
+  "expired",
+  "undelivered",
+  "canceled",
+  "processed",
+  "scheduled",
+  "suppression",
+];
+
+const OUTBOUND_DIRECTIONS = new Set(["outbound", "sent", "outgoing"]);
+const INBOUND_DIRECTIONS = new Set(["inbound", "received"]);
+
+export type InboundEmailBodyFetcher = (
+  inboundMessageId: string,
+) => Promise<string | null>;
+
 function getNestedProperty(obj: unknown, path: string): string | undefined {
   if (!obj || typeof obj !== "object") return undefined;
   const parts = path.split(".");
@@ -24,6 +52,76 @@ function getNestedProperty(obj: unknown, path: string): string | undefined {
   return undefined;
 }
 
+function isOutboundOrStatusEvent(
+  eventName: string,
+  direction: string,
+): boolean {
+  if (OUTBOUND_DIRECTIONS.has(direction)) return true;
+  return NON_INBOUND_EVENT_SEGMENTS.some((seg) => eventName.includes(seg));
+}
+
+function detectInboundChannel(
+  eventName: string,
+  entity: Record<string, unknown>,
+): TicketChannel | null {
+  if (
+    eventName.includes("whatsapp") ||
+    entity["channel"] === "whatsapp" ||
+    entity["platform"] === "whatsapp" ||
+    Boolean(entity["whatsapp_id"]) ||
+    Boolean(entity["bsuid"]) ||
+    Boolean(getNestedProperty(entity, "from.bsuid"))
+  ) {
+    return TicketChannel.WHATSAPP;
+  }
+  if (
+    eventName.includes("sms") ||
+    entity["channel"] === "sms" ||
+    Boolean(entity["sms_id"])
+  ) {
+    return TicketChannel.SMS;
+  }
+  if (
+    eventName.includes("email") ||
+    entity["channel"] === "email" ||
+    Boolean(entity["inbound_message_id"])
+  ) {
+    return TicketChannel.EMAIL;
+  }
+  return null;
+}
+
+function extractRecipientTo(entity: Record<string, unknown>): string {
+  const rawTo = entity["to"];
+  if (Array.isArray(rawTo)) {
+    const first = rawTo.find(
+      (item): item is string => typeof item === "string" && item.trim() !== "",
+    );
+    if (first) return first.trim();
+  }
+  return (
+    getNestedProperty(entity, "to.phone_number") ||
+    getNestedProperty(entity, "to.phoneNumber") ||
+    getNestedProperty(entity, "to.email") ||
+    (typeof rawTo === "string" ? rawTo : "") ||
+    getNestedProperty(entity, "recipient") ||
+    ""
+  );
+}
+
+function extractInboundMessageId(
+  entity: Record<string, unknown>,
+): string | undefined {
+  return (
+    getNestedProperty(entity, "whatsapp_id") ||
+    getNestedProperty(entity, "sms_id") ||
+    getNestedProperty(entity, "inbound_message_id") ||
+    getNestedProperty(entity, "id") ||
+    getNestedProperty(entity, "messageId") ||
+    getNestedProperty(entity, "message_id")
+  );
+}
+
 export function extractInboundMessageFromWebhook(event: BirdWebhookEvent): {
   channel: TicketChannel;
   from: string;
@@ -31,37 +129,31 @@ export function extractInboundMessageFromWebhook(event: BirdWebhookEvent): {
   text: string;
   senderName?: string;
   messageId?: string;
+  inboundEmailId?: string;
 } | null {
   const eventName = (event.type || event.event || "").toLowerCase();
   const entity = event.data || event.entity || {};
-
-  let channel: TicketChannel | null = null;
-  if (
-    eventName.includes("whatsapp") ||
-    eventName.includes("message.created") ||
-    entity["channel"] === "whatsapp" ||
-    entity["platform"] === "whatsapp" ||
-    Boolean(entity["bsuid"]) ||
-    Boolean(getNestedProperty(entity, "from.bsuid"))
-  ) {
-    channel = TicketChannel.WHATSAPP;
-  } else if (eventName.includes("sms") || entity["channel"] === "sms") {
-    channel = TicketChannel.SMS;
-  } else if (eventName.includes("email") || entity["channel"] === "email") {
-    channel = TicketChannel.EMAIL;
-  }
-
-  const direction =
+  const direction = (
     (entity["direction"] as string | undefined) ||
     (entity["status"] as string | undefined) ||
-    "";
+    ""
+  ).toLowerCase();
+
+  if (isOutboundOrStatusEvent(eventName, direction)) {
+    return null;
+  }
+
   const isInbound =
-    direction.toLowerCase() === "received" ||
-    direction.toLowerCase() === "inbound" ||
+    INBOUND_DIRECTIONS.has(direction) ||
     eventName.includes("received") ||
     eventName.includes("inbound");
 
-  if (!isInbound && !eventName.includes("message")) {
+  if (!isInbound) {
+    return null;
+  }
+
+  const channel = detectInboundChannel(eventName, entity);
+  if (!channel) {
     return null;
   }
 
@@ -79,13 +171,8 @@ export function extractInboundMessageFromWebhook(event: BirdWebhookEvent): {
     getNestedProperty(entity, "contact.phone_number") ||
     "";
 
-  const to =
-    getNestedProperty(entity, "to.phone_number") ||
-    getNestedProperty(entity, "to.phoneNumber") ||
-    getNestedProperty(entity, "to.email") ||
-    (typeof entity["to"] === "string" ? entity["to"] : "") ||
-    getNestedProperty(entity, "recipient") ||
-    "";
+  const to = extractRecipientTo(entity);
+  const inboundEmailId = getNestedProperty(entity, "inbound_message_id");
 
   const text =
     getNestedProperty(entity, "text.body") ||
@@ -97,10 +184,13 @@ export function extractInboundMessageFromWebhook(event: BirdWebhookEvent): {
     getNestedProperty(entity, "interactive_reply.title") ||
     getNestedProperty(entity, "interactive.body_text") ||
     getNestedProperty(entity, "image.caption") ||
+    getNestedProperty(entity, "video.caption") ||
     getNestedProperty(entity, "document.caption") ||
-    "";
+    (channel === TicketChannel.EMAIL
+      ? getNestedProperty(entity, "subject") || ""
+      : "");
 
-  if (!from || !text) {
+  if (!from || (!text && !inboundEmailId)) {
     return null;
   }
 
@@ -112,18 +202,16 @@ export function extractInboundMessageFromWebhook(event: BirdWebhookEvent): {
     getNestedProperty(entity, "senderName") ||
     undefined;
 
-  const messageId =
-    (entity["id"] as string | undefined) ||
-    (entity["messageId"] as string | undefined) ||
-    undefined;
+  const messageId = extractInboundMessageId(entity);
 
   return {
-    channel: channel || TicketChannel.WHATSAPP,
-    from,
-    to,
-    text,
+    channel,
+    from: from.trim(),
+    to: to.trim(),
+    text: text.trim(),
     senderName,
     messageId,
+    inboundEmailId,
   };
 }
 
@@ -131,6 +219,7 @@ export async function handleWebhookInboundMessage(
   event: BirdWebhookEvent,
   ticketsService: TicketsService | undefined,
   logger: Logger,
+  fetchEmailBody?: InboundEmailBodyFetcher,
 ): Promise<void> {
   if (!ticketsService) {
     logger.debug(
@@ -148,18 +237,36 @@ export async function handleWebhookInboundMessage(
       return;
     }
 
+    let resolvedText = extracted.text;
+    if (
+      extracted.channel === TicketChannel.EMAIL &&
+      extracted.inboundEmailId &&
+      fetchEmailBody
+    ) {
+      const fetchedBody = await fetchEmailBody(extracted.inboundEmailId);
+      if (fetchedBody) {
+        resolvedText = resolvedText
+          ? `${resolvedText}\n\n${fetchedBody}`
+          : fetchedBody;
+      }
+    }
+
+    if (!resolvedText) {
+      return;
+    }
+
     const maskedSender = extracted.from.includes("@")
       ? maskEmail(extracted.from)
       : maskPhone(extracted.from);
     logger.log(
-      `Mensaje entrante detectado vía Webhook Bird (${extracted.channel}) de ${maskedSender} (len=${extracted.text.length})`,
+      `Mensaje entrante detectado vía Webhook Bird (${extracted.channel}) de ${maskedSender} (len=${resolvedText.length})`,
     );
 
     await ticketsService.handleInboundMessage({
       channel: extracted.channel,
       from: extracted.from,
       to: extracted.to,
-      text: extracted.text,
+      text: resolvedText,
       senderName: extracted.senderName,
       messageId: extracted.messageId,
     });
@@ -175,6 +282,12 @@ export async function processBirdWebhookEvent(
   logger: Logger,
   event: BirdWebhookEvent,
   ticketsService?: TicketsService,
+  fetchEmailBody?: InboundEmailBodyFetcher,
 ): Promise<void> {
-  return handleWebhookInboundMessage(event, ticketsService, logger);
+  return handleWebhookInboundMessage(
+    event,
+    ticketsService,
+    logger,
+    fetchEmailBody,
+  );
 }

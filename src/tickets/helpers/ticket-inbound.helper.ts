@@ -48,6 +48,18 @@ export async function processInboundMessage(
     `handleInboundMessage: canal=${channel}, remitente=${maskedFrom}, len=${text.length}`,
   );
 
+  if (messageId) {
+    const existingDuplicate = await ctx.ticketModel.findOne({
+      "messages.messageId": messageId,
+    });
+    if (existingDuplicate) {
+      ctx.logger.debug(
+        `handleInboundMessage: mensaje duplicado omitido (messageId=${messageId})`,
+      );
+      return existingDuplicate;
+    }
+  }
+
   const { customerName, customerEmail, customerPhone, userId } =
     await resolveInboundCustomer(
       { channel, from, senderName },
@@ -108,7 +120,7 @@ export async function processInboundMessage(
           ticketNumber: saved.ticketNumber,
           channel,
           from,
-          text,
+          text: text.slice(0, 2000),
           customer: saved.customer,
         },
       );

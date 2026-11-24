@@ -1,5 +1,37 @@
 import { Logger } from "@nestjs/common";
 
+const SIMPLE_EMAIL_PATTERN = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
+const SYNTHETIC_INBOUND_DOMAIN = "@inbound.bskmt.com";
+
+export function redactBirdSecrets(text: string): string {
+  return text
+    .replace(/b[km]_(us1|eu1)_[A-Za-z0-9._-]+/g, "b*_***_<REDACTED>")
+    .replace(/whsec_[A-Za-z0-9+/=_-]+/g, "whsec_<REDACTED>");
+}
+
+export function isValidEmailRecipient(email?: string | null): boolean {
+  if (!email || typeof email !== "string") return false;
+  const trimmed = email.trim();
+  if (!trimmed || trimmed.length > 254 || /[\r\n\0]/.test(trimmed)) {
+    return false;
+  }
+  return SIMPLE_EMAIL_PATTERN.test(trimmed);
+}
+
+export function isSyntheticInboundEmail(email?: string | null): boolean {
+  if (!email || typeof email !== "string") return false;
+  return email.trim().toLowerCase().endsWith(SYNTHETIC_INBOUND_DOMAIN);
+}
+
+export function sanitizeEmailSubject(subject: string, maxLen = 200): string {
+  const cleaned = subject
+    .replace(/[\r\n\t\0]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (cleaned.length <= maxLen) return cleaned;
+  return `${cleaned.slice(0, maxLen - 3)}...`;
+}
+
 export function formatBirdError(err: unknown): string {
   if (err instanceof Error) {
     const parts: string[] = [err.message];
@@ -18,9 +50,9 @@ export function formatBirdError(err: unknown): string {
         // Ignorar cuerpo no serializable
       }
     }
-    return parts.join(" ");
+    return redactBirdSecrets(parts.join(" "));
   }
-  return String(err);
+  return redactBirdSecrets(String(err));
 }
 
 export async function renderWithFallback(

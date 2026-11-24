@@ -190,5 +190,83 @@ describe("BirdContactService", () => {
       expect(result.success).toBe(false);
       expect(result.error).toContain("Network timeout");
     });
+
+    it("debe omitir correos sintéticos @inbound.bskmt.com para proteger la reputación", async () => {
+      const result = await service.syncContact({
+        email: "573001234567@inbound.bskmt.com",
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("sintético");
+    });
+
+    it("debe remover audiencias obsoletas (incluyendo admins/empleados) al ejecutar syncUser", async () => {
+      const mockClient = (await mockBirdService.getClient()) as {
+        audiences: { removeContact: jest.Mock };
+      };
+      const userDoc = {
+        _id: "507f1f77bcf86cd799439011",
+        email: "revoked-admin@bskmt.com",
+        role: UserRole.USER,
+        membershipExpired: true,
+      };
+
+      const res = await service.syncUser(userDoc);
+
+      expect(res.success).toBe(true);
+      expect(mockClient.audiences.removeContact).toHaveBeenCalledWith(
+        DEFAULT_BIRD_AUDIENCES.ADMINS,
+        "con_test123",
+      );
+      expect(mockClient.audiences.removeContact).toHaveBeenCalledWith(
+        DEFAULT_BIRD_AUDIENCES.EMPLOYEES,
+        "con_test123",
+      );
+      expect(mockClient.audiences.removeContact).toHaveBeenCalledWith(
+        DEFAULT_BIRD_AUDIENCES.MEMBERS,
+        "con_test123",
+      );
+    });
+
+    it("debe agrupar múltiples usuarios por audiencia en una sola llamada batch en syncAllUsers", async () => {
+      const mockClient = {
+        contacts: {
+          batch: jest.fn().mockResolvedValue({
+            data: [
+              { contact_id: "con_1", status: "created", entry: {} },
+              { contact_id: "con_2", status: "updated", entry: {} },
+            ],
+          }),
+          delete: jest.fn(),
+        },
+        audiences: {
+          removeContact: jest.fn().mockResolvedValue({}),
+          removeContacts: jest.fn().mockResolvedValue({}),
+        },
+      };
+      mockBirdService.getClient.mockResolvedValue(mockClient);
+      mockUserModel.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          {
+            _id: "507f1f77bcf86cd799439011",
+            email: "u1@gmail.com",
+            role: UserRole.USER,
+          },
+          {
+            _id: "507f1f77bcf86cd799439012",
+            email: "u2@gmail.com",
+            role: UserRole.USER,
+          },
+        ]),
+      });
+
+      const summary = await service.syncAllUsers();
+
+      expect(summary.total).toBe(2);
+      expect(summary.synced).toBe(2);
+      expect(summary.failed).toBe(0);
+      expect(mockClient.contacts.batch).toHaveBeenCalledTimes(1);
+      expect(mockClient.audiences.removeContacts).toHaveBeenCalled();
+    });
   });
 });

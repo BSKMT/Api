@@ -27,6 +27,7 @@ export interface SyncContactParams {
   documentNumber?: string | null;
   externalId?: string | null;
   targetAudienceId?: string | null;
+  skipAudienceCleanup?: boolean;
 }
 
 export interface SyncContactResult {

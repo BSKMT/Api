@@ -196,11 +196,12 @@ export function createBetterAuthHooks(
 
             try {
               const birdContactService = getBirdContactService?.();
-              if (birdContactService) {
-                await birdContactService.syncContact({
-                  email: user.email,
-                  externalId: user.id,
-                });
+              const normalizedEmail =
+                typeof user.email === "string"
+                  ? user.email.trim().toLowerCase()
+                  : "";
+              if (birdContactService && normalizedEmail) {
+                await birdContactService.syncUser(normalizedEmail);
               }
             } catch (birdErr) {
               authLogger.warn(

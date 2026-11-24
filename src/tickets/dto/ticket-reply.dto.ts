@@ -20,6 +20,10 @@ export class TicketReplyDto {
 
   @IsBoolean()
   @IsOptional()
+  sendEmail?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
   sendSms?: boolean;
 
   @IsBoolean()

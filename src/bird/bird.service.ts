@@ -38,6 +38,7 @@ export class BirdService {
 
   private sdkPromise: Promise<BirdSdkModule> | null = null;
   private client: BirdClientInstance | null = null;
+  private clientPromise: Promise<BirdClientInstance> | null = null;
   private readonly apiKey: string | undefined;
 
   private readonly realtimeConfig: {
@@ -50,11 +51,11 @@ export class BirdService {
   private readonly webhookSecret: string | undefined;
 
   private isValidKeyFormat(key: string): boolean {
-    return /^bk_(us1|eu1)_\S+$/.test(key);
+    return /^b[km]_(us1|eu1)_\S+$/.test(key) && !/\s/.test(key);
   }
 
   constructor() {
-    const rawKey = process.env.BIRD_API_KEY;
+    const rawKey = (process.env.BIRD_API_KEY ?? "").trim();
     if (!rawKey) {
       this.logger.error(
         "BIRD_API_KEY no esta configurada — los servicios de Bird " +
@@ -65,22 +66,22 @@ export class BirdService {
     }
     if (!this.isValidKeyFormat(rawKey)) {
       this.logger.error(
-        `BIRD_API_KEY tiene formato invalido "${rawKey.slice(0, 7)}..." — ` +
-          "debe empezar con bk_us1_ o bk_eu1_ seguido del secret.",
+        "BIRD_API_KEY tiene formato invalido — debe empezar con bk_us1_, bk_eu1_, bm_us1_ o bm_eu1_ sin espacios.",
       );
       this.apiKey = undefined;
       return;
     }
     this.apiKey = rawKey;
-    const region = rawKey.startsWith("bk_us1_") ? "us1" : "eu1";
+    const region = rawKey.includes("_us1_") ? "us1" : "eu1";
     this.logger.log(
       `Bird API configurada (region: ${region}) — email, SMS, WhatsApp y verify activos.`,
     );
 
-    const rtAppId = process.env.BIRD_REALTIME_APP_ID ?? "";
-    const rtKey = process.env.BIRD_REALTIME_KEY ?? "";
-    const rtSecret = process.env.BIRD_REALTIME_SECRET ?? "";
-    const rtRegion = process.env.BIRD_REALTIME_REGION ?? "us1";
+    const rtAppId = (process.env.BIRD_REALTIME_APP_ID ?? "").trim();
+    const rtKey = (process.env.BIRD_REALTIME_KEY ?? "").trim();
+    const rtSecret = (process.env.BIRD_REALTIME_SECRET ?? "").trim();
+    const rtRegion =
+      (process.env.BIRD_REALTIME_REGION ?? "us1").trim() || "us1";
     if (rtAppId && rtKey && rtSecret) {
       this.realtimeConfig = {
         appId: rtAppId,
@@ -98,7 +99,7 @@ export class BirdService {
       );
     }
 
-    const webhookSecret = process.env.BIRD_WEBHOOK_SECRET;
+    const webhookSecret = (process.env.BIRD_WEBHOOK_SECRET ?? "").trim();
     if (webhookSecret) {
       this.webhookSecret = webhookSecret;
       this.logger.log(
@@ -141,32 +142,44 @@ export class BirdService {
 
   async getClient(): Promise<BirdClientInstance> {
     if (this.client) return this.client;
+    if (this.clientPromise) return this.clientPromise;
     if (!this.isConfigured() || !this.apiKey) {
       throw new Error(
         "Bird no esta configurado (falta BIRD_API_KEY o formato invalido)",
       );
     }
-    this.sdkPromise ??=
-      import("@messagebird/sdk") as unknown as Promise<BirdSdkModule>;
-    const sdk = await this.sdkPromise;
+    const apiKey = this.apiKey;
+    this.clientPromise = (async () => {
+      this.sdkPromise ??=
+        import("@messagebird/sdk") as unknown as Promise<BirdSdkModule>;
+      const sdk = await this.sdkPromise;
 
-    const clientOpts: Record<string, unknown> = {
-      apiKey: this.apiKey,
-      timeout: 10_000,
-    };
-    if (this.realtimeConfig) {
-      clientOpts["realtime"] = {
-        key: this.realtimeConfig.key,
-        secret: this.realtimeConfig.secret,
+      const clientOpts: Record<string, unknown> = {
+        apiKey,
+        timeout: 10_000,
       };
-    }
-    if (this.webhookSecret) {
-      clientOpts["webhooks"] = { secret: this.webhookSecret };
-    }
+      if (this.realtimeConfig) {
+        clientOpts["realtime"] = {
+          key: this.realtimeConfig.key,
+          secret: this.realtimeConfig.secret,
+        };
+      }
+      if (this.webhookSecret) {
+        clientOpts["webhooks"] = { secret: this.webhookSecret };
+      }
 
-    this.client = new sdk.BirdClient(
-      clientOpts as { apiKey: string },
-    ) as BirdClientInstance;
-    return this.client;
+      const instance = new sdk.BirdClient(
+        clientOpts as { apiKey: string },
+      ) as BirdClientInstance;
+      this.client = instance;
+      return instance;
+    })();
+
+    try {
+      return await this.clientPromise;
+    } catch (err) {
+      this.clientPromise = null;
+      throw err;
+    }
   }
 }

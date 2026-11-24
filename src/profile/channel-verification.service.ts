@@ -3,6 +3,7 @@ import {
   Logger,
   BadRequestException,
   ConflictException,
+  Optional,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
@@ -13,6 +14,7 @@ import { ObjectId } from "mongodb";
 import { BirdVerifyService } from "../bird-verify/bird-verify.service";
 import { BirdSmsService } from "../bird/bird-sms.service";
 import { BirdEmailService } from "../bird/bird-email.service";
+import { BirdContactService } from "../bird/bird-contact.service";
 import { maskEmail, sanitizeForLog } from "../common/utils/log-redact.util";
 import {
   ChannelThrottleStore,
@@ -39,6 +41,7 @@ export class ChannelVerificationService {
     private readonly smsService: BirdSmsService,
     private readonly emailService: BirdEmailService,
     private readonly kvCache: KvCacheService,
+    @Optional() private readonly birdContactService?: BirdContactService,
   ) {
     this.phoneThrottle = new ChannelThrottleStore(
       5 * 60 * 1000,
@@ -72,7 +75,7 @@ export class ChannelVerificationService {
     phone: string,
     code: string,
   ): Promise<void> {
-    return executeVerifyPhone(
+    await executeVerifyPhone(
       this.userModel,
       this.birdVerifyService,
       userId,
@@ -80,6 +83,7 @@ export class ChannelVerificationService {
       code,
       this.logger,
     );
+    void this.birdContactService?.syncUser(userId).catch(() => {});
   }
 
   async initiateEmailChange(userId: string, newEmail: string): Promise<void> {
@@ -249,6 +253,8 @@ export class ChannelVerificationService {
         );
       }
     }
+
+    void this.birdContactService?.syncUser(user).catch(() => {});
 
     this.logger.log(
       `Email changed to ${maskEmail(normalizedEmail)} for user ${userId}`,

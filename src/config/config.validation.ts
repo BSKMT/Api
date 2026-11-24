@@ -19,13 +19,16 @@ export const configValidationSchema = Joi.object({
     .allow("")
     .default("")
     .custom((value: string) => {
-      if (value && !/^bk_(us1|eu1)_\S+$/.test(value)) {
+      const trimmed = value.trim();
+      if (
+        trimmed &&
+        (!/^b[km]_(us1|eu1)_\S+$/.test(trimmed) || /\s/.test(trimmed))
+      ) {
         throw new Error(
-          "BIRD_API_KEY debe tener formato bk_us1_... o bk_eu1_... " +
-            "(key real desde Bird dashboard > Developers > API keys)",
+          "BIRD_API_KEY debe tener formato bk_us1_..., bk_eu1_..., bm_us1_... o bm_eu1_... sin espacios ni saltos de línea",
         );
       }
-      return value;
+      return trimmed;
     }),
   BIRD_FROM_EMAIL: Joi.string()
     .email()

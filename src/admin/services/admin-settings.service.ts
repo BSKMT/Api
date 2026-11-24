@@ -17,6 +17,9 @@ import { getMongoDb } from "../../auth/better-auth";
 import { ObjectId } from "mongodb";
 import { maskEmail } from "../../common/utils/log-redact.util";
 import { KvCacheService } from "../../kv/kv-cache.service";
+import { BirdContactService } from "../../bird/bird-contact.service";
+import { BirdRealtimeService } from "../../bird/bird-realtime.service";
+
 @Injectable()
 export class AdminSettingsService {
   private readonly logger = new Logger(AdminSettingsService.name);
@@ -25,6 +28,8 @@ export class AdminSettingsService {
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     private readonly notificationsService: NotificationsService,
     @Optional() private readonly kvCache?: KvCacheService,
+    @Optional() private readonly birdContactService?: BirdContactService,
+    @Optional() private readonly birdRealtimeService?: BirdRealtimeService,
   ) {}
 
   async listDeletionRequests() {
@@ -241,11 +246,33 @@ export class AdminSettingsService {
         .delete(`user:ba:${user.betterAuthId}`, true)
         .catch(() => {});
     }
+    await this.cleanupExternalBirdState(user, userId);
 
     this.logger.log(
       `Account permanently deleted by admin: userId=${userId} email=${maskEmail(user.email)} actor=${actorId}`,
     );
     return { success: true, message: "Cuenta eliminada permanentemente" };
+  }
+
+  private async cleanupExternalBirdState(
+    user: { birdContactId?: string | null; betterAuthId?: string | null },
+    userId: string,
+  ): Promise<void> {
+    try {
+      if (user.birdContactId && this.birdContactService) {
+        await this.birdContactService.deleteContact(user.birdContactId);
+      }
+      if (
+        user.betterAuthId &&
+        this.birdRealtimeService?.isRealtimeConfigured()
+      ) {
+        await this.birdRealtimeService.disconnectMember(user.betterAuthId);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `approveDeletion: Bird CRM/Realtime cleanup warning for userId=${userId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   async rejectDeletion(userId: string, actorId = "") {

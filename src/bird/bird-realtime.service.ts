@@ -231,12 +231,64 @@ export class BirdRealtimeService {
       );
       return null;
     }
+    const payloadStr = Buffer.isBuffer(rawBody)
+      ? rawBody.toString("utf8")
+      : rawBody;
+    const flatHeaders: Record<string, string> = {};
+    for (const [key, val] of Object.entries(headers)) {
+      if (typeof val === "string") {
+        flatHeaders[key.toLowerCase()] = val;
+      } else if (Array.isArray(val) && val.length > 0) {
+        flatHeaders[key.toLowerCase()] = val[0];
+      }
+    }
     try {
       const client = await this.getClient();
-      return client.webhooks.unwrap(rawBody, headers);
+      return client.webhooks.unwrap(payloadStr, flatHeaders);
     } catch (err: unknown) {
       this.logger.warn(
         `verifyWebhook: signature verification failed: ${sanitizeForLog(err instanceof Error ? err.message : String(err))}`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Fetches the parsed body of an inbound email referenced by an
+   * `email.received` webhook event (`GET /v1/email/inbound-messages/{id}/body`).
+   */
+  async fetchInboundEmailBody(
+    inboundMessageId: string,
+  ): Promise<string | null> {
+    if (!this.birdService.isConfigured() || !inboundMessageId.trim()) {
+      return null;
+    }
+    try {
+      const client = await this.getClient();
+      if (typeof client.request !== "function") return null;
+      const bodyRes = await client.request<{
+        text?: string | null;
+        html?: string | null;
+      }>({
+        method: "GET",
+        path: `/v1/email/inbound-messages/${encodeURIComponent(inboundMessageId.trim())}/body`,
+      });
+      const text =
+        typeof bodyRes?.text === "string" && bodyRes.text.trim()
+          ? bodyRes.text.trim()
+          : "";
+      if (text) return text.slice(0, 4000);
+      if (typeof bodyRes?.html === "string" && bodyRes.html.trim()) {
+        return bodyRes.html
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 4000);
+      }
+      return null;
+    } catch (err: unknown) {
+      this.logger.warn(
+        `fetchInboundEmailBody failed (${sanitizeForLog(inboundMessageId)}): ${sanitizeForLog(err instanceof Error ? err.message : String(err))}`,
       );
       return null;
     }
