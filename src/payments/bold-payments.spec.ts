@@ -142,7 +142,7 @@ describe("Bold Payment Gateway Protocol & Security", () => {
       expect(sanitizeBoldDescription("https://bskmt.com/test")).toBe(
         "Pago BSK Motorcycle Team",
       );
-      expect(sanitizeBoldDescription("A".repeat(140)).length).toBe(100);
+      expect(sanitizeBoldDescription("A".repeat(140))).toHaveLength(100);
     });
 
     it("trims BOLD_* env keys and rejects internal whitespace/CRLF in config validation", () => {

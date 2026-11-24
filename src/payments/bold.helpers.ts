@@ -85,13 +85,7 @@ export function resolveBoldIdentityKey(
 export function resolveBoldPublicKey(
   configService: ConfigService<EnvironmentConfig>,
 ): string {
-  const identity = configService
-    .get<string>("BOLD_IDENTITY_KEY", { infer: true })
-    ?.trim();
-  if (identity) return identity;
-  return (
-    configService.get<string>("BOLD_PUBLIC_KEY", { infer: true })?.trim() ?? ""
-  );
+  return resolveBoldIdentityKey(configService);
 }
 
 export function resolveBoldSecretKey(

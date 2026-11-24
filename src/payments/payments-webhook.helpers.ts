@@ -11,7 +11,6 @@ import type { SecurityAuditService } from "../common/audit/security-audit.servic
 import { maskReference } from "../common/utils/log-redact.util";
 import {
   type ParsedBoldWebhookPayload,
-  parseBoldAmount,
   parseBoldWebhookPayload,
   verifyBoldWebhookSignatureShared,
   mapBoldWebhookStatus,
@@ -21,7 +20,7 @@ import {
 
 export type ParsedBoldWebhookEvent = ParsedBoldWebhookPayload;
 
-export { parseBoldAmount };
+export { parseBoldAmount } from "./bold.helpers";
 
 export function parseBoldWebhookEvent(
   event: Record<string, unknown>,

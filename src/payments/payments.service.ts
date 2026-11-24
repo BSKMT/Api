@@ -71,7 +71,7 @@ export class PaymentsService {
     private readonly alegraService: AlegraService,
     @Optional() private readonly membershipService?: MembershipService,
     @Optional() private readonly auditService?: SecurityAuditService,
-  ) { }
+  ) {}
 
   async createPayment(userId: string, dto: CreatePaymentDto) {
     if (ARPHA_TIERS.has(dto.tier)) {
@@ -276,13 +276,13 @@ export class PaymentsService {
         this.processAlegraInvoicing(t),
       delegateMembershipWebhook: this.membershipService
         ? (
-          event: Record<string, unknown>,
-          parsed: Parameters<MembershipService["handleVerifiedWebhook"]>[1],
-        ) => this.membershipService!.handleVerifiedWebhook(event, parsed)
+            event: Record<string, unknown>,
+            parsed: Parameters<MembershipService["handleVerifiedWebhook"]>[1],
+          ) => this.membershipService!.handleVerifiedWebhook(event, parsed)
         : undefined,
       getMembershipPayment: this.membershipService
         ? (userId: string, reference: string) =>
-          this.membershipService!.getMembershipPayment(userId, reference)
+            this.membershipService!.getMembershipPayment(userId, reference)
         : undefined,
     };
   }

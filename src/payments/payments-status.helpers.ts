@@ -69,6 +69,63 @@ function isCompleteCachedReceipt(
   );
 }
 
+async function handleNotFoundWebhook(
+  deps: PaymentStatusDeps,
+  event: Record<string, unknown>,
+  parsed: ParsedBoldWebhookEvent,
+): Promise<void> {
+  if (deps.delegateMembershipWebhook) {
+    const handledByMembership = await deps.delegateMembershipWebhook(
+      event,
+      parsed,
+    );
+    if (handledByMembership) {
+      return;
+    }
+  }
+  deps.logger.warn(
+    `Webhook received for unknown reference: ${maskReference(parsed.referenceId ?? "UNKNOWN")}`,
+  );
+}
+
+async function applyPostStatusChangeEffects(
+  deps: PaymentStatusDeps,
+  transaction: TransactionDocument,
+  previousStatus: string,
+  statusFromEvent: string | null,
+): Promise<void> {
+  if (previousStatus === "APPROVED" && statusFromEvent === "VOIDED") {
+    deps.logger.warn(
+      `CRITICAL FINANCIAL EVENT: Approved payment ${maskReference(transaction.reference)} was VOIDED by Bold webhook`,
+    );
+    recordBoldVoidedAudit(
+      deps.auditService,
+      "/api/payments/webhook",
+      transaction.reference,
+      transaction.amount,
+      "webhook",
+    );
+    return;
+  }
+
+  if (statusFromEvent !== "APPROVED") {
+    return;
+  }
+
+  if (!transaction.benefitGranted) {
+    const claim = await deps.transactionModel.updateOne(
+      { _id: transaction._id, benefitGranted: false },
+      { $set: { benefitGranted: true } },
+    );
+    if (claim.modifiedCount === 0) {
+      return;
+    }
+    transaction.benefitGranted = true;
+  }
+  await deps.linkPaymentByPurpose(transaction);
+  await deps.processAlegraInvoicing(transaction);
+}
+
 export async function handleWebhookHelper(
   deps: PaymentStatusDeps,
   rawBody: Buffer,
@@ -95,18 +152,7 @@ export async function handleWebhookHelper(
   );
 
   if (lookup.status === "not_found") {
-    if (deps.delegateMembershipWebhook) {
-      const handledByMembership = await deps.delegateMembershipWebhook(
-        event,
-        parsed,
-      );
-      if (handledByMembership) {
-        return;
-      }
-    }
-    deps.logger.warn(
-      `Webhook received for unknown reference: ${maskReference(parsed.referenceId ?? "UNKNOWN")}`,
-    );
+    await handleNotFoundWebhook(deps, event, parsed);
     return;
   }
 
@@ -138,44 +184,20 @@ export async function handleWebhookHelper(
   if (didChange) {
     await deps.kvCache
       .delete(`pay:status:${transaction.userId}:${transaction.reference}`, true)
-      .catch(() => { });
+      .catch(() => {});
   }
 
   deps.logger.log(
     `Webhook processed: ${parsed.eventType} for ref ${maskReference(parsed.referenceId ?? transaction.reference)}`,
   );
 
-  if (
-    didChange &&
-    previousStatus === "APPROVED" &&
-    statusFromEvent === "VOIDED"
-  ) {
-    deps.logger.warn(
-      `CRITICAL FINANCIAL EVENT: Approved payment ${maskReference(transaction.reference)} was VOIDED by Bold webhook`,
+  if (didChange) {
+    await applyPostStatusChangeEffects(
+      deps,
+      transaction,
+      previousStatus,
+      statusFromEvent,
     );
-    recordBoldVoidedAudit(
-      deps.auditService,
-      "/api/payments/webhook",
-      transaction.reference,
-      transaction.amount,
-      "webhook",
-    );
-    return;
-  }
-
-  if (didChange && statusFromEvent === "APPROVED") {
-    if (!transaction.benefitGranted) {
-      const claim = await deps.transactionModel.updateOne(
-        { _id: transaction._id, benefitGranted: false },
-        { $set: { benefitGranted: true } },
-      );
-      if (claim.modifiedCount === 0) {
-        return;
-      }
-      transaction.benefitGranted = true;
-    }
-    await deps.linkPaymentByPurpose(transaction);
-    await deps.processAlegraInvoicing(transaction);
   }
 }
 
@@ -273,7 +295,7 @@ export async function getTransactionStatusHelper(
     };
     await deps.kvCache
       .set(statusCacheKey, receiptSnapshot, 24 * 60 * 60, true)
-      .catch(() => { });
+      .catch(() => {});
   }
 
   return result;

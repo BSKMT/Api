@@ -1,13 +1,12 @@
 import {
   type ParsedBoldWebhookPayload,
-  parseBoldAmount,
   parseBoldWebhookPayload,
   mapBoldWebhookStatus,
 } from "../payments/bold.helpers";
 
 export type ParsedMembershipWebhook = ParsedBoldWebhookPayload;
 
-export { parseBoldAmount };
+export { parseBoldAmount } from "../payments/bold.helpers";
 
 export function parseBoldWebhookEvent(
   event: Record<string, unknown>,
