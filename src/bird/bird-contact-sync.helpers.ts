@@ -339,21 +339,48 @@ export async function executeSyncAllUsersBatchHelper(
     grouped.set(candidate.targetAudienceId, list);
   }
 
+  const chunkJobs: Array<{
+    audienceId: string;
+    removeAudienceIds: string[];
+    chunk: BatchContactCandidate[];
+  }> = [];
+
   for (const [audienceId, candidates] of grouped.entries()) {
     const removeAudienceIds = candidates[0]?.removeAudienceIds ?? [];
     for (let i = 0; i < candidates.length; i += CONTACTS_BATCH_CHUNK_SIZE) {
-      const chunk = candidates.slice(i, i + CONTACTS_BATCH_CHUNK_SIZE);
-      const chunkRes = await processAudienceBatchChunk(
-        client,
+      chunkJobs.push({
         audienceId,
         removeAudienceIds,
-        chunk,
-        persistBirdContactId,
-      );
-      synced += chunkRes.synced;
-      failed += chunkRes.failed;
-      errors.push(...chunkRes.errors);
+        chunk: candidates.slice(i, i + CONTACTS_BATCH_CHUNK_SIZE),
+      });
     }
+  }
+
+  const chunkResults = await chunkJobs.reduce<
+    Promise<
+      Array<{
+        synced: number;
+        failed: number;
+        errors: Array<{ email: string; error: string }>;
+      }>
+    >
+  >(async (accPromise, job) => {
+    const acc = await accPromise;
+    const chunkRes = await processAudienceBatchChunk(
+      client,
+      job.audienceId,
+      job.removeAudienceIds,
+      job.chunk,
+      persistBirdContactId,
+    );
+    acc.push(chunkRes);
+    return acc;
+  }, Promise.resolve([]));
+
+  for (const chunkRes of chunkResults) {
+    synced += chunkRes.synced;
+    failed += chunkRes.failed;
+    errors.push(...chunkRes.errors);
   }
 
   logger.log(

@@ -1,5 +1,6 @@
 export {
   assertChannelAuthorized,
+  resolveSafeRealtimeDisplayName,
   signMemberAuth,
   signChannelAuth,
 } from "./bird-realtime-auth.helpers";

@@ -38,7 +38,7 @@ function sanitizeHrefUrl(rawUrl: string): string {
 
 function sanitizeQrDataUrl(rawUrl: string): string {
   const trimmed = rawUrl.trim();
-  if (/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/i.test(trimmed)) {
+  if (/^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=]+$/i.test(trimmed)) {
     return trimmed;
   }
   return "";

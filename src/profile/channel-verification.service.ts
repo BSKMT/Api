@@ -230,34 +230,42 @@ export class ChannelVerificationService {
     await user.save();
 
     // F-10: Invalidate auth KV cache and revoke other sessions on email change.
-    if (user.betterAuthId) {
-      await this.kvCache
-        .delete(`user:ba:${user.betterAuthId}`, true)
-        .catch(() => {});
-      try {
-        const db = getMongoDb();
-        const userFilters: (string | ObjectId)[] = [user.betterAuthId];
-        if (ObjectId.isValid(user.betterAuthId)) {
-          userFilters.push(new ObjectId(user.betterAuthId));
-        }
-        const sessionFilter: Record<string, unknown> = {
-          userId: { $in: userFilters },
-        };
-        if (currentSessionToken) {
-          sessionFilter.token = { $ne: currentSessionToken };
-        }
-        await db.collection("session").deleteMany(sessionFilter);
-      } catch (err: unknown) {
-        this.logger.warn(
-          `verifyEmailChange: failed to revoke other sessions: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    }
+    await this.invalidateSessionsAfterEmailChange(
+      user.betterAuthId,
+      currentSessionToken,
+    );
 
     void this.birdContactService?.syncUser(user).catch(() => {});
 
     this.logger.log(
       `Email changed to ${maskEmail(normalizedEmail)} for user ${userId}`,
     );
+  }
+
+  private async invalidateSessionsAfterEmailChange(
+    betterAuthId?: string | null,
+    currentSessionToken?: string,
+  ): Promise<void> {
+    if (!betterAuthId) return;
+
+    await this.kvCache.delete(`user:ba:${betterAuthId}`, true).catch(() => {});
+    try {
+      const db = getMongoDb();
+      const userFilters: (string | ObjectId)[] = [betterAuthId];
+      if (ObjectId.isValid(betterAuthId)) {
+        userFilters.push(new ObjectId(betterAuthId));
+      }
+      const sessionFilter: Record<string, unknown> = {
+        userId: { $in: userFilters },
+      };
+      if (currentSessionToken) {
+        sessionFilter.token = { $ne: currentSessionToken };
+      }
+      await db.collection("session").deleteMany(sessionFilter);
+    } catch (err: unknown) {
+      this.logger.warn(
+        `verifyEmailChange: failed to revoke other sessions: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 }

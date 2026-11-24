@@ -270,7 +270,6 @@ export class BirdRealtimeController {
   @HttpCode(HttpStatus.OK)
   async handleWebhook(
     @Req() req: Request & { rawBody?: Buffer; requestId?: string },
-    @Body() body: unknown,
   ): Promise<{ received: boolean; duplicate?: boolean }> {
     const rawBody = req.rawBody;
     if (!rawBody || rawBody.length === 0) {
@@ -313,7 +312,8 @@ export class BirdRealtimeController {
         this.logger,
         event,
         this.ticketsService,
-        (inboundId) => this.realtimeService.fetchInboundEmailBody(inboundId),
+        (inboundId: string) =>
+          this.realtimeService.fetchInboundEmailBody(inboundId),
       );
       processedOk = true;
     } catch (err: unknown) {
@@ -326,7 +326,6 @@ export class BirdRealtimeController {
       await this.markWebhookProcessed(webhookId);
     }
 
-    void body;
     return { received: true };
   }
 }

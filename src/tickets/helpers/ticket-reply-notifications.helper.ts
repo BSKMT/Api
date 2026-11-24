@@ -6,13 +6,14 @@ import { TicketDocument, TicketChannel } from "../schemas/ticket.schema";
 import { maskEmail, maskPhone } from "../../common/utils/log-redact.util";
 import { normalizePhoneNumberHelper } from "../../bird/bird-contact-extraction.helpers";
 import { isSyntheticInboundEmail } from "../../bird/bird-email.helpers";
+import type { UsersService } from "../../users/users.service";
 import { TicketNotificationContext } from "./ticket-creation-notifications.helper";
 
 const MAX_REALTIME_REPLY_LEN = 2000;
 
 async function resolveRealtimeMemberId(
   userId: string,
-  usersService?: TicketNotificationContext["usersService"],
+  usersService?: Pick<UsersService, "findById">,
 ): Promise<string | null> {
   if (!usersService || typeof usersService.findById !== "function") {
     return null;

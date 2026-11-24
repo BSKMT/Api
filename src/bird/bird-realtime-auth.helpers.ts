@@ -36,6 +36,46 @@ export function resolveSafeRealtimeDisplayName(
     : "Miembro BSK";
 }
 
+function hasAdminSupportPermission(
+  role: string,
+  perms: string[],
+  hasStaffPortal: boolean,
+): boolean {
+  if (!hasStaffPortal) return false;
+  if (role === "superadmin") return true;
+  return (
+    role === "admin" &&
+    (perms.includes("*") ||
+      perms.includes("support") ||
+      perms.includes("users"))
+  );
+}
+
+function canJoinAdminChannel(
+  role: string,
+  perms: string[],
+  hasConsolePortal: boolean,
+): boolean {
+  if (!hasConsolePortal) return false;
+  if (role === "superadmin") return true;
+  return role === "admin" && (perms.includes("*") || perms.includes("support"));
+}
+
+function isPersonalUserChannel(channelName: string): boolean {
+  return (
+    channelName.startsWith("private-user-") ||
+    channelName.startsWith("presence-user-")
+  );
+}
+
+function isPublicPresenceChannel(channelName: string): boolean {
+  return (
+    channelName.startsWith("presence-event-") ||
+    channelName === "presence-community" ||
+    channelName === "presence-chat"
+  );
+}
+
 export function assertChannelAuthorized(
   channelName: string,
   betterAuthId: string,
@@ -48,25 +88,15 @@ export function assertChannelAuthorized(
   const hasConsolePortal =
     authPortal === "console" || authPortal === "superadmin";
   const hasStaffPortal = authPortal === "fascia" || hasConsolePortal;
-  const hasAdminSupportPerm =
-    hasStaffPortal &&
-    (role === "superadmin" ||
-      (role === "admin" &&
-        (perms.includes("*") ||
-          perms.includes("support") ||
-          perms.includes("users"))));
 
-  if (
-    channelName.startsWith("private-user-") ||
-    channelName.startsWith("presence-user-")
-  ) {
+  if (isPersonalUserChannel(channelName)) {
     const channelOwner = channelName.startsWith("private-user-")
       ? channelName.slice("private-user-".length)
       : channelName.slice("presence-user-".length);
     const isOwner =
       channelOwner === betterAuthId ||
       (Boolean(userId) && channelOwner === userId);
-    if (!isOwner && !hasAdminSupportPerm) {
+    if (!isOwner && !hasAdminSupportPermission(role, perms, hasStaffPortal)) {
       throw new ForbiddenException(
         "No tienes autorización para unirte a este canal personal de usuario",
       );
@@ -79,12 +109,7 @@ export function assertChannelAuthorized(
     channelName.startsWith("presence-admin")
   ) {
     // M-12: Require explicit support/* permission and elevated portal session for admin realtime channels.
-    const canJoinAdmin =
-      hasConsolePortal &&
-      (role === "superadmin" ||
-        (role === "admin" &&
-          (perms.includes("*") || perms.includes("support"))));
-    if (!canJoinAdmin) {
+    if (!canJoinAdminChannel(role, perms, hasConsolePortal)) {
       throw new ForbiddenException(
         "Acceso denegado a canales de administración",
       );
@@ -92,11 +117,7 @@ export function assertChannelAuthorized(
     return;
   }
 
-  if (
-    channelName.startsWith("presence-event-") ||
-    channelName === "presence-community" ||
-    channelName === "presence-chat"
-  ) {
+  if (isPublicPresenceChannel(channelName)) {
     return;
   }
 
