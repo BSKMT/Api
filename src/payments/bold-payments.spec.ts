@@ -107,12 +107,24 @@ describe("Bold Payment Gateway Protocol & Security", () => {
         .digest("hex");
 
       expect(result.baseUrl).toBe(BOLD_API_BASE_URL);
-      expect(result.apiKey).toBe("test_public_key_123456");
-      expect(result.publicKey).toBe("test_public_key_123456");
+      expect(result.apiKey).toBe("test_identity_key_123456");
+      expect(result.publicKey).toBe("test_identity_key_123456");
       expect(result.amount).toBe(59900);
       expect(result.currency).toBe("COP");
       expect(result.integritySignature).toBe(expectedHash);
       expect(result.description).toBe("Compra Tienda BSK Casco Integral");
+    });
+
+    it("falls back to legacy BOLD_PUBLIC_KEY only when BOLD_IDENTITY_KEY is unset", () => {
+      const cfg = makeConfigService({ BOLD_IDENTITY_KEY: "" });
+      const result = buildBoldCheckoutConfig(
+        cfg,
+        "SHOP-fallback-1",
+        10000,
+        "Fallback Bold Key",
+      );
+      expect(result.apiKey).toBe("test_public_key_123456");
+      expect(result.publicKey).toBe("test_public_key_123456");
     });
 
     it("rejects amounts below Bold 1000 COP minimum and invalid order IDs", () => {
