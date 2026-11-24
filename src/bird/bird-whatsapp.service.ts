@@ -78,6 +78,76 @@ export class BirdWhatsappService {
    * @param data.language       Idioma de la plantilla (default "es").
    * @returns `true` si Bird acepto el mensaje (202), `false` si fallo.
    */
+  /**
+   * Sanitiza parámetros de texto para plantillas WhatsApp de Meta:
+   * Meta rechaza saltos de línea, tabuladores o >=4 espacios consecutivos (error 132018).
+   */
+  private sanitizeTemplateParam(value: string, maxLen = 1000): string {
+    const cleaned = (value ?? "")
+      .replace(/[\r\n\t\v\f\0]+/g, " ")
+      .replace(/ {4,}/g, "   ")
+      .trim();
+    if (!cleaned) return "-";
+    return cleaned.length > maxLen
+      ? `${cleaned.slice(0, maxLen - 3)}...`
+      : cleaned;
+  }
+
+  private async trySendTemplateNotification(
+    client: Awaited<ReturnType<BirdService["getClient"]>>,
+    normalizedTo: string,
+    templateSlug: string,
+    data: { title: string; message: string; language?: string },
+  ): Promise<{ sent: boolean; fallbackToFreeForm: boolean }> {
+    const sendParams: Record<string, unknown> = {
+      to: normalizedTo,
+      template: {
+        slug: templateSlug,
+        language: data.language ?? "es",
+        components: [
+          {
+            type: "body",
+            parameters: [
+              {
+                type: "text",
+                name: "titulo",
+                text: this.sanitizeTemplateParam(data.title, 200),
+              },
+              {
+                type: "text",
+                name: "mensaje",
+                text: this.sanitizeTemplateParam(data.message, 900),
+              },
+            ],
+          },
+        ],
+      },
+      tags: [{ name: "channel", value: "notification" }],
+    };
+    // Bird SDK 0.147: omitir 'from' para plantillas bird_* y grupos wag_*
+    if (
+      this.isSenderConfigured() &&
+      !templateSlug.startsWith("bird_") &&
+      !normalizedTo.startsWith("wag_")
+    ) {
+      sendParams["from"] = this.sender;
+    }
+
+    try {
+      await client.whatsapp.send(sendParams as never);
+      this.logger.log(
+        `WhatsApp (plantilla "${templateSlug}") enviado a ${maskPhone(normalizedTo)}`,
+      );
+      return { sent: true, fallbackToFreeForm: false };
+    } catch (tplErr: unknown) {
+      const tplMsg = formatBirdError(tplErr);
+      this.logger.warn(
+        `WhatsApp plantilla "${templateSlug}" falló para ${maskPhone(normalizedTo)} (${tplMsg}); intentando respaldo texto libre si hay ventana de 24h.`,
+      );
+      return { sent: false, fallbackToFreeForm: true };
+    }
+  }
+
   async sendNotificationWhatsapp(data: {
     to: string;
     title: string;
@@ -95,44 +165,24 @@ export class BirdWhatsappService {
       return false;
     }
 
-    const templateSlug = data.templateSlug || this.defaultTemplateSlug;
+    const templateSlug = (
+      data.templateSlug ||
+      this.defaultTemplateSlug ||
+      ""
+    ).trim();
 
     try {
       const client = await this.birdService.getClient();
 
       if (templateSlug) {
-        // Envio con plantilla aprobada (entrega garantizada fuera de ventana de 24h)
-        const sendParams: Record<string, unknown> = {
-          to: normalizedTo,
-          template: {
-            slug: templateSlug,
-            language: data.language ?? "es",
-            components: [
-              {
-                type: "body",
-                parameters: [
-                  { type: "text", text: data.title },
-                  { type: "text", text: data.message },
-                ],
-              },
-            ],
-          },
-          tags: [{ name: "channel", value: "notification" }],
-        };
-        // Bird SDK 0.147: omitir 'from' para plantillas bird_* y grupos wag_*
-        if (
-          this.isSenderConfigured() &&
-          !templateSlug.startsWith("bird_") &&
-          !normalizedTo.startsWith("wag_")
-        ) {
-          sendParams["from"] = this.sender;
-        }
-
-        await client.whatsapp.send(sendParams as never);
-        this.logger.log(
-          `WhatsApp (plantilla "${templateSlug}") enviado a ${maskPhone(normalizedTo)}`,
+        const tplResult = await this.trySendTemplateNotification(
+          client,
+          normalizedTo,
+          templateSlug,
+          data,
         );
-        return true;
+        if (tplResult.sent) return true;
+        if (!tplResult.fallbackToFreeForm) return false;
       }
 
       // Envio como texto libre (requiere remitente y ventana de 24h abierta)

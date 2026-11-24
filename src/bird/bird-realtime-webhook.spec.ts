@@ -8,6 +8,8 @@ import {
   signChannelAuth,
   resolveSafeRealtimeDisplayName,
 } from "./bird-realtime-auth.helpers";
+import { BirdWhatsappService } from "./bird-whatsapp.service";
+import type { BirdService } from "./bird.service";
 import { TicketChannel } from "../tickets/schemas/ticket.schema";
 import type { BirdWebhookEvent } from "./bird-realtime.interfaces";
 import type { TicketsService } from "../tickets/tickets.service";
@@ -297,6 +299,62 @@ describe("BirdRealtimeWebhookHelpers", () => {
       expect(resolveSafeRealtimeDisplayName("Carlos Moto", "member")).toBe(
         "Carlos Moto",
       );
+    });
+  });
+
+  describe("BirdWhatsappService template sanitization and fallback", () => {
+    it("sanitizes newlines/tabs/excess spaces in Meta template params and falls back to free-form if template fails", async () => {
+      const prevSender = process.env.BIRD_WHATSAPP_SENDER;
+      const prevSlug = process.env.BIRD_WHATSAPP_TEMPLATE_SLUG;
+      process.env.BIRD_WHATSAPP_SENDER = "+573169588444";
+      process.env.BIRD_WHATSAPP_TEMPLATE_SLUG = "bskmt_notificacion";
+      try {
+        const sendMock = jest
+          .fn()
+          .mockRejectedValueOnce(new Error("Template pending review"))
+          .mockResolvedValueOnce({ id: "wam_fallback_ok", status: "accepted" });
+        const svc = new BirdWhatsappService({
+          isConfigured: () => true,
+          getClient: jest.fn().mockResolvedValue({
+            whatsapp: { send: sendMock },
+          }),
+        } as unknown as BirdService);
+
+        const ok = await svc.sendNotificationWhatsapp({
+          to: "+573001234567",
+          title: "Ticket\n#1001",
+          message: "Hola\n\nMensaje    con\tespacios",
+        });
+
+        expect(ok).toBe(true);
+        expect(sendMock).toHaveBeenCalledTimes(2);
+        const firstCall = (
+          sendMock.mock.calls[0] as [Record<string, unknown>]
+        )[0];
+        const templateObj = firstCall["template"] as {
+          slug: string;
+          components: Array<{
+            parameters: Array<{ name: string; text: string }>;
+          }>;
+        };
+        expect(templateObj.slug).toBe("bskmt_notificacion");
+        expect(templateObj.components[0].parameters[0]).toEqual({
+          type: "text",
+          name: "titulo",
+          text: "Ticket #1001",
+        });
+        expect(templateObj.components[0].parameters[1]).toEqual({
+          type: "text",
+          name: "mensaje",
+          text: "Hola Mensaje   con espacios",
+        });
+      } finally {
+        if (prevSender === undefined) delete process.env.BIRD_WHATSAPP_SENDER;
+        else process.env.BIRD_WHATSAPP_SENDER = prevSender;
+        if (prevSlug === undefined)
+          delete process.env.BIRD_WHATSAPP_TEMPLATE_SLUG;
+        else process.env.BIRD_WHATSAPP_TEMPLATE_SLUG = prevSlug;
+      }
     });
   });
 });
