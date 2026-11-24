@@ -44,6 +44,7 @@ export class MembershipController {
    * monetary transaction (OWASP A01 — server-side enforcement).
    */
   @UseGuards(SessionGuard, IdentityVerifiedGuard)
+  @Throttle({ default: { ttl: 60000, limit: 15 } })
   @Post("purchase")
   @HttpCode(HttpStatus.CREATED)
   async createPayment(
@@ -55,6 +56,7 @@ export class MembershipController {
   }
 
   @Public()
+  @Throttle({ default: { ttl: 60000, limit: 120 } })
   @Post("webhook")
   @HttpCode(HttpStatus.OK)
   async handleWebhook(

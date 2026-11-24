@@ -1,5 +1,4 @@
-import * as crypto from "node:crypto";
-import { BadRequestException, Logger } from "@nestjs/common";
+import { Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Model } from "mongoose";
 import {
@@ -8,42 +7,26 @@ import {
 } from "./schemas/transaction.schema";
 import { KvCacheService } from "../kv/kv-cache.service";
 import type { EnvironmentConfig } from "../config/config.interface";
-import { TERMINAL_STATUSES } from "./payments.constants";
+import type { SecurityAuditService } from "../common/audit/security-audit.service";
+import { maskReference } from "../common/utils/log-redact.util";
+import {
+  type ParsedBoldWebhookPayload,
+  parseBoldAmount,
+  parseBoldWebhookPayload,
+  verifyBoldWebhookSignatureShared,
+  mapBoldWebhookStatus,
+  canTransitionBoldStatus,
+  isBoldAmountOrCurrencyMismatch,
+} from "./bold.helpers";
 
-export interface ParsedBoldWebhookEvent {
-  notificationId?: string;
-  eventType?: string;
-  paymentId?: string;
-  referenceId?: string;
-  paymentMethod?: string;
-  payerEmail?: string;
-  amount?: number;
-}
+export type ParsedBoldWebhookEvent = ParsedBoldWebhookPayload;
 
-export function parseBoldAmount(raw: unknown): number | undefined {
-  if (typeof raw === "number") return raw;
-  if (raw && typeof raw === "object") {
-    const obj = raw as Record<string, unknown>;
-    if (typeof obj["total"] === "number") return obj["total"];
-    if (typeof obj["amount"] === "number") return obj["amount"];
-  }
-  return undefined;
-}
+export { parseBoldAmount };
 
 export function parseBoldWebhookEvent(
   event: Record<string, unknown>,
 ): ParsedBoldWebhookEvent {
-  const data = (event["data"] ?? {}) as Record<string, unknown>;
-  const metadata = (data["metadata"] ?? {}) as Record<string, unknown>;
-  return {
-    notificationId: event["id"] as string | undefined,
-    eventType: event["type"] as string | undefined,
-    paymentId: data["payment_id"] as string | undefined,
-    referenceId: metadata["reference"] as string | undefined,
-    paymentMethod: data["payment_method"] as string | undefined,
-    payerEmail: data["payer_email"] as string | undefined,
-    amount: parseBoldAmount(data["amount"]),
-  };
+  return parseBoldWebhookPayload(event);
 }
 
 export function verifyBoldWebhookSignature(
@@ -51,29 +34,12 @@ export function verifyBoldWebhookSignature(
   logger: Logger,
   rawBody: Buffer,
   signature: string,
+  auditService?: SecurityAuditService,
 ): void {
-  const secretKey = configService.get<string>("BOLD_SECRET_KEY", {
-    infer: true,
+  verifyBoldWebhookSignatureShared(configService, logger, rawBody, signature, {
+    auditService,
+    path: "/api/payments/webhook",
   });
-  if (!secretKey) {
-    logger.error("BOLD_SECRET_KEY not configured — rejecting webhook");
-    throw new BadRequestException("Webhook secret key not configured");
-  }
-  const bodyBase64 = rawBody.toString("base64");
-  const expectedSignature = crypto
-    .createHmac("sha256", secretKey)
-    .update(bodyBase64)
-    .digest("hex");
-
-  const signatureBuffer = Buffer.from(signature);
-  const expectedBuffer = Buffer.from(expectedSignature);
-  if (
-    signatureBuffer.length !== expectedBuffer.length ||
-    !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)
-  ) {
-    logger.warn("Invalid webhook signature received");
-    throw new BadRequestException("Invalid signature");
-  }
 }
 
 export function isDuplicateWebhook(
@@ -106,24 +72,7 @@ export function recordWebhookEvent(
 }
 
 export function mapBoldStatus(eventType: string | undefined): string | null {
-  switch (eventType) {
-    case "SALE_APPROVED":
-    case "PAYMENT_APPROVED":
-      return "APPROVED";
-    case "SALE_REJECTED":
-    case "PAYMENT_REJECTED":
-      return "REJECTED";
-    case "VOID_APPROVED":
-    case "PAYMENT_VOIDED":
-      return "VOIDED";
-    case "VOID_REJECTED":
-    case "PAYMENT_FAILED":
-      return "FAILED";
-    case "PAYMENT_PROCESSING":
-      return "PROCESSING";
-    default:
-      return null;
-  }
+  return mapBoldWebhookStatus(eventType);
 }
 
 export function isAmountMismatch(
@@ -133,19 +82,14 @@ export function isAmountMismatch(
   statusFromEvent: string | null,
 ): boolean {
   if (statusFromEvent !== "APPROVED") return false;
-  if (transaction.amount <= 0) return false;
-  if (parsed.amount === undefined) {
-    logger.warn(
-      `Webhook approval for reference ${parsed.referenceId} did not include payment amount. Expected ${transaction.amount}. Blocking automatic approval.`,
-    );
-    return true;
-  }
-  if (parsed.amount === transaction.amount) return false;
-
-  logger.warn(
-    `Amount mismatch in webhook for reference ${parsed.referenceId}: expected ${transaction.amount}, received ${parsed.amount}. Skipping approval.`,
+  return isBoldAmountOrCurrencyMismatch(
+    logger,
+    parsed.referenceId ?? transaction.reference,
+    transaction.amount,
+    parsed.amount,
+    parsed.currency,
+    "webhook",
   );
-  return true;
 }
 
 export function applyWebhookStatusUpdate(
@@ -156,14 +100,14 @@ export function applyWebhookStatusUpdate(
 ): boolean {
   if (!statusFromEvent) {
     logger.log(
-      `Unhandled webhook event type: ${parsed.eventType} for reference: ${parsed.referenceId}`,
+      `Audit-only or unhandled webhook event type: ${parsed.eventType} for ref ${maskReference(parsed.referenceId ?? transaction.reference)}`,
     );
     return false;
   }
 
-  if (TERMINAL_STATUSES.has(transaction.status)) {
+  if (!canTransitionBoldStatus(transaction.status, statusFromEvent)) {
     logger.warn(
-      `Ignoring ${statusFromEvent} for already-${transaction.status} transaction ${parsed.referenceId}`,
+      `Ignoring ${statusFromEvent} for ${transaction.status} transaction ${maskReference(parsed.referenceId ?? transaction.reference)}`,
     );
     return false;
   }
@@ -176,17 +120,22 @@ export function applyWebhookStatusUpdate(
   return true;
 }
 
-export async function findWebhookTransaction(
+export interface FindWebhookTransactionResult {
+  status: "found" | "not_found" | "duplicate" | "missing_reference";
+  transaction?: TransactionDocument;
+}
+
+export async function findWebhookTransactionDetailed(
   deps: {
     kvCache: KvCacheService;
     transactionModel: Model<TransactionDocument>;
     logger: Logger;
   },
   parsed: ParsedBoldWebhookEvent,
-): Promise<TransactionDocument | null> {
+): Promise<FindWebhookTransactionResult> {
   if (!parsed.referenceId) {
     deps.logger.warn("Webhook received without reference");
-    return null;
+    return { status: "missing_reference" };
   }
 
   if (parsed.notificationId) {
@@ -196,9 +145,9 @@ export async function findWebhookTransaction(
     );
     if (kvSeen !== null) {
       deps.logger.log(
-        `KV screener: duplicate webhook skipped: ${parsed.notificationId}, ${parsed.referenceId}`,
+        `KV screener: duplicate webhook skipped: ${parsed.notificationId}, ${maskReference(parsed.referenceId)}`,
       );
-      return null;
+      return { status: "duplicate" };
     }
   }
 
@@ -206,17 +155,14 @@ export async function findWebhookTransaction(
     reference: parsed.referenceId,
   });
   if (!transaction) {
-    deps.logger.warn(
-      `Webhook received for unknown reference: ${parsed.referenceId}`,
-    );
-    return null;
+    return { status: "not_found" };
   }
 
   if (isDuplicateWebhook(transaction, parsed.notificationId)) {
     deps.logger.log(
-      `Duplicate webhook ignored: ${parsed.notificationId ?? parsed.paymentId}, ${parsed.referenceId}`,
+      `Duplicate webhook ignored: ${parsed.notificationId ?? parsed.paymentId}, ${maskReference(parsed.referenceId)}`,
     );
-    return null;
+    return { status: "duplicate" };
   }
 
   if (parsed.notificationId === undefined && parsed.paymentId) {
@@ -227,13 +173,30 @@ export async function findWebhookTransaction(
     );
     if (seenByPaymentId) {
       deps.logger.log(
-        `Duplicate webhook (by paymentId) ignored: ${parsed.paymentId}, ${parsed.referenceId}`,
+        `Duplicate webhook (by paymentId) ignored: ${parsed.paymentId}, ${maskReference(parsed.referenceId)}`,
       );
-      return null;
+      return { status: "duplicate" };
     }
   }
 
-  return transaction;
+  return { status: "found", transaction };
+}
+
+export async function findWebhookTransaction(
+  deps: {
+    kvCache: KvCacheService;
+    transactionModel: Model<TransactionDocument>;
+    logger: Logger;
+  },
+  parsed: ParsedBoldWebhookEvent,
+): Promise<TransactionDocument | null> {
+  const result = await findWebhookTransactionDetailed(deps, parsed);
+  if (result.status === "not_found" && parsed.referenceId) {
+    deps.logger.warn(
+      `Webhook received for unknown reference: ${maskReference(parsed.referenceId)}`,
+    );
+  }
+  return result.transaction ?? null;
 }
 
 export async function markPaymentWebhookSeen(

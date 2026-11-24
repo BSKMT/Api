@@ -7,9 +7,39 @@ export const configValidationSchema = Joi.object({
 
   CORS_ORIGIN: Joi.string().required(),
   PORT: Joi.number().default(3000),
-  BOLD_IDENTITY_KEY: Joi.string().required(),
-  BOLD_SECRET_KEY: Joi.string().required(),
-  BOLD_PUBLIC_KEY: Joi.string().required(),
+  BOLD_IDENTITY_KEY: Joi.string()
+    .required()
+    .custom((value: string) => {
+      const trimmed = value.trim();
+      if (!trimmed || /\s/.test(trimmed)) {
+        throw new Error(
+          "BOLD_IDENTITY_KEY no puede estar vacío ni contener espacios o saltos de línea",
+        );
+      }
+      return trimmed;
+    }),
+  BOLD_SECRET_KEY: Joi.string()
+    .required()
+    .custom((value: string) => {
+      const trimmed = value.trim();
+      if (!trimmed || /\s/.test(trimmed)) {
+        throw new Error(
+          "BOLD_SECRET_KEY no puede estar vacío ni contener espacios o saltos de línea",
+        );
+      }
+      return trimmed;
+    }),
+  BOLD_PUBLIC_KEY: Joi.string()
+    .required()
+    .custom((value: string) => {
+      const trimmed = value.trim();
+      if (!trimmed || /\s/.test(trimmed)) {
+        throw new Error(
+          "BOLD_PUBLIC_KEY no puede estar vacío ni contener espacios o saltos de línea",
+        );
+      }
+      return trimmed;
+    }),
   BOLD_ENVIRONMENT: Joi.string()
     .valid("sandbox", "production", "test")
     .default("sandbox"),

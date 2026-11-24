@@ -13,6 +13,7 @@ import {
   sanitizeAlegraErrorForUser,
 } from "../alegra/alegra.constants";
 import { maskReference } from "../common/utils/log-redact.util";
+import type { KvCacheService } from "../kv/kv-cache.service";
 
 const SAFE_TX_REF_REGEX = /^[A-Za-z0-9_-]{3,128}$/;
 
@@ -110,7 +111,11 @@ export async function getTransactionsByUserHelper(
 }
 
 export async function cancelPendingTransactionHelper(
-  deps: { transactionModel: Model<TransactionDocument>; logger: Logger },
+  deps: {
+    transactionModel: Model<TransactionDocument>;
+    logger: Logger;
+    kvCache?: KvCacheService;
+  },
   userId: string,
   reference: string,
 ): Promise<{ message: string }> {
@@ -132,6 +137,12 @@ export async function cancelPendingTransactionHelper(
     throw new BadRequestException(
       "Solo se pueden cancelar transacciones pendientes o en proceso",
     );
+  }
+
+  if (deps.kvCache) {
+    await deps.kvCache
+      .delete(`pay:status:${userId}:${reference}`, true)
+      .catch(() => {});
   }
 
   deps.logger.log(

@@ -1,5 +1,4 @@
-import * as crypto from "node:crypto";
-import { BadRequestException, Logger } from "@nestjs/common";
+import { Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Model } from "mongoose";
 import { MembershipTransactionDocument } from "./schemas/membership-transaction.schema";
@@ -8,9 +7,16 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { maskReference } from "../common/utils/log-redact.util";
 import { KvCacheService } from "../kv/kv-cache.service";
 import type { EnvironmentConfig } from "../config/config.interface";
-import { TERMINAL_STATUSES } from "./membership.constants";
+import type { SecurityAuditService } from "../common/audit/security-audit.service";
 import { revertCreditIfUsed } from "./membership-credit-apply.helpers";
 import { sendRejectionNotification } from "./membership-sync.helpers";
+import {
+  canTransitionBoldStatus,
+  isBoldAmountOrCurrencyMismatch,
+  parseBoldWebhookJson,
+  recordBoldVoidedAudit,
+  verifyBoldWebhookSignatureShared,
+} from "../payments/bold.helpers";
 
 import {
   type ParsedMembershipWebhook,
@@ -30,29 +36,12 @@ export function verifyBoldWebhookSignature(
   logger: Logger,
   rawBody: Buffer,
   signature: string,
+  auditService?: SecurityAuditService,
 ): void {
-  const secretKey = configService.get<string>("BOLD_SECRET_KEY", {
-    infer: true,
+  verifyBoldWebhookSignatureShared(configService, logger, rawBody, signature, {
+    auditService,
+    path: "/api/membership/webhook",
   });
-  if (!secretKey) {
-    logger.error("BOLD_SECRET_KEY not configured — rejecting webhook");
-    throw new BadRequestException("Webhook secret key not configured");
-  }
-  const bodyBase64 = rawBody.toString("base64");
-  const expectedSignature = crypto
-    .createHmac("sha256", secretKey)
-    .update(bodyBase64)
-    .digest("hex");
-
-  const signatureBuffer = Buffer.from(signature);
-  const expectedBuffer = Buffer.from(expectedSignature);
-  if (
-    signatureBuffer.length !== expectedBuffer.length ||
-    !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)
-  ) {
-    logger.warn("Invalid membership webhook signature");
-    throw new BadRequestException("Invalid signature");
-  }
 }
 
 export function isDuplicateWebhook(
@@ -85,14 +74,20 @@ export function recordWebhookEvent(
 }
 
 export function isAmountMismatch(
+  logger: Logger,
   transaction: MembershipTransactionDocument,
   parsed: ParsedMembershipWebhook,
   statusFromEvent: string | null,
 ): boolean {
   if (statusFromEvent !== "APPROVED") return false;
-  if (transaction.amount <= 0) return false;
-  if (parsed.amount === undefined) return true;
-  return parsed.amount !== transaction.amount;
+  return isBoldAmountOrCurrencyMismatch(
+    logger,
+    parsed.referenceId ?? transaction.reference,
+    transaction.amount,
+    parsed.amount,
+    parsed.currency,
+    "membership webhook",
+  );
 }
 
 export function applyWebhookStatusUpdate(
@@ -101,9 +96,9 @@ export function applyWebhookStatusUpdate(
   status: string,
   parsed: ParsedMembershipWebhook,
 ): boolean {
-  if (TERMINAL_STATUSES.has(transaction.status)) {
+  if (!canTransitionBoldStatus(transaction.status, status)) {
     logger.warn(
-      `Ignoring ${status} for already-${transaction.status} membership transaction ${transaction.reference}`,
+      `Ignoring ${status} for ${transaction.status} membership transaction ${maskReference(transaction.reference)}`,
     );
     return false;
   }
@@ -125,6 +120,7 @@ export interface WebhookHandlerDeps {
   usersService: UsersService;
   notificationsService: NotificationsService;
   kvCache?: KvCacheService;
+  auditService?: SecurityAuditService;
   logger: Logger;
   processApprovedPayment: (t: MembershipTransactionDocument) => Promise<void>;
 }
@@ -154,21 +150,37 @@ async function markSeenInWebhookKv(
   parsed: ParsedMembershipWebhook,
 ): Promise<void> {
   if (!parsed.notificationId || !parsed.referenceId || !deps.kvCache) return;
-  await deps.kvCache.set(
-    `webhook:seen:${parsed.referenceId}:${parsed.notificationId}`,
-    1,
-    7 * 24 * 60 * 60,
-    true,
-  );
+  await deps.kvCache
+    .set(
+      `webhook:seen:${parsed.referenceId}:${parsed.notificationId}`,
+      1,
+      7 * 24 * 60 * 60,
+      true,
+    )
+    .catch(() => {});
 }
 
 async function dispatchWebhookOutcome(
   deps: WebhookHandlerDeps,
   transaction: MembershipTransactionDocument,
+  previousStatus: string,
   statusFromEvent: string | null,
   didChange: boolean,
 ): Promise<void> {
   if (!didChange || !statusFromEvent) return;
+  if (previousStatus === "APPROVED" && statusFromEvent === "VOIDED") {
+    deps.logger.warn(
+      `CRITICAL FINANCIAL EVENT: Approved membership payment ${maskReference(transaction.reference)} was VOIDED by Bold webhook`,
+    );
+    recordBoldVoidedAudit(
+      deps.auditService,
+      "/api/membership/webhook",
+      transaction.reference,
+      transaction.amount,
+      "webhook",
+    );
+    return;
+  }
   if (statusFromEvent === "APPROVED") {
     await deps.processApprovedPayment(transaction);
     return;
@@ -190,61 +202,47 @@ async function dispatchWebhookOutcome(
   }
 }
 
-export async function handleWebhookHelper(
+/**
+ * Processes an already signature-verified Bold webhook against `membershiptransactions`.
+ * Returns `true` if a matching membership transaction was found and handled, `false` otherwise.
+ */
+export async function processVerifiedMembershipWebhookHelper(
   deps: WebhookHandlerDeps,
-  rawBody: Buffer,
-  signature: string,
-): Promise<void> {
-  verifyBoldWebhookSignature(
-    deps.configService,
-    deps.logger,
-    rawBody,
-    signature,
-  );
-
-  const event = JSON.parse(rawBody.toString("utf-8")) as Record<
-    string,
-    unknown
-  >;
-  const parsed = parseBoldWebhookEvent(event);
+  event: Record<string, unknown>,
+  parsed: ParsedMembershipWebhook,
+): Promise<boolean> {
   if (!parsed.referenceId) {
-    deps.logger.warn("Membership webhook without reference");
-    return;
+    return false;
   }
 
   if (await isSeenInWebhookKv(deps, parsed)) {
-    return;
+    return true;
   }
 
   const transaction = await deps.transactionModel.findOne({
     reference: parsed.referenceId,
   });
   if (!transaction) {
-    deps.logger.warn(
-      `Membership webhook for unknown reference: ${maskReference(parsed.referenceId)}`,
-    );
-    return;
+    return false;
   }
 
   if (isDuplicateWebhook(transaction, parsed.notificationId)) {
     deps.logger.log(
-      `Duplicate membership webhook ignored: ${parsed.notificationId ?? parsed.paymentId}, ${parsed.referenceId}`,
+      `Duplicate membership webhook ignored: ${parsed.notificationId ?? parsed.paymentId}, ${maskReference(parsed.referenceId)}`,
     );
-    return;
+    return true;
   }
 
   recordWebhookEvent(transaction, event, parsed);
 
   const statusFromEvent = mapBoldStatus(parsed.eventType);
-  if (isAmountMismatch(transaction, parsed, statusFromEvent)) {
-    deps.logger.warn(
-      `Amount mismatch in membership webhook for ref ${maskReference(parsed.referenceId)}: expected ${transaction.amount}, received ${parsed.amount}. Skipping approval.`,
-    );
+  if (isAmountMismatch(deps.logger, transaction, parsed, statusFromEvent)) {
     await transaction.save();
     await markSeenInWebhookKv(deps, parsed);
-    return;
+    return true;
   }
 
+  const previousStatus = transaction.status;
   const didChange = statusFromEvent
     ? applyWebhookStatusUpdate(
         deps.logger,
@@ -261,5 +259,44 @@ export async function handleWebhookHelper(
     `Membership webhook processed: ${parsed.eventType} for ${maskReference(parsed.referenceId)}`,
   );
 
-  await dispatchWebhookOutcome(deps, transaction, statusFromEvent, didChange);
+  await dispatchWebhookOutcome(
+    deps,
+    transaction,
+    previousStatus,
+    statusFromEvent,
+    didChange,
+  );
+  return true;
+}
+
+export async function handleWebhookHelper(
+  deps: WebhookHandlerDeps,
+  rawBody: Buffer,
+  signature: string,
+): Promise<void> {
+  verifyBoldWebhookSignature(
+    deps.configService,
+    deps.logger,
+    rawBody,
+    signature,
+    deps.auditService,
+  );
+
+  const event = parseBoldWebhookJson(rawBody);
+  const parsed = parseBoldWebhookEvent(event);
+  if (!parsed.referenceId) {
+    deps.logger.warn("Membership webhook without reference");
+    return;
+  }
+
+  const handled = await processVerifiedMembershipWebhookHelper(
+    deps,
+    event,
+    parsed,
+  );
+  if (!handled) {
+    deps.logger.warn(
+      `Membership webhook for unknown reference: ${maskReference(parsed.referenceId)}`,
+    );
+  }
 }

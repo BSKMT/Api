@@ -6,6 +6,7 @@ import { Transaction, TransactionSchema } from "./schemas/transaction.schema";
 import { EventsModule } from "../events/events.module";
 import { ShopModule } from "../shop/shop.module";
 import { ArphaModule } from "../arpha/arpha.module";
+import { MembershipModule } from "../membership/membership.module";
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { ArphaModule } from "../arpha/arpha.module";
     EventsModule,
     ShopModule,
     ArphaModule,
+    MembershipModule,
   ],
   controllers: [PaymentsController],
   providers: [PaymentsService],

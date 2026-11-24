@@ -21,6 +21,11 @@ import {
 } from "../common/utils/log-redact.util";
 import type { EnvironmentConfig } from "../config/config.interface";
 import { ARPHA_TIER_LABEL, ARPHA_TIER_PREFIX } from "./payments.constants";
+import {
+  buildBoldCheckoutConfig,
+  generateBoldIntegritySignatureShared,
+  sanitizeBoldDescription,
+} from "./bold.helpers";
 
 export function generateBoldIntegritySignature(
   configService: ConfigService<EnvironmentConfig>,
@@ -28,14 +33,12 @@ export function generateBoldIntegritySignature(
   amount: number,
   currency: string,
 ): string {
-  const secretKey = configService.get<string>("BOLD_SECRET_KEY", {
-    infer: true,
-  });
-  if (!secretKey) {
-    throw new BadRequestException("BOLD_SECRET_KEY not configured");
-  }
-  const concatenated = `${orderId}${amount}${currency}${secretKey}`;
-  return crypto.createHash("sha256").update(concatenated).digest("hex");
+  return generateBoldIntegritySignatureShared(
+    configService,
+    orderId,
+    amount,
+    currency,
+  );
 }
 
 export function buildBoldConfigFor(
@@ -44,33 +47,7 @@ export function buildBoldConfigFor(
   amount: number,
   description: string,
 ) {
-  const boldEnvironment =
-    configService.get<string>("BOLD_ENVIRONMENT", {
-      infer: true,
-    }) ?? "sandbox";
-  const boldPublicKey =
-    configService.get<string>("BOLD_PUBLIC_KEY", {
-      infer: true,
-    }) ?? "";
-  const boldBaseUrl =
-    boldEnvironment === "production"
-      ? "https://payments.api.bold.co"
-      : "https://payments-api-test.bold.co";
-  return {
-    publicKey: boldPublicKey,
-    environment: boldEnvironment,
-    baseUrl: boldBaseUrl,
-    referenceId: reference,
-    description,
-    amount,
-    currency: "COP",
-    integritySignature: generateBoldIntegritySignature(
-      configService,
-      reference,
-      amount,
-      "COP",
-    ),
-  };
+  return buildBoldCheckoutConfig(configService, reference, amount, description);
 }
 
 export function buildBoldResponse(
@@ -139,11 +116,13 @@ export async function createArphaPaymentHelper(
     );
   }
 
-  const amount =
+  const amount = Math.round(
     arphaRequest.amount > 0
       ? arphaRequest.amount
-      : (ARPHA_PRICING[arphaRequest.requestType] ?? 15000);
+      : (ARPHA_PRICING[arphaRequest.requestType] ?? 15000),
+  );
   const label = ARPHA_TIER_LABEL[dto.tier] ?? "Asistencia ARPHA";
+  const description = sanitizeBoldDescription(`ARPHA - ${label}`);
 
   const timestamp = Date.now();
   const shortUserId = userId.slice(-8);
@@ -154,7 +133,7 @@ export async function createArphaPaymentHelper(
     eventSlug: requestId,
     reference,
     amount,
-    description: `ARPHA - ${label}`,
+    description,
     status: "PENDING",
     tier: dto.tier,
     hasCompanion: false,
@@ -168,7 +147,7 @@ export async function createArphaPaymentHelper(
     deps.configService,
     deps.logger,
     transaction,
-    `ARPHA - ${label}`,
+    description,
   );
 }
 
@@ -198,10 +177,14 @@ export async function createShopPaymentHelper(
     );
   }
 
-  const amount = order.total;
-  if (Number.isNaN(amount) || amount < 0) {
+  const rawAmount = order.total;
+  if (!Number.isFinite(rawAmount) || rawAmount < 0) {
     throw new BadRequestException("Monto de pago inválido");
   }
+  const amount = Math.round(rawAmount);
+  const description = sanitizeBoldDescription(
+    `Compra Tienda BSK - ${orderNumber}`,
+  );
 
   const timestamp = Date.now();
   const shortUserId = userId.slice(-8);
@@ -212,7 +195,7 @@ export async function createShopPaymentHelper(
     eventSlug: orderNumber,
     reference,
     amount,
-    description: `Compra Tienda BSK - ${orderNumber}`,
+    description,
     status: "PENDING",
     tier: dto.tier,
     hasCompanion: false,
@@ -239,6 +222,6 @@ export async function createShopPaymentHelper(
     deps.configService,
     deps.logger,
     transaction,
-    `Compra Tienda BSK - ${orderNumber}`,
+    description,
   );
 }

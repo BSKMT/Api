@@ -18,11 +18,16 @@ import { UsersService } from "../users/users.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { AlegraService } from "../alegra/alegra.service";
 import { SystemPricingConfigService } from "../admin/services/system-pricing-config.service";
+import { SecurityAuditService } from "../common/audit/security-audit.service";
 import type { EnvironmentConfig } from "../config/config.interface";
 import { TERMINAL_STATUSES } from "./membership.constants";
 import { createMembershipPaymentHelper } from "./membership-creation.helpers";
 import { processApprovedPaymentHelper } from "./membership-activation.helpers";
-import { handleWebhookHelper } from "./membership-webhook.helpers";
+import {
+  type ParsedMembershipWebhook,
+  handleWebhookHelper,
+  processVerifiedMembershipWebhookHelper,
+} from "./membership-webhook.helpers";
 import {
   getMembershipPaymentHelper,
   getMembershipStatusHelper,
@@ -56,6 +61,7 @@ export class MembershipService {
     private readonly alegraService: AlegraService,
     private readonly pricingConfigService: SystemPricingConfigService,
     @Optional() private readonly kvCache?: KvCacheService,
+    @Optional() private readonly auditService?: SecurityAuditService,
   ) {}
 
   async createMembershipPayment(
@@ -85,11 +91,36 @@ export class MembershipService {
         usersService: this.usersService,
         notificationsService: this.notificationsService,
         kvCache: this.kvCache,
+        auditService: this.auditService,
         logger: this.logger,
         processApprovedPayment: (t) => this.processApprovedPayment(t),
       },
       rawBody,
       signature,
+    );
+  }
+
+  /**
+   * Handles a Bold webhook whose signature has already been verified by PaymentsService
+   * (e.g. unified merchant webhook URL or Cloudflare Queues batch delivery).
+   */
+  async handleVerifiedWebhook(
+    event: Record<string, unknown>,
+    parsed: ParsedMembershipWebhook,
+  ): Promise<boolean> {
+    return processVerifiedMembershipWebhookHelper(
+      {
+        configService: this.configService,
+        transactionModel: this.transactionModel,
+        usersService: this.usersService,
+        notificationsService: this.notificationsService,
+        kvCache: this.kvCache,
+        auditService: this.auditService,
+        logger: this.logger,
+        processApprovedPayment: (t) => this.processApprovedPayment(t),
+      },
+      event,
+      parsed,
     );
   }
 
@@ -103,6 +134,7 @@ export class MembershipService {
         transactionModel: this.transactionModel,
         usersService: this.usersService,
         notificationsService: this.notificationsService,
+        auditService: this.auditService,
         logger: this.logger,
         processApprovedPayment: (t) => this.processApprovedPayment(t),
       },

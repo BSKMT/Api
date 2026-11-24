@@ -1,7 +1,9 @@
-import * as crypto from "node:crypto";
-import { BadRequestException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { EnvironmentConfig } from "../config/config.interface";
+import {
+  buildBoldCheckoutConfig,
+  generateBoldIntegritySignatureShared,
+} from "../payments/bold.helpers";
 
 export {
   validateRenewalEligibility,
@@ -51,14 +53,12 @@ export function generateBoldIntegritySignature(
   amount: number,
   currency: string,
 ): string {
-  const secretKey = configService.get<string>("BOLD_SECRET_KEY", {
-    infer: true,
-  });
-  if (!secretKey) {
-    throw new BadRequestException("BOLD_SECRET_KEY not configured");
-  }
-  const concatenated = `${orderId}${amount}${currency}${secretKey}`;
-  return crypto.createHash("sha256").update(concatenated).digest("hex");
+  return generateBoldIntegritySignatureShared(
+    configService,
+    orderId,
+    amount,
+    currency,
+  );
 }
 
 export function buildBoldConfig(
@@ -67,29 +67,7 @@ export function buildBoldConfig(
   amount: number,
   description: string,
 ) {
-  const boldPublicKey =
-    configService.get<string>("BOLD_PUBLIC_KEY", { infer: true }) ?? "";
-  const boldEnvironment =
-    configService.get<string>("BOLD_ENVIRONMENT", { infer: true }) ?? "sandbox";
-  const boldBaseUrl =
-    boldEnvironment === "production"
-      ? "https://payments.api.bold.co"
-      : "https://payments-api-test.bold.co";
-  return {
-    publicKey: boldPublicKey,
-    environment: boldEnvironment,
-    baseUrl: boldBaseUrl,
-    referenceId: reference,
-    description,
-    amount,
-    currency: "COP",
-    integritySignature: generateBoldIntegritySignature(
-      configService,
-      reference,
-      amount,
-      "COP",
-    ),
-  };
+  return buildBoldCheckoutConfig(configService, reference, amount, description);
 }
 
 export function buildMembershipReference(

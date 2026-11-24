@@ -24,7 +24,10 @@ export async function getMembershipPaymentHelper(
     throw new NotFoundException("Transacción de membresía no encontrada");
   }
 
-  if (transaction.status === "PENDING") {
+  if (
+    (transaction.status === "PENDING" || transaction.status === "PROCESSING") &&
+    transaction.amount > 0
+  ) {
     await syncWithBold(deps, transaction);
   }
 
@@ -38,6 +41,7 @@ export async function getMembershipPaymentHelper(
   const result: Record<string, unknown> = {
     reference: transaction.reference,
     type: "membership",
+    purpose: "membership",
     paymentPlan: transaction.paymentPlan,
     amount: transaction.amount,
     installmentNumber: transaction.installmentNumber,
@@ -47,10 +51,10 @@ export async function getMembershipPaymentHelper(
     paidAt: transaction.paidAt,
     paymentMethod: transaction.paymentMethod ?? null,
     description,
-    requiresPayment: transaction.status !== "APPROVED",
+    requiresPayment: transaction.status === "PENDING",
   };
 
-  if (transaction.status === "PENDING") {
+  if (transaction.status === "PENDING" && transaction.amount > 0) {
     result.boldConfig = buildBoldConfig(
       deps.configService,
       transaction.reference,

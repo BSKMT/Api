@@ -93,6 +93,7 @@ export class PaymentsController {
   ) {}
 
   @UseGuards(SessionGuard, IdentityVerifiedGuard)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
   @Post("create")
   @HttpCode(HttpStatus.CREATED)
   async createPayment(
@@ -104,6 +105,7 @@ export class PaymentsController {
   }
 
   @Public()
+  @Throttle({ default: { ttl: 60000, limit: 120 } })
   @Post("webhook")
   @HttpCode(HttpStatus.OK)
   async handleWebhook(

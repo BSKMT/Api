@@ -1,4 +1,9 @@
-import { Injectable, Logger } from "@nestjs/common";
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  Optional,
+} from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { ConfigService } from "@nestjs/config";
 import { Model } from "mongoose";
@@ -11,6 +16,8 @@ import { ArphaService } from "../arpha/arpha.service";
 import { UsersService } from "../users/users.service";
 import { KvCacheService } from "../kv/kv-cache.service";
 import { AlegraService } from "../alegra/alegra.service";
+import { MembershipService } from "../membership/membership.service";
+import { SecurityAuditService } from "../common/audit/security-audit.service";
 import type { EnvironmentConfig } from "../config/config.interface";
 import {
   COURSE_TIERS,
@@ -62,7 +69,9 @@ export class PaymentsService {
     private readonly usersService: UsersService,
     private readonly kvCache: KvCacheService,
     private readonly alegraService: AlegraService,
-  ) {}
+    @Optional() private readonly membershipService?: MembershipService,
+    @Optional() private readonly auditService?: SecurityAuditService,
+  ) { }
 
   async createPayment(userId: string, dto: CreatePaymentDto) {
     if (ARPHA_TIERS.has(dto.tier)) {
@@ -124,11 +133,11 @@ export class PaymentsService {
    */
   async handleWebhookBatch(
     items: Array<{ id: string; body: { rawBody: string; signature: string } }>,
-  ): Promise<{ processed: number; failed: number }> {
+  ): Promise<{ processed: number; failed: number; failedIds: string[] }> {
     const results = await Promise.allSettled(
       items.map(async (item) => {
         if (!item?.body?.rawBody || !item?.body?.signature) {
-          throw new Error(`Invalid item payload for ${item?.id}`);
+          throw new BadRequestException(`Invalid item payload for ${item?.id}`);
         }
         const rawBuf = Buffer.from(item.body.rawBody, "utf-8");
         return handleWebhookHelper(
@@ -141,6 +150,7 @@ export class PaymentsService {
 
     let processed = 0;
     let failed = 0;
+    const failedIds: string[] = [];
 
     for (let i = 0; i < results.length; i++) {
       const res = results[i];
@@ -148,13 +158,18 @@ export class PaymentsService {
         processed++;
       } else {
         failed++;
+        const itemId = items[i]?.id;
+        // Only mark transient (non-400) errors as retryable so invalid signatures don't poison the queue
+        if (itemId && !(res.reason instanceof BadRequestException)) {
+          failedIds.push(itemId);
+        }
         this.logger.error(
-          `Failed to process batched webhook ${items[i]?.id}: ${res.reason instanceof Error ? res.reason.message : String(res.reason)}`,
+          `Failed to process batched webhook ${itemId}: ${res.reason instanceof Error ? res.reason.message : String(res.reason)}`,
         );
       }
     }
 
-    return { processed, failed };
+    return { processed, failed, failedIds };
   }
 
   async getTransactionStatus(
@@ -189,7 +204,11 @@ export class PaymentsService {
 
   async cancelPendingTransaction(userId: string, reference: string) {
     return cancelPendingTransactionHelper(
-      { transactionModel: this.transactionModel, logger: this.logger },
+      {
+        transactionModel: this.transactionModel,
+        logger: this.logger,
+        kvCache: this.kvCache,
+      },
       userId,
       reference,
     );
@@ -250,10 +269,21 @@ export class PaymentsService {
       configService: this.configService,
       kvCache: this.kvCache,
       logger: this.logger,
+      auditService: this.auditService,
       linkPaymentByPurpose: (t: TransactionDocument) =>
         this.linkPaymentByPurpose(t),
       processAlegraInvoicing: (t: TransactionDocument) =>
         this.processAlegraInvoicing(t),
+      delegateMembershipWebhook: this.membershipService
+        ? (
+          event: Record<string, unknown>,
+          parsed: Parameters<MembershipService["handleVerifiedWebhook"]>[1],
+        ) => this.membershipService!.handleVerifiedWebhook(event, parsed)
+        : undefined,
+      getMembershipPayment: this.membershipService
+        ? (userId: string, reference: string) =>
+          this.membershipService!.getMembershipPayment(userId, reference)
+        : undefined,
     };
   }
 

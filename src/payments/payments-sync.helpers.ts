@@ -3,13 +3,23 @@ import { ConfigService } from "@nestjs/config";
 import { Model } from "mongoose";
 import { TransactionDocument } from "./schemas/transaction.schema";
 import type { EnvironmentConfig } from "../config/config.interface";
-import { TERMINAL_STATUSES } from "./payments.constants";
-import { parseBoldAmount } from "./payments-webhook.helpers";
+import type { KvCacheService } from "../kv/kv-cache.service";
+import type { SecurityAuditService } from "../common/audit/security-audit.service";
+import { maskReference } from "../common/utils/log-redact.util";
+import {
+  canTransitionBoldStatus,
+  fetchBoldPaymentVoucher,
+  isBoldVoucherMismatch,
+  mapBoldVoucherStatusShared,
+  recordBoldVoidedAudit,
+} from "./bold.helpers";
 
 export interface BoldSyncDeps {
   configService: ConfigService<EnvironmentConfig>;
   transactionModel: Model<TransactionDocument>;
   logger: Logger;
+  kvCache?: KvCacheService;
+  auditService?: SecurityAuditService;
   linkPaymentByPurpose: (transaction: TransactionDocument) => Promise<void>;
   processAlegraInvoicing: (transaction: TransactionDocument) => Promise<void>;
 }
@@ -27,21 +37,7 @@ export function isBoldSyncRateLimited(
 }
 
 export function mapBoldVoucherStatus(boldStatus: string): string | null {
-  switch (boldStatus.toUpperCase()) {
-    case "APPROVED":
-      return "APPROVED";
-    case "REJECTED":
-      return "REJECTED";
-    case "FAILED":
-      return "FAILED";
-    case "VOIDED":
-      return "VOIDED";
-    case "PROCESSING":
-      return "PROCESSING";
-    case "PENDING":
-    default:
-      return null;
-  }
+  return mapBoldVoucherStatusShared(boldStatus);
 }
 
 export function isVoucherAmountMismatch(
@@ -49,19 +45,12 @@ export function isVoucherAmountMismatch(
   transaction: TransactionDocument,
   body: Record<string, unknown>,
 ): boolean {
-  if (transaction.amount <= 0) return false;
-  const voucherAmount = parseBoldAmount(body["amount"]);
-  if (voucherAmount === undefined) {
-    logger.warn(
-      `Missing or invalid amount in Bold voucher sync for ref ${transaction.reference}: expected ${transaction.amount}. Skipping approval.`,
-    );
-    return true;
-  }
-  if (voucherAmount === transaction.amount) return false;
-  logger.warn(
-    `Amount mismatch in Bold voucher sync for ref ${transaction.reference}: expected ${transaction.amount}, received ${voucherAmount}. Skipping approval.`,
+  return isBoldVoucherMismatch(
+    logger,
+    transaction.reference,
+    transaction.amount,
+    body,
   );
-  return true;
 }
 
 export function applyApprovedVoucherFields(
@@ -107,7 +96,7 @@ export async function applyBoldVoucherBody(
 
   if (!boldStatus || boldStatus === "NO_TRANSACTION_FOUND") {
     deps.logger.log(
-      `Bold sync: no transaction found yet for reference: ${transaction.reference}`,
+      `Bold sync: no transaction found yet for ref ${maskReference(transaction.reference)}`,
     );
     return;
   }
@@ -117,9 +106,9 @@ export async function applyBoldVoucherBody(
     return;
   }
 
-  if (TERMINAL_STATUSES.has(transaction.status)) {
+  if (!canTransitionBoldStatus(transaction.status, mappedStatus)) {
     deps.logger.warn(
-      `Bold sync: ignoring ${mappedStatus} for already-${transaction.status} reference ${transaction.reference}`,
+      `Bold sync: ignoring ${mappedStatus} for ${transaction.status} ref ${maskReference(transaction.reference)}`,
     );
     return;
   }
@@ -131,8 +120,9 @@ export async function applyBoldVoucherBody(
     return;
   }
 
+  const previousStatus = transaction.status;
   deps.logger.log(
-    `Bold sync: updating ${transaction.reference} from ${transaction.status} to ${mappedStatus}`,
+    `Bold sync: updating ${maskReference(transaction.reference)} from ${previousStatus} to ${mappedStatus}`,
   );
 
   transaction.status = mappedStatus;
@@ -142,6 +132,25 @@ export async function applyBoldVoucherBody(
   }
 
   await transaction.save();
+
+  if (deps.kvCache) {
+    await deps.kvCache
+      .delete(`pay:status:${transaction.userId}:${transaction.reference}`, true)
+      .catch(() => {});
+  }
+
+  if (previousStatus === "APPROVED" && mappedStatus === "VOIDED") {
+    deps.logger.warn(
+      `CRITICAL FINANCIAL EVENT: Approved payment ${maskReference(transaction.reference)} was VOIDED in Bold voucher sync`,
+    );
+    recordBoldVoidedAudit(
+      deps.auditService,
+      "/api/payments/status",
+      transaction.reference,
+      transaction.amount,
+      "voucher_sync",
+    );
+  }
 
   if (mappedStatus === "APPROVED") {
     await grantSyncBenefit(deps, transaction);
@@ -156,50 +165,17 @@ export async function syncWithBoldHelper(
     return;
   }
 
-  const identityKey =
-    deps.configService.get<string>("BOLD_IDENTITY_KEY", { infer: true }) ?? "";
-
-  if (!identityKey) {
-    deps.logger.warn(
-      "Cannot sync with Bold: BOLD_IDENTITY_KEY is not configured",
-    );
-    return;
-  }
-
-  const boldEnv =
-    deps.configService.get<string>("BOLD_ENVIRONMENT", { infer: true }) ??
-    "sandbox";
-  const baseUrl =
-    boldEnv === "production"
-      ? "https://payments.api.bold.co"
-      : "https://payments-api-test.bold.co";
-  const url = `${baseUrl}/v2/payment-voucher/${encodeURIComponent(transaction.reference)}`;
-
   transaction.lastBoldSyncAt = new Date();
   await transaction.save();
 
-  try {
-    const res = await fetch(url, {
-      method: "GET",
-      headers: {
-        Authorization: `x-api-key ${identityKey}`,
-        Accept: "application/json",
-      },
-      signal: AbortSignal.timeout(10_000),
-    });
-
-    if (!res.ok) {
-      deps.logger.warn(
-        `Bold sync API returned ${res.status} for reference: ${transaction.reference}`,
-      );
-      return;
-    }
-
-    const body = (await res.json()) as Record<string, unknown>;
-    await applyBoldVoucherBody(deps, transaction, body);
-  } catch (err: unknown) {
-    deps.logger.warn(
-      `Bold sync failed for ${transaction.reference}: ${err instanceof Error ? err.message : String(err)}`,
-    );
+  const voucherResult = await fetchBoldPaymentVoucher(
+    deps.configService,
+    deps.logger,
+    transaction.reference,
+  );
+  if (!voucherResult.ok || !voucherResult.body) {
+    return;
   }
+
+  await applyBoldVoucherBody(deps, transaction, voucherResult.body);
 }
