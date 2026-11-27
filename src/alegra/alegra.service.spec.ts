@@ -27,9 +27,11 @@ import {
   buildInvoicePayload,
   discoverDefaultItemId,
   discoverElectronicNumberTemplateId,
+  isInvalidUnspscProductKey,
 } from "./alegra-invoice.helpers";
 import {
   classifyAlegraCreateInvoiceError,
+  executeCreateInvoiceDetailed,
   executeEmailInvoice,
   executeGetInvoicePdfDetails,
 } from "./alegra-api.helpers";
@@ -58,6 +60,10 @@ function createKvMock(): KvCacheService {
     get: jest.fn((key: string) => Promise.resolve(store.get(key) ?? null)),
     set: jest.fn((key: string, val: unknown) => {
       store.set(key, val);
+      return Promise.resolve();
+    }),
+    delete: jest.fn((key: string) => {
+      store.delete(key);
       return Promise.resolve();
     }),
   } as unknown as KvCacheService;
@@ -141,7 +147,33 @@ describe("Alegra integration security, DIAN 2.1 compliance and resilience", () =
       expect(safeQuotaMsg).toContain("temporalmente pausada");
       expect(safeQuotaMsg).not.toContain("402");
       expect(safeQuotaMsg).not.toContain("plan");
+      expect(
+        classifyAlegraCreateInvoiceError(
+          400,
+          JSON.stringify({
+            message:
+              "no cumple con las validaciones necesarias: El campo código del producto/servicio seleccionado es inválido.",
+          }),
+        ),
+      ).toBe("ALEGRA_HTTP_400_INVALID_PRODUCT_KEY");
+      const safeProductKeyMsg = sanitizeAlegraErrorForUser(
+        "ALEGRA_HTTP_400_INVALID_PRODUCT_KEY",
+      );
+      expect(safeProductKeyMsg).toContain("catálogo fiscal");
+      expect(safeProductKeyMsg).not.toContain("400");
+      expect(safeProductKeyMsg).not.toContain("productKey");
       expect(sanitizeAlegraErrorForUser(null)).toBeNull();
+    });
+
+    it("detects invalid UNSPSC class-level productKey codes ending in 00", () => {
+      expect(isInvalidUnspscProductKey(null)).toBe(false);
+      expect(isInvalidUnspscProductKey(undefined)).toBe(false);
+      expect(isInvalidUnspscProductKey("")).toBe(false);
+      expect(isInvalidUnspscProductKey("53102902")).toBe(false);
+      expect(isInvalidUnspscProductKey("94121510")).toBe(false);
+      expect(isInvalidUnspscProductKey("94121500")).toBe(true);
+      expect(isInvalidUnspscProductKey("941215")).toBe(true);
+      expect(isInvalidUnspscProductKey("INVALID")).toBe(true);
     });
   });
 
@@ -383,6 +415,79 @@ describe("Alegra integration security, DIAN 2.1 compliance and resilience", () =
       );
       expect(payload.paymentMethod).toBe("DEBIT_TRANSFER");
       expect(payload.numberTemplate).toEqual({ id: "19" });
+    });
+
+    it("skips catalog item with invalid UNSPSC class productKey and evicts cache on 400 invalid productKey", async () => {
+      const cfg = createConfigMock({});
+      const kv = createKvMock();
+      const makeRequest = jest.fn((_m: string, path: string) => {
+        if (path.startsWith("/items?query=")) {
+          return Promise.resolve([
+            {
+              id: "77",
+              name: "Ingreso BSKMT",
+              reference: "BSKMT-GENERIC",
+              status: "active",
+              productKey: "94121500",
+            },
+            {
+              id: "48",
+              name: "Gorra For All BSKMT",
+              reference: "gorra-bsk",
+              status: "active",
+              productKey: "53102902",
+            },
+          ]);
+        }
+        return Promise.resolve(null);
+      });
+
+      const chosenId = await discoverDefaultItemId(
+        cfg,
+        kv,
+        makeRequest as never,
+        logger,
+      );
+      expect(chosenId).toBe("48");
+
+      const detailedCfg = createConfigMock({
+        ALEGRA_ITEM_ID: "77",
+        ALEGRA_SELLER_ID: "5",
+        ALEGRA_NUMBER_TEMPLATE_ID: "19",
+      });
+      await kv.set("alegra:default_item_id", "77", 86400, true);
+      const makeDetailed = jest.fn(() =>
+        Promise.resolve({
+          ok: false,
+          status: 400,
+          data: null,
+          errorText: JSON.stringify({
+            message:
+              "El campo código del producto/servicio seleccionado es inválido.",
+          }),
+        }),
+      );
+      const detailed = await executeCreateInvoiceDetailed(
+        jest.fn(() => Promise.resolve(null)) as never,
+        makeDetailed as never,
+        detailedCfg,
+        kv,
+        {
+          userId: "u1",
+          transactionReference: "SHOP-BAD-KEY",
+          purpose: "shop",
+          amount: 1200,
+          description: "Compra Test",
+          paymentMethod: "NEQUI",
+        },
+        "26",
+        logger,
+      );
+      expect(detailed).toEqual({
+        data: null,
+        errorCode: "ALEGRA_HTTP_400_INVALID_PRODUCT_KEY",
+      });
+      expect(await kv.get("alegra:default_item_id", true)).toBeNull();
     });
   });
 

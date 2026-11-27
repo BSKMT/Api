@@ -176,7 +176,7 @@ async function executeSingleAlegraFetch<T>(
   if (!res.ok) {
     const errorText = await res.text().catch(() => "");
     logger.warn(
-      `Alegra API ${method} ${safePath} returned ${res.status}: ${sanitizeForLog(errorText.slice(0, 160))}`,
+      `Alegra API ${method} ${safePath} returned ${res.status}: ${sanitizeForLog(errorText.slice(0, 400))}`,
     );
     return {
       result: { ok: false, status: res.status, data: null, errorText },

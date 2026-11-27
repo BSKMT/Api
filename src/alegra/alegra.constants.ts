@@ -143,7 +143,10 @@ export function sanitizeAlegraErrorForUser(
   if (lower.includes("402") || lower.includes("plan_limit")) {
     return "La emisión automática de factura electrónica está temporalmente pausada. Tu pago está confirmado y nuestro equipo emitirá tu factura a la brevedad.";
   }
-  if (lower.includes("contact")) {
+  if (lower.includes("invalid_product_key")) {
+    return "No fue posible emitir la factura electrónica en este momento por una validación temporal del catálogo fiscal. Tu pago está confirmado y nuestro equipo la emitirá a la brevedad.";
+  }
+  if (lower.includes("contact") || lower.includes("invalid_client_data")) {
     return "No fue posible validar los datos fiscales del titular para la factura electrónica. Verifica tu perfil e intenta nuevamente.";
   }
   if (

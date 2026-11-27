@@ -15,7 +15,11 @@ import {
   maskEmail,
   sanitizeForLog,
 } from "../common/utils/log-redact.util";
-import { isAllowedAlegraPdfUrl, isValidAlegraId } from "./alegra.constants";
+import {
+  ALEGRA_KV_PREFIX,
+  isAllowedAlegraPdfUrl,
+  isValidAlegraId,
+} from "./alegra.constants";
 import type {
   AlegraDetailedRequestFn,
   AlegraHttpMethod,
@@ -42,23 +46,76 @@ export interface CreateInvoiceDetailedResult {
 
 const BASIC_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function parseAlegraErrorCode(errorText: string | null): number | null {
-  if (!errorText) return null;
+interface ParsedAlegraError {
+  code: number | null;
+  message: string;
+}
+
+function parseAlegraError(errorText: string | null): ParsedAlegraError {
+  if (!errorText) return { code: null, message: "" };
   try {
-    const parsed = JSON.parse(errorText) as { code?: unknown };
-    return typeof parsed.code === "number" && Number.isFinite(parsed.code)
-      ? parsed.code
-      : null;
+    const parsed = JSON.parse(errorText) as {
+      code?: unknown;
+      message?: unknown;
+      error?: unknown;
+      errors?: unknown;
+    };
+    const code =
+      typeof parsed.code === "number" && Number.isFinite(parsed.code)
+        ? parsed.code
+        : null;
+    const parts: string[] = [];
+    if (typeof parsed.message === "string") parts.push(parsed.message);
+    if (typeof parsed.error === "string") parts.push(parsed.error);
+    if (Array.isArray(parsed.errors)) {
+      parts.push(
+        parsed.errors
+          .map((e) => (typeof e === "string" ? e : JSON.stringify(e)))
+          .join("; "),
+      );
+    }
+    return { code, message: parts.join(" ").trim() || errorText };
   } catch {
-    return null;
+    return { code: null, message: errorText };
   }
+}
+
+function detectValidationErrorTag(message: string): string | null {
+  const normalized = message
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  if (
+    normalized.includes("codigo del producto/servicio") ||
+    normalized.includes("codigo del producto") ||
+    normalized.includes("productkey") ||
+    normalized.includes("unspsc") ||
+    normalized.includes("standardcode")
+  ) {
+    return "INVALID_PRODUCT_KEY";
+  }
+  if (
+    normalized.includes("resolucion") ||
+    normalized.includes("numeracion") ||
+    normalized.includes("numbertemplate")
+  ) {
+    return "INVALID_NUMBER_TEMPLATE";
+  }
+  if (
+    normalized.includes("identificacion") ||
+    normalized.includes("cliente") ||
+    normalized.includes("adquirente")
+  ) {
+    return "INVALID_CLIENT_DATA";
+  }
+  return null;
 }
 
 export function classifyAlegraCreateInvoiceError(
   status: number,
   errorText: string | null,
 ): string {
-  const providerCode = parseAlegraErrorCode(errorText);
+  const { code: providerCode, message } = parseAlegraError(errorText);
   if (status === 402 || providerCode === 900) {
     return "ALEGRA_HTTP_402_PLAN_LIMIT";
   }
@@ -69,9 +126,12 @@ export function classifyAlegraCreateInvoiceError(
     return "ALEGRA_HTTP_429_RATE_LIMIT";
   }
   if (status >= 400) {
-    return providerCode !== null
-      ? `ALEGRA_HTTP_${status}_CODE_${providerCode}`
-      : `ALEGRA_HTTP_${status}`;
+    const validationTag = detectValidationErrorTag(message);
+    const base =
+      providerCode !== null
+        ? `ALEGRA_HTTP_${status}_CODE_${providerCode}`
+        : `ALEGRA_HTTP_${status}`;
+    return validationTag ? `${base}_${validationTag}` : base;
   }
   return "Failed to create invoice";
 }
@@ -132,9 +192,18 @@ export async function executeCreateInvoiceDetailed(
       res.status,
       res.errorText,
     );
-    logger.warn(
-      `Failed to create Alegra invoice for ref=${maskReference(context.transactionReference)} (${errorCode})`,
-    );
+    if (errorCode.includes("INVALID_PRODUCT_KEY")) {
+      await kvCache
+        .delete(`${ALEGRA_KV_PREFIX}default_item_id`, true)
+        .catch(() => {});
+      logger.error(
+        `Alegra rejected invoice due to invalid UNSPSC productKey on catalog itemId=${sanitizeForLog(itemId)} for ref=${maskReference(context.transactionReference)} (${errorCode}) — update productKey to a valid 8-digit UNSPSC commodity code (not ending in 00) in Alegra`,
+      );
+    } else {
+      logger.warn(
+        `Failed to create Alegra invoice for ref=${maskReference(context.transactionReference)} (${errorCode})`,
+      );
+    }
     return { data: null, errorCode };
   }
 

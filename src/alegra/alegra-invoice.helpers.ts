@@ -24,6 +24,23 @@ interface AlegraCatalogItem {
   name?: string;
   reference?: string;
   status?: string;
+  productKey?: string | null;
+}
+
+const UNSPSC_EIGHT_DIGITS_REGEX = /^\d{8}$/;
+
+/**
+ * Validates Colombia DIAN 2.1 UNSPSC productKey values stored on Alegra catalog items.
+ * - `null`/empty is permitted (Alegra stamps with non-blocking FAZ09 observation).
+ * - Non-empty values must be an 8-digit Level-4 Commodity code (never a Level-1/2/3
+ *   Segment/Family/Class header ending in "00" such as "94121500", which Alegra
+ *   rejects with HTTP 400 "El campo código del producto/servicio seleccionado es inválido").
+ */
+export function isInvalidUnspscProductKey(productKey?: string | null): boolean {
+  if (productKey === null || productKey === undefined) return false;
+  const trimmed = String(productKey).trim();
+  if (trimmed.length === 0) return false;
+  return !UNSPSC_EIGHT_DIGITS_REGEX.test(trimmed) || trimmed.endsWith("00");
 }
 
 function getBogotaDateString(): string {
@@ -42,17 +59,30 @@ function getConfiguredId(
 
 function pickBestActiveItem(
   items: AlegraCatalogItem[] | null,
+  logger?: Logger,
 ): AlegraCatalogItem | null {
   if (!Array.isArray(items) || items.length === 0) return null;
   const activeItems = items.filter((i) => i?.id && i.status !== "inactive");
   if (activeItems.length === 0) return null;
-  return (
-    activeItems.find(
-      (i) =>
-        i.reference === "BSKMT-GENERIC" ||
-        i.name?.toLowerCase().includes("ingreso bskmt"),
-    ) ?? activeItems[0]
+
+  const isPreferred = (i: AlegraCatalogItem): boolean =>
+    i.reference === "BSKMT-GENERIC" ||
+    Boolean(i.name?.toLowerCase().includes("ingreso bskmt"));
+
+  const validItems = activeItems.filter(
+    (i) => !isInvalidUnspscProductKey(i.productKey),
   );
+  const preferredValid = validItems.find(isPreferred);
+  if (preferredValid) return preferredValid;
+
+  const preferredAny = activeItems.find(isPreferred);
+  if (preferredAny && isInvalidUnspscProductKey(preferredAny.productKey)) {
+    logger?.warn(
+      `Alegra preferred catalog item id=${String(preferredAny.id)} has invalid UNSPSC productKey="${String(preferredAny.productKey)}" — skipping in favor of valid active item`,
+    );
+  }
+
+  return validItems[0] ?? preferredAny ?? activeItems[0];
 }
 
 export async function discoverDefaultItemId(
@@ -74,12 +104,18 @@ export async function discoverDefaultItemId(
       "/items?query=Ingreso%20BSKMT&limit=10",
     );
     const chosen =
-      pickBestActiveItem(matched) ??
+      pickBestActiveItem(matched, logger) ??
       pickBestActiveItem(
         await makeRequest<AlegraCatalogItem[]>("GET", "/items?limit=30"),
+        logger,
       );
 
     if (chosen?.id) {
+      if (isInvalidUnspscProductKey(chosen.productKey)) {
+        logger.warn(
+          `Alegra auto-discovered item id=${String(chosen.id)} has invalid UNSPSC productKey="${String(chosen.productKey)}" — DIAN 2.1 stamping may fail until updated in Alegra`,
+        );
+      }
       const idStr = String(chosen.id);
       await kvCache.set(cacheKey, idStr, 86400, true);
       logger.log(
